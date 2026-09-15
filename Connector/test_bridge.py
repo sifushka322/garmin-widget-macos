@@ -12,6 +12,14 @@ import bridge
 
 
 class NormalizationTests(unittest.TestCase):
+    def test_extreme_numbers_do_not_break_json_output(self):
+        metrics = {}
+        bridge.put(metrics, "steps", 10 ** 400)
+        bridge.put(metrics, "distance", 1e308, scale=1000)
+        self.assertEqual(metrics, {})
+        self.assertIsNone(bridge.number(10 ** 400))
+        json.dumps(metrics, allow_nan=False)
+
     def test_missing_and_sentinel_are_not_zero(self):
         metrics = {}
         bridge.normalize_stats({"totalSteps": 0, "restingHeartRate": 0,

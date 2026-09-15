@@ -194,6 +194,7 @@ struct SharedModelTests {
 
     static func main() {
         do {
+            try testUntrustedPreferencesAndFreshness()
             try testMissingMeasurementsAndUnits()
             try testInvalidValuesAndGoals()
             try testSnapshotCompatibility()
@@ -205,5 +206,36 @@ struct SharedModelTests {
             fputs("FAIL: \(error)\n", stderr)
             exit(1)
         }
+    }
+
+    static func testUntrustedPreferencesAndFreshness() throws {
+        for raw in [Int.min, Int.max] {
+            let decoded = try AppJSON.decoder.decode(AppPreferences.self, from: Data("{\"refreshMinutes\":\(raw),\"profiles\":[]}".utf8))
+            try expect((300...86400).contains(decoded.refreshInterval), "Untrusted cadence must be bounded before arithmetic")
+            try expect(decoded.profiles.count == 1, "Empty stored profiles recover to an editable profile")
+            var direct = AppPreferences(); direct.refreshMinutes = raw
+            try expect(direct.staleInterval.isFinite, "Programmatic cadence cannot overflow")
+        }
+        var profile = WidgetProfile()
+        profile.metricIDs = ["unknown", "steps", "steps"]
+        profile.primaryMetric = "unknown"
+        let repaired = try AppJSON.decoder.decode(WidgetProfile.self, from: AppJSON.encoder.encode(profile))
+        try expect(repaired.metricIDs == ["steps"] && repaired.primaryMetric == "steps", "Stored invalid IDs and duplicates cannot reach ForEach or the API")
+        var prefs = AppPreferences(); prefs.profiles = [profile, profile]
+        let decoded = try AppJSON.decoder.decode(AppPreferences.self, from: AppJSON.encoder.encode(prefs))
+        try expect(decoded.profiles.count == 1, "Duplicate stored profile identities are repaired")
+
+        let now = Date(timeIntervalSince1970: 1_789_473_600)
+        let zone = TimeZone(secondsFromGMT: 0)!
+        var cached = snapshot(["steps": 100, "sleepDuration": 480])
+        cached.sourceDate = SyncPolicy.sourceDay(for: now, timeZone: zone)
+        cached.fetchedAt = now
+        cached.groupUpdatedAt = ["stats": now, "sleep": now.addingTimeInterval(-7200)]
+        try expect(cached.metricIsStale("sleepDuration", at: now, timeZone: zone, staleInterval: 3600), "Fresh steps cannot hide old sleep data")
+        try expect(!cached.metricIsStale("steps", at: now, timeZone: zone, staleInterval: 3600), "Fresh values remain fresh")
+        cached.sourceDate = "2026-01-01"
+        try expect(cached.metricIsStale("steps", at: now, timeZone: zone, staleInterval: 3600), "Yesterday's data is stale even during server backoff")
+        cached.isDemo = true
+        try expect(!cached.metricIsStale("steps", at: now, timeZone: zone, staleInterval: 3600), "Demo remains explicitly demo")
     }
 }

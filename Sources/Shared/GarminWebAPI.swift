@@ -104,6 +104,8 @@ struct GarminCalendarMonthCache: Codable {
 
 struct GarminWebCache: Codable {
     var version = 1
+    // Private cache ownership only; never copied into the widget snapshot.
+    var accountDisplayName: String?
     var groups: [String: GarminMetricGroupCache] = [:]
     var devices: [String] = []
     // Optional additive fields keep version-1 caches readable.

@@ -36,6 +36,20 @@ struct GarminWidgetView: View {
 
     var body: some View {
         Group {
+            if previewFamily != nil { widgetContent }
+            else { widgetContent.containerBackground(for: .widget) { background } }
+        }
+        .widgetURL(destination)
+        .environment(\.locale, language.locale)
+    }
+
+    var background: some View {
+        LinearGradient(colors: [Color(nsColor: .windowBackgroundColor), accent.opacity(0.08)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    private var widgetContent: some View {
+        Group {
             if entry.data == nil {
                 emptyState(symbol: "rectangle.grid.2x2", title: text("widget.openApp"), message: text("widget.openAppHint"))
             } else if let profile {
@@ -46,11 +60,6 @@ struct GarminWidgetView: View {
                            message: text(unconfigured || WidgetDataStore.configurationMode != .profileIntents ? "widget.openAppHint" : "widget.profileMissingHint"))
             }
         }
-        .containerBackground(for: .widget) {
-            LinearGradient(colors: [Color(nsColor: .windowBackgroundColor), accent.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        }
-        .widgetURL(destination)
-        .environment(\.locale, language.locale)
     }
 
     private func content(_ profile: WidgetProfile) -> some View {
@@ -218,6 +227,8 @@ struct GarminWidgetView: View {
                 }.frame(height: 4).accessibilityHidden(true)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text(MetricDefinition.find(id).titleKey) + ": " + formatter.display(id))
     }
 
     private func metricRow(_ id: String) -> some View {
@@ -254,7 +265,8 @@ struct GarminWidgetView: View {
                 Image(systemName: "exclamationmark.circle")
                 Text(text("status.notConnected"))
             } else if let refreshedAt {
-                let stale = entry.date.timeIntervalSince(refreshedAt) > Double(max(data.preferences.refreshMinutes * 3, 60)) * 60
+                let stale = entry.date.timeIntervalSince(refreshedAt) > data.preferences.staleInterval
+                    || visibleMetricIDs.contains { data.snapshot.metricIsStale($0, at: entry.date, staleInterval: data.preferences.staleInterval) }
                 Image(systemName: stale ? "clock.badge.exclamationmark" : "arrow.triangle.2.circlepath")
                 Text(text("data.updated"))
                 Text(refreshedAt, style: .time)
@@ -284,13 +296,17 @@ struct GarminWidgetView: View {
         return dates.min()
     }
 
-    /// A new response for another metric must not make the primary value appear fresh.
+    private var visibleMetricIDs: [String] {
+        guard let profile, profile.contentMode.includesMetrics else { return [] }
+        if profile.contentMode.includesTraining { return family == .systemLarge ? [profile.primaryMetric] : [] }
+        let limit = family == .systemSmall ? 0 : (family == .systemMedium
+            ? (profile.density == .compact ? 3 : 2) : (profile.density == .compact ? 8 : 6))
+        return [profile.primaryMetric] + Array(secondary(profile).prefix(limit))
+    }
+
+    /// Every visible value contributes to freshness, including secondary metrics.
     private var metricRefreshedAt: Date? {
-        guard let profile, data.snapshot.metrics[profile.primaryMetric] != nil else { return nil }
-        let groups = GarminWebAPI.requiredGroups(metricIDs: [profile.primaryMetric]).subtracting([.profile, .devices])
-        let dates = groups.compactMap { data.snapshot.groupUpdatedAt[$0.rawValue] }
-        if let oldest = dates.min() { return oldest }
-        return data.snapshot.fetchedAt > .distantPast ? data.snapshot.fetchedAt : nil
+        visibleMetricIDs.compactMap { data.snapshot.metricUpdatedAt($0) }.min()
     }
 
     private func emptyState(symbol: String, title: String, message: String) -> some View {

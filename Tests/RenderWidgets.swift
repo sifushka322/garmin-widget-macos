@@ -5,6 +5,10 @@ import WidgetKit
 @main
 struct RenderWidgets {
     @MainActor static func main() throws {
+        guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true"
+            || ProcessInfo.processInfo.environment["GARMIN_ALLOW_LOCAL_TESTS"] == "1" else {
+            fatalError("Run visual fixtures in CI; local rendering requires explicit opt-in")
+        }
         let output = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let families: [(String, WidgetFamily, CGSize)] = [
@@ -89,19 +93,43 @@ struct RenderWidgets {
         sample.snapshot.trainingTimeline?.futureUpdatedAt = nil
         try render(sample, name: "training-en-last", family: .systemSmall, size: families[0].2, now: now, output: output)
 
+        for language in [AppLanguage.ru, .en] {
+            var data = WidgetData.preview
+            data.preferences.language = language
+            data.preferences.profiles[0].name = language == .ru ? "Очень длинное название профиля здоровья" : "A very long health profile name"
+            data.isConnected = true
+            data.snapshot.isDemo = false
+            data.snapshot.fetchedAt = now
+            data.snapshot.sourceDate = SyncPolicy.sourceDay(for: now, timeZone: .current)
+            data.snapshot.metrics = ["steps": .init(value: 0), "bodyBattery": .init(value: 76)]
+            data.snapshot.groupUpdatedAt = ["stats": now, "body_battery": now.addingTimeInterval(-7200)]
+            for (name, family, size) in families {
+                try render(data, name: "states-\(language.rawValue)-\(name)-partial-stale", family: family, size: size, now: now, output: output)
+            }
+            data.isConnected = false
+            try render(data, name: "states-\(language.rawValue)-disconnected", family: .systemMedium, size: families[1].2, now: now, output: output)
+            data.snapshot = .empty
+            data.isConnected = true
+            try render(data, name: "states-\(language.rawValue)-empty", family: .systemMedium, size: families[1].2, now: now, output: output)
+        }
+
     }
     @MainActor private static func render(_ data: WidgetData, name: String, family: WidgetFamily, size: CGSize,
                                           now: Date, output: URL) throws {
-        let view = GarminWidgetView(entry: GarminEntry(date: now, data: data, profileID: data.preferences.profiles.first?.id.uuidString), previewFamily: family)
-            .environment(\.colorScheme, .light)
+        for dark in [false, true] {
+        let widget = GarminWidgetView(entry: GarminEntry(date: now, data: data, profileID: data.preferences.profiles.first?.id.uuidString), previewFamily: family)
+        let view = widget
+            .environment(\.colorScheme, dark ? .dark : .light)
             .padding(16).frame(width: size.width, height: size.height)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(widget.background)
+            .environment(\.colorScheme, dark ? .dark : .light)
             .clipShape(RoundedRectangle(cornerRadius: 24))
         let renderer = ImageRenderer(content: view); renderer.scale = 2
         guard let image = renderer.cgImage else { fatalError("Unable to render widget") }
         let bitmap = NSBitmapImageRep(cgImage: image)
         guard let bytes = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else { fatalError("Unable to encode PNG") }
-        try bytes.write(to: output.appendingPathComponent(name + ".png"))
+        try bytes.write(to: output.appendingPathComponent(name + (dark ? "-dark" : "-light") + ".png"))
+        }
     }
 
 }

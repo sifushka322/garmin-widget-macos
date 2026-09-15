@@ -14,7 +14,29 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  protocol:
+    name: Offline JavaScript and Python contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: node Tests/WebReadScriptTests.mjs
+      - run: python -m pip install -r Connector/requirements.txt
+      - run: python -m unittest discover -s Connector -p 'test_*.py' -v
+
   build:
     name: macOS ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
@@ -56,21 +78,18 @@ jobs:
             printf '::error::Selected tools would produce profile-intents widgets instead of the tested static variant.\n' >&2
             exit 1
           fi
-      - name: Check shared models and localization
-        run: |
-          mkdir -p build/module-cache
-          xcrun swiftc -parse-as-library -swift-version 5 -module-name GarminDeskSharedTests \
-            -target "$(uname -m)-apple-macos14.0" -module-cache-path build/module-cache \
-            Sources/Shared/*.swift Sources/GarminDesk/Localization.swift Tests/SharedModelTests.swift \
-            -framework SwiftUI -framework Security -o build/shared-model-tests
-          build/shared-model-tests
-      - name: Check training presentation
-        run: |
-          xcrun swiftc -parse-as-library -swift-version 5 -module-name GarminDeskTrainingPresentationTests \
-            -target "$(uname -m)-apple-macos14.0" -module-cache-path build/module-cache \
-            Sources/Shared/*.swift Sources/GarminDesk/Localization.swift Tests/TrainingPresentationTests.swift \
-            -framework SwiftUI -framework Security -o build/training-presentation-tests
-          build/training-presentation-tests
+      - name: Run all native offline contracts and synthetic visual fixtures
+        run: bash scripts/test-offline.sh
+      - name: Upload synthetic visual review fixtures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-audit-${{ matrix.arch }}
+          path: |
+            build/audit/app/*.png
+            build/audit/widgets/*.png
+          if-no-files-found: warn
+          retention-days: 14
       - name: Verify read-only widget sharing in an ad-hoc sandbox
         run: bash scripts/test-widget-sandbox.sh
       - name: Build self-contained application

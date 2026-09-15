@@ -9,7 +9,7 @@ final class AppStore: ObservableObject {
     @Published var preferences: AppPreferences {
         didSet {
             persistPreferences()
-            webPolicy.configuration.refreshInterval = Double(max(5, preferences.refreshMinutes) * 60)
+            webPolicy.configuration.refreshInterval = preferences.refreshInterval
             if oldValue.refreshMinutes != preferences.refreshMinutes { scheduleRefresh() }
             if webConnected && requestedWebGroups(for: oldValue) != requestedWebGroups(for: preferences) { sync(trigger: .profilesChanged) }
         }
@@ -58,12 +58,13 @@ final class AppStore: ObservableObject {
         let prefsURL = supportDirectory.appendingPathComponent("preferences.json")
         preferences = (try? Data(contentsOf: prefsURL)).flatMap { try? AppJSON.decoder.decode(AppPreferences.self, from: $0) } ?? AppPreferences()
         let cacheURL = supportDirectory.appendingPathComponent("snapshot.json")
-        snapshot = (try? Data(contentsOf: cacheURL)).flatMap { try? AppJSON.decoder.decode(GarminSnapshot.self, from: $0) } ?? .demo
+        snapshot = (try? Data(contentsOf: cacheURL)).flatMap { try? AppJSON.decoder.decode(GarminSnapshot.self, from: $0) }
+            ?? (defaults.bool(forKey: "GarminDeskWebConnected") ? .empty : .demo)
         trainingTimeline = snapshot.trainingTimeline
         webConnected = defaults.bool(forKey: "GarminDeskWebConnected")
         let policyURL = supportDirectory.appendingPathComponent("sync-policy.json")
         let checkpoint = (try? Data(contentsOf: policyURL)).flatMap { try? AppJSON.decoder.decode(SyncPolicy.Checkpoint.self, from: $0) } ?? .init()
-        webPolicy = SyncPolicy(configuration: .init(refreshInterval: Double(max(5, preferences.refreshMinutes) * 60)), checkpoint: checkpoint)
+        webPolicy = SyncPolicy(configuration: .init(refreshInterval: preferences.refreshInterval), checkpoint: checkpoint)
         let groupURL = supportDirectory.appendingPathComponent("metric-groups.json")
         webCache = (try? Data(contentsOf: groupURL)).flatMap { try? AppJSON.decoder.decode(GarminWebCache.self, from: $0) } ?? .init()
         if webCache.version != 1 { webCache = .init() }
@@ -108,7 +109,17 @@ final class AppStore: ObservableObject {
     func displayValue(_ id: String) -> String { formatter.display(id) }
     func progress(_ id: String) -> Double? { formatter.progress(id) }
 
-    var isStale: Bool { !snapshot.isDemo && Date().timeIntervalSince(snapshot.fetchedAt) > Double(max(preferences.refreshMinutes * 3, 60) * 60) }
+    var isStale: Bool {
+        guard !snapshot.isDemo, snapshot.fetchedAt != .distantPast else { return false }
+        let now = syncMoment().wallTime
+        return snapshot.metrics.keys.contains { metricIsStale($0, at: now) }
+            || now.timeIntervalSince(snapshot.fetchedAt) > preferences.staleInterval
+    }
+
+    func metricIsStale(_ id: String, at now: Date? = nil) -> Bool {
+        snapshot.metricIsStale(id, at: now ?? syncMoment().wallTime,
+                               timeZone: sourceTimeZone(), staleInterval: preferences.staleInterval)
+    }
     var updatedText: String {
         if snapshot.isDemo { return text("data.demo") }
         if snapshot.fetchedAt == .distantPast { return text("status.notConnected") }
@@ -192,10 +203,7 @@ final class AppStore: ObservableObject {
     func updateProfile(_ profile: WidgetProfile) {
         guard let index = preferences.profiles.firstIndex(where: { $0.id == profile.id }) else { return }
         var cleaned = profile
-        var seen = Set<String>()
-        cleaned.metricIDs = profile.metricIDs.filter { id in MetricDefinition.catalog.contains { $0.id == id } && seen.insert(id).inserted }
-        if cleaned.metricIDs.isEmpty { cleaned.metricIDs = [cleaned.primaryMetric] }
-        if !cleaned.metricIDs.contains(cleaned.primaryMetric) { cleaned.primaryMetric = cleaned.metricIDs[0] }
+        cleaned.sanitize()
         preferences.profiles[index] = cleaned
     }
 
@@ -299,12 +307,14 @@ final class AppStore: ObservableObject {
                           let name = profile["displayName"] as? String, !name.isEmpty else { throw GarminWebError.invalidResponse }
                     // An explicit sign-in may select a different account. Never mix
                     // its new partial response with another account's cached values.
-                    if verifying || (self.webDisplayName != nil && self.webDisplayName != name) {
+                    let accountChanged = self.webCache.accountDisplayName != name
+                    if verifying || accountChanged {
                         self.webCache = .init(); self.snapshot = .empty
                     }
+                    self.webCache.accountDisplayName = name
                     self.webDisplayName = name
-                    if verifying || self.webPolicy.checkpoint.sessionState != .available {
-                        self.webPolicy.sessionBecameAvailable(clearCadence: verifying)
+                    if verifying || accountChanged || self.webPolicy.checkpoint.sessionState != .available {
+                        self.webPolicy.sessionBecameAvailable(clearCadence: verifying || accountChanged)
                     }
                     self.webConnected = true; self.hasSession = true; self.needsWebSignIn = false
                     self.defaults.set(true, forKey: "GarminDeskWebConnected")

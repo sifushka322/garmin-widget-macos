@@ -255,7 +255,7 @@ struct AppStoreSyncTests {
         for group in [SyncPolicy.Group.profile, .stats, .devices] {
             checkpoint.successfulGroups[group] = .init(moment: time, sourceDay: day)
         }
-        let rig = try Rig(checkpoint: checkpoint); defer { rig.clean() }
+        let rig = try Rig(checkpoint: checkpoint, groups: GarminWebCache(accountDisplayName: "fixture-user")); defer { rig.clean() }
         rig.store.sync(trigger: .automatic); try await settled(rig.store)
         try expect(rig.web.calls == ["profile", "stats"], "Missing group cache must invalidate freshness without re-fetching valid metadata")
         let freshWeb = MockWeb()
@@ -383,6 +383,7 @@ struct AppStoreSyncTests {
 
     static func main() async {
         do {
+            try await testAccountOwnershipAcrossRestart()
             try await testPolicyBeforeWebsite()
             try await testBootstrapExpiration()
             try await testFreshCadenceAndProfileReads()
@@ -399,5 +400,25 @@ struct AppStoreSyncTests {
             try await testTrainingFirstPageRateLimitStops()
             print("PASS: \(checks) host lifecycle and cache checks")
         } catch { fputs("FAIL: \(error)\n", stderr); exit(1) }
+    }
+
+    static func testAccountOwnershipAcrossRestart() async throws {
+        let now = TestClock().moment.wallTime
+        let day = SyncPolicy.sourceDay(for: now, timeZone: TimeZone(secondsFromGMT: 0)!)
+        for owner in [nil, "previous-account", "fixture-user"] as [String?] {
+            var cache = GarminWebCache(accountDisplayName: owner)
+            cache.groups["sleep"] = .init(sourceDay: day, retrievedAt: now.addingTimeInterval(-7200), metrics: ["sleepDuration": .init(value: 999)])
+            let previous = cache.snapshot(sourceDay: day, warnings: [])
+            let rig = try Rig(previous: previous, groups: cache, metrics: ["steps", "sleepDuration"])
+            defer { rig.clean() }
+            rig.web.payloads["sleep"] = ["unexpected": true]
+            rig.store.sync(trigger: .automatic); try await settled(rig.store)
+            try expect(rig.store.snapshot.metrics["steps"]?.value == 123, "New account's valid data is committed")
+            try expect((rig.store.snapshot.metrics["sleepDuration"] != nil) == (owner == "fixture-user"), "Partial sync must retain cached measurements only for the verified owner")
+            let persisted = try AppJSON.decoder.decode(GarminWebCache.self, from: Data(contentsOf: rig.directory.appendingPathComponent("metric-groups.json")))
+            try expect(persisted.accountDisplayName == "fixture-user", "Cache ownership survives process restart")
+        }
+        let rig = try Rig(); defer { rig.clean() }
+        try expect(!rig.store.snapshot.isDemo && rig.store.snapshot.metrics.isEmpty, "A connected installation with missing cache cannot show invented demo measurements")
     }
 }

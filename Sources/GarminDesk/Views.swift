@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 private enum CardPalette {
     static func accent(_ style: WidgetStyle) -> Color {
@@ -158,6 +159,10 @@ private struct MainMetricView: View {
                     .tint(accent)
                     .accessibilityLabel(store.text(definition.titleKey))
             }
+            if store.metricIsStale(metricID) {
+                Label(store.text("data.stale"), systemImage: "clock.badge.exclamationmark")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if store.numericValue(metricID) == nil {
                 Text(store.text("data.empty")).font(.caption).foregroundStyle(.secondary)
             }
@@ -179,7 +184,10 @@ private struct SmallMetricView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 6 : 9) {
             HStack(alignment: .top, spacing: 7) {
-                Image(systemName: definition.symbol).foregroundStyle(CardPalette.accent(style))
+                Image(systemName: store.metricIsStale(metricID) ? "clock.badge.exclamationmark" : definition.symbol)
+                    .help(store.metricIsStale(metricID) ? store.text("data.stale") : store.text(definition.titleKey))
+                    .accessibilityLabel(store.metricIsStale(metricID) ? store.text("data.stale") : store.text(definition.titleKey))
+                    .foregroundStyle(CardPalette.accent(style))
                     .frame(width: 16)
                 Text(store.text(definition.titleKey)).foregroundStyle(.secondary)
                     .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
@@ -427,6 +435,9 @@ private enum ProfilePreviewSize: String, CaseIterable, Identifiable {
         case .large: return CGSize(width: 360, height: 376)
         }
     }
+    var family: WidgetFamily {
+        switch self { case .small: return .systemSmall; case .medium: return .systemMedium; case .large: return .systemLarge }
+    }
     func secondaryLimit(density: WidgetDensity) -> Int {
         switch self {
         case .small: return 0
@@ -436,101 +447,23 @@ private enum ProfilePreviewSize: String, CaseIterable, Identifiable {
     }
 }
 
-/// Fixed-size layout preview uses the same visible counts and typography as the
-/// metrics widget. It responds immediately to profile order, style and density.
+/// Uses the production widget content for metrics, training and mixed profiles.
 private struct ProfileWidgetPreview: View {
     @ObservedObject var store: AppStore
     let profile: WidgetProfile
     let size: ProfilePreviewSize
-    private var accent: Color { CardPalette.accent(profile.style) }
-    private var secondary: [String] {
-        Array(profile.metricIDs.filter { $0 != profile.primaryMetric }.prefix(size.secondaryLimit(density: profile.density)))
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: size == .small ? 8 : 12) {
-            HStack(spacing: 5) {
-                GarminDeskBrandMark().frame(width: 13, height: 13)
-                    .foregroundStyle(accent).accessibilityHidden(true)
-                Text(profile.name.isEmpty ? store.text("profile.default") : profile.name).lineLimit(1)
-                Spacer(minLength: 0)
-                if store.snapshot.isDemo {
-                    Text(store.text("widget.demo")).font(.system(size: 9, weight: .semibold))
-                        .padding(.horizontal, 5).padding(.vertical, 3).background(.quaternary, in: Capsule())
-                }
-            }.font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
-            switch size {
-            case .small: primary
-            case .medium:
-                HStack(alignment: .top, spacing: 16) {
-                    primary.frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(alignment: .leading, spacing: profile.density == .compact ? 5 : 8) {
-                        ForEach(secondary, id: \.self) { id in metric(id, inline: profile.density == .compact) }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                }
-            case .large:
-                primary
-                Divider().opacity(0.5)
-                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
-                          alignment: .leading, spacing: profile.density == .compact ? 10 : 16) {
-                    ForEach(secondary, id: \.self) { id in metric(id) }
-                }
-            }
-            Spacer(minLength: 0)
-            HStack(spacing: 4) {
-                if store.snapshot.isDemo { Text(store.text("widget.connect")) }
-                else if !store.hasSession { Text(store.text("status.notConnected")) }
-                else if store.snapshot.fetchedAt != .distantPast {
-                    Text(store.text("data.updated"))
-                    Text(store.snapshot.fetchedAt, style: .time)
-                }
-            }.font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
-        }
-        .padding(16)
-        .frame(width: size.dimensions.width, height: size.dimensions.height)
-        .background(LinearGradient(colors: [Color(nsColor: .windowBackgroundColor), accent.opacity(0.08)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing))
-        .clipShape(RoundedRectangle(cornerRadius: 24))
-        .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(.primary.opacity(0.08)))
-        .environment(\.locale, store.preferences.language.locale)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(store.text("profile.preview") + ": " + store.text(size.titleKey))
-    }
-
-    private var primary: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            let definition = MetricDefinition.find(profile.primaryMetric)
-            Label(store.text(definition.widgetTitleKey), systemImage: definition.symbol)
-                .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
-            Text(store.displayValue(profile.primaryMetric))
-                .font(.system(size: size == .small ? 31 : 30, weight: .semibold, design: .rounded))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
-                .fixedSize(horizontal: false, vertical: true).layoutPriority(1)
-            if let progress = store.progress(profile.primaryMetric) {
-                GeometryReader { geometry in
-                    Capsule().fill(accent.opacity(0.14))
-                    Capsule().fill(accent).frame(width: geometry.size.width * progress)
-                }.frame(height: 4).accessibilityHidden(true)
-            }
-        }
-    }
-
-    @ViewBuilder private func metric(_ id: String, inline: Bool = false) -> some View {
-        let definition = MetricDefinition.find(id)
-        if inline {
-            HStack(spacing: 5) {
-                Text(store.text(definition.widgetTitleKey)).font(.system(size: 10)).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text(store.displayValue(id)).font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
-            }.lineLimit(1).minimumScaleFactor(0.75).frame(minHeight: 21)
-        } else {
-            VStack(alignment: .leading, spacing: 3) {
-                Label(store.text(definition.widgetTitleKey), systemImage: definition.symbol)
-                    .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
-                Text(store.displayValue(id)).font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .monospacedDigit().lineLimit(1).minimumScaleFactor(0.65)
-            }
-        }
+        let widget = GarminWidgetView(entry: GarminEntry(date: Date(),
+            data: WidgetData(preferences: store.preferences, snapshot: store.snapshot, isConnected: store.hasSession),
+            profileID: profile.id.uuidString), previewFamily: size.family)
+        widget.padding(16)
+            .frame(width: size.dimensions.width, height: size.dimensions.height)
+            .background(widget.background)
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+            .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(.primary.opacity(0.08)))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(store.text("profile.preview") + ": " + store.text(size.titleKey))
     }
 }
 
@@ -682,7 +615,7 @@ private struct ProfileEditor: View {
                         Text(store.text("density.comfortable")).tag(WidgetDensity.comfortable)
                         Text(store.text("density.compact")).tag(WidgetDensity.compact)
                     }
-                    if profile.contentMode.includesMetrics {
+                    Group {
                         Divider()
                         Picker(store.text("profile.previewSize"), selection: $previewSize) {
                             ForEach(ProfilePreviewSize.allCases) { size in
@@ -692,13 +625,11 @@ private struct ProfileEditor: View {
                         ProfileWidgetPreview(store: store, profile: profile, size: previewSize)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 6)
-                        let visibleCount = 1 + min(profile.metricIDs.filter { $0 != profile.primaryMetric }.count,
-                                                   previewSize.secondaryLimit(density: profile.density))
-                        Text(String(format: store.text("profile.previewCount"), visibleCount, profile.metricIDs.count))
-                            .font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if profile.contentMode.includesTraining {
-                            Text(store.text("profile.previewMetricsOnly")).font(.caption).foregroundStyle(.secondary)
+                        if profile.contentMode == .metrics {
+                            let visibleCount = 1 + min(profile.metricIDs.filter { $0 != profile.primaryMetric }.count,
+                                                       previewSize.secondaryLimit(density: profile.density))
+                            Text(String(format: store.text("profile.previewCount"), visibleCount, profile.metricIDs.count))
+                                .font(.caption).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -881,8 +812,8 @@ private struct GeneralPane: View {
                 ErrorNotice(store: store)
                 VStack(alignment: .leading, spacing: 12) {
                     Picker(store.text("general.refresh"), selection: $store.preferences.refreshMinutes) {
-                        ForEach([5, 15, 30, 60], id: \.self) { minutes in
-                            Text(store.text("general.minutes\(minutes)")).tag(minutes)
+                        ForEach(Array(Set([5, 15, 30, 60, store.preferences.refreshMinutes])).sorted(), id: \.self) { minutes in
+                            Text("\(minutes) \(store.text("unit.minutes"))").tag(minutes)
                         }
                     }
                     Text(store.text("general.refreshHint")).font(.caption).foregroundStyle(.secondary)
