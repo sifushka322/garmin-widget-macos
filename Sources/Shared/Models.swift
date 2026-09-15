@@ -102,16 +102,27 @@ enum MetricCategory: String, CaseIterable, Identifiable {
 
 enum MetricUnit: Equatable { case number, score, percent, minutes, km, kg, ml, bpm, kcal, ms, breaths, vo2 }
 
+/// Records remain meaningful with their date; progress values depend on recent sync.
+enum MetricTimeScope { case progress, nightlyRecord, dailyRecord, measurement }
+
 struct MetricDefinition: Identifiable {
     let id: String
     let symbol: String
     let unit: MetricUnit
     let category: MetricCategory
+    var timeScope: MetricTimeScope {
+        if category == .sleep || ["hrv", "respiration"].contains(id) { return .nightlyRecord }
+        if ["restingHeartRate", "spo2", "trainingLoad", "stepGoal"].contains(id) { return .dailyRecord }
+        if ["weight", "vo2Max"].contains(id) { return .measurement }
+        return .progress
+    }
+    var isTimeSensitive: Bool { timeScope == .progress }
+    static func isSupported(_ id: String) -> Bool { catalog.contains { $0.id == id } }
     var titleKey: String { "metric." + id }
     var widgetTitleKey: String {
         switch id {
         case "sleepDuration", "stress", "restingHeartRate", "trainingReadiness", "hrv", "respiration",
-             "intensityMinutes", "activeCalories", "recoveryTime", "trainingLoad", "vo2Max", "calories":
+             "intensityMinutes", "activeCalories", "recoveryTime", "trainingLoad", "vo2Max", "calories", "spo2":
             return "metric.short." + id
         default: return titleKey
         }
@@ -121,7 +132,6 @@ struct MetricDefinition: Identifiable {
         .init(id: "bodyBattery", symbol: "battery.75percent", unit: .score, category: .health),
         .init(id: "stress", symbol: "waveform.path.ecg", unit: .score, category: .health),
         .init(id: "restingHeartRate", symbol: "heart", unit: .bpm, category: .health),
-        .init(id: "heartRate", symbol: "heart.fill", unit: .bpm, category: .health),
         .init(id: "hrv", symbol: "waveform.path", unit: .ms, category: .health),
         .init(id: "spo2", symbol: "drop", unit: .percent, category: .health),
         .init(id: "respiration", symbol: "lungs", unit: .breaths, category: .health),

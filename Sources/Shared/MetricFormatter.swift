@@ -6,7 +6,7 @@ struct MetricFormatter {
 
     func text(_ key: String) -> String { Localizer.text(key, language: language) }
     func value(_ id: String) -> Double? {
-        guard let value = snapshot.visibleReading(id)?.value, value.isFinite, value >= 0 else { return nil }
+        guard MetricDefinition.isSupported(id), let value = snapshot.visibleReading(id)?.value, value.isFinite, value >= 0 else { return nil }
         return value
     }
 
@@ -40,6 +40,31 @@ struct MetricFormatter {
             default: return digits
             }
             return digits + " " + text("unit." + key)
+        }
+    }
+
+    /// Explain the period of a completed record, without treating a finished
+    /// night's sleep or a past weigh-in as a failing live sensor.
+    func context(_ id: String) -> String? {
+        guard value(id) != nil else { return nil }
+        let scope = MetricDefinition.find(id).timeScope
+        let retained = snapshot.retainedMetrics[id]
+        let day = retained?.sourceDate ?? snapshot.sourceDate
+        guard let date = TrainingPresentation(language: language).dayText(day) else { return nil }
+        switch scope {
+        case .nightlyRecord: return text("data.nightEnding") + " " + date
+        case .dailyRecord: return text("data.day") + " " + date
+        case .measurement:
+            if let measured = snapshot.visibleReading(id)?.measuredAt {
+                let formatter = DateFormatter()
+                formatter.locale = language.locale
+                formatter.dateStyle = .medium
+                formatter.timeStyle = .none
+                return text("data.measured") + " " + formatter.string(from: measured)
+            }
+            return text("data.received") + " " + date
+        case .progress:
+            return retained == nil ? nil : text("data.previous") + " · " + date
         }
     }
 

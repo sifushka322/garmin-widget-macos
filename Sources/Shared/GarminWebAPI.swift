@@ -66,7 +66,6 @@ enum GarminWebAPI {
         for id in metricIDs {
             switch id {
             case "steps", "stepGoal", "distance", "calories", "activeCalories", "floors", "intensityMinutes", "restingHeartRate", "stress": groups.insert(.stats)
-            case "heartRate": groups.insert(.heart)
             case "bodyBattery": groups.insert(.bodyBattery)
             case "sleepDuration", "sleepScore", "deepSleep", "lightSleep", "remSleep", "awakeSleep": groups.insert(.sleep)
             case "hrv": groups.insert(.hrv)

@@ -1,13 +1,22 @@
 import Foundation
 
 extension GarminSnapshot {
-    var hasMeasurements: Bool { !metrics.isEmpty || !retainedMetrics.isEmpty }
+    var hasMeasurements: Bool {
+        Set(metrics.keys).union(retainedMetrics.keys).contains { MetricDefinition.isSupported($0) }
+    }
+
+    var hasRetainedTimeSensitiveMetrics: Bool {
+        retainedMetrics.keys.contains { MetricDefinition.isSupported($0) && MetricDefinition.find($0).isTimeSensitive }
+    }
 
     func visibleReading(_ id: String) -> MetricReading? { metrics[id] ?? retainedMetrics[id]?.reading }
 
     var hasUnchangedMeasurements: Bool {
-        guard hasMeasurements, let checked = groupUpdatedAt.values.max(),
-              let changed = (Array(metricChangedAt.values) + retainedMetrics.values.map(\.changedAt)).max() else { return false }
+        let ids = Set(metrics.keys).union(retainedMetrics.keys).filter {
+            MetricDefinition.isSupported($0) && MetricDefinition.find($0).isTimeSensitive
+        }
+        guard let checked = ids.compactMap({ metricUpdatedAt($0) }).max(),
+              let changed = ids.compactMap({ metricChangedAt[$0] ?? retainedMetrics[$0]?.changedAt }).max() else { return false }
         return checked > changed
     }
 
@@ -22,7 +31,8 @@ extension GarminSnapshot {
 
     func metricIsStale(_ id: String, at now: Date, timeZone: TimeZone = .autoupdatingCurrent,
                        staleInterval: TimeInterval) -> Bool {
-        guard !isDemo, let updated = metricUpdatedAt(id) else { return false }
+        guard !isDemo, MetricDefinition.isSupported(id), MetricDefinition.find(id).isTimeSensitive,
+              let updated = metricUpdatedAt(id) else { return false }
         return retainedMetrics[id] != nil || sourceDate != SyncPolicy.sourceDay(for: now, timeZone: timeZone)
             || now.timeIntervalSince(updated) > staleInterval
     }

@@ -24,7 +24,7 @@ The owner's Mac is used only to read/edit source, inspect the Git diff and revie
 
 - Reviewed window/sidebar navigation, keyboard shortcuts, profile editing and selection, destructive confirmations, shared colors, number formatting, training layouts, loading/errors, empty/partial/disconnected states and widget links.
 - Production widget content is now the single implementation for both the editor and extension. Small/medium mixed mode follows the actual training layout; large mixed mode includes the primary metric.
-- Visual fixtures cover four app sections × RU/EN × light/dark × 780×620 and 1100×800 windows, plus six dashboard data states in both languages/themes; widget families, both densities, long labels/units, training and missing/stale/disconnected/retained readings.
+- Visual fixtures cover four app sections × RU/EN × light/dark × 780×620 and 1100×800 windows, plus seven dashboard data states in both languages/themes; widget families, both densities, long labels/units, training and missing/stale/disconnected/retained readings, completed nightly records and a legacy persisted demo snapshot.
 - PNG generation is a smoke check and review artifact, not proof that text never clips or that VoiceOver/keyboard navigation works. Record visual inspection separately from rendering success.
 
 ### Visual hierarchy refinement
@@ -38,6 +38,12 @@ The follow-up requirement supersedes the older empty-day presentation: absence f
 Repeated successful checks preserve each unchanged reading's `metricChangedAt`. A successful HTTP response is presented as a check, not evidence of a newly uploaded watch measurement. The app distinguishes initial connection, waiting for first readings, retained values, unchanged values, active checking and network failure. Guidance to sync the watch on the phone is an action the user can try; the app does not claim to know whether Bluetooth, distance or the phone caused a delay.
 
 The visual audit also found transparency in the widget gradient and off-screen app captures. The shared widget background now has an opaque system-color base with a subtle tint overlay, and the root window has an explicit system background. CI lets native controls settle before capturing.
+
+## Metric time semantics
+
+Instant pulse is removed from the catalog, profile migration, display formatter and requested endpoint groups. Existing profiles select a supported metric instead. The legacy parser still accepts historical payload shapes for compatibility; these readings cannot be selected or formatted in the product.
+
+Completed sleep, nightly HRV/respiration, daily resting heart rate/SpO₂ and individual weight/VO₂ max records stay meaningful with their date. Their age alone does not trigger a stale-sensor warning or a request to sync a phone. Progress values such as steps and Body Battery retain sync-age handling. Stable records always show their period or measurement date; when the source supplies no actual measurement time, the UI labels the retrieval date instead. SpO₂ labels explicitly identify the daily average. Tests cover migration, hidden legacy readings, dates, unchanged records and delayed progress values.
 
 ## Reviewed boundaries
 

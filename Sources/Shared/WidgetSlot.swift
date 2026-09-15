@@ -29,7 +29,7 @@ enum WidgetSlot: String, CaseIterable, Identifiable {
         profile.name = Localizer.text(titleKey, language: language)
         switch self {
         case .overview:
-            profile.metricIDs = ["bodyBattery", "steps", "stress", "heartRate", "hydration", "intensityMinutes"]
+            profile.metricIDs = ["bodyBattery", "steps", "stress", "restingHeartRate", "hydration", "intensityMinutes"]
             profile.style = .calm
         case .sport:
             profile.metricIDs = ["trainingReadiness", "recoveryTime", "trainingLoad", "vo2Max", "hrv", "bodyBattery"]

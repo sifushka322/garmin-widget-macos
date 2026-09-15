@@ -51,6 +51,20 @@ struct RenderWidgets {
             try render(detailed, name: "metrics-\(language.rawValue)-large-detailed",
                        family: .systemLarge, size: families[2].2, now: now, output: output)
         }
+        for language in [AppLanguage.ru, .en] {
+            var completed = WidgetData.preview
+            completed.isConnected = true; completed.snapshot.isDemo = false
+            completed.preferences.language = language
+            completed.preferences.profiles[0].primaryMetric = "sleepDuration"
+            completed.preferences.profiles[0].metricIDs = ["sleepDuration", "sleepScore", "hrv"]
+            completed.snapshot.retainedMetrics = completed.snapshot.metrics.filter { completed.preferences.profiles[0].metricIDs.contains($0.key) }.mapValues {
+                .init(reading: $0, sourceDate: "2026-09-14", retrievedAt: now.addingTimeInterval(-86400), changedAt: now.addingTimeInterval(-86400))
+            }
+            completed.snapshot.metrics = [:]
+            for (name, family, size) in families {
+                try render(completed, name: "records-\(language.rawValue)-\(name)", family: family, size: size, now: now, output: output)
+            }
+        }
         for slot in WidgetSlot.allCases {
             try render(slot.previewData(language: .ru, at: now), name: "gallery-" + slot.rawValue,
                        family: .systemMedium, size: families[1].2, now: now, output: output)

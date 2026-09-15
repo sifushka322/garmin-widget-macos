@@ -28,9 +28,9 @@ private struct DataStatusView: View {
         if store.needsWebSignIn { return "status.signInRequired" }
         if ["error.network", "error.timeout", "error.protocol", "error.partial", "error.rate_limit"].contains(store.lastErrorKey ?? "") { return "data.checkFailed" }
         if store.hasSession && !store.snapshot.hasMeasurements { return "data.waiting" }
-        if store.hasSession && !store.snapshot.retainedMetrics.isEmpty { return "data.waitingNew" }
+        if store.hasSession && store.snapshot.hasRetainedTimeSensitiveMetrics { return "data.waitingNew" }
         if store.hasSession && store.snapshot.hasUnchangedMeasurements { return "data.unchanged" }
-        return store.hasSession ? "status.connected" : "status.notConnected"
+        return store.hasSession ? "data.available" : "status.notConnected"
     }
 
     private var statusSymbol: String {
@@ -48,7 +48,7 @@ private struct DataStatusView: View {
         guard store.hasSession else { return nil }
         if !store.snapshot.warnings.isEmpty { return store.text("data.partial") }
         if !store.snapshot.hasMeasurements { return store.text("data.waitingHint") }
-        if !store.snapshot.retainedMetrics.isEmpty {
+        if store.snapshot.hasRetainedTimeSensitiveMetrics {
             return store.text(store.snapshot.metrics.isEmpty ? "data.retainedAllHint" : "data.retainedHint")
         }
         if store.snapshot.hasUnchangedMeasurements { return store.text("data.unchangedHint") }
@@ -171,9 +171,8 @@ private struct MainMetricView: View {
                     .tint(accent)
                     .accessibilityLabel(store.text(definition.titleKey))
             }
-            if let retained = store.snapshot.retainedMetrics[metricID] {
-                Label(store.text("data.previous") + " · " + (TrainingPresentation(language: store.preferences.language).dayText(retained.sourceDate) ?? retained.sourceDate),
-                      systemImage: "clock")
+            if let context = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language).context(metricID) {
+                Label(context, systemImage: "clock")
                     .font(.caption).foregroundStyle(.secondary)
             } else if store.metricIsStale(metricID) {
                 Label(store.text("data.stale"), systemImage: "clock.badge.exclamationmark")
@@ -212,8 +211,8 @@ private struct SmallMetricView: View {
             Text(store.displayValue(metricID))
                 .font(.system(size: compact ? 20 : 24, weight: .semibold, design: .rounded))
                 .monospacedDigit().lineLimit(1).minimumScaleFactor(0.55)
-            if let retained = store.snapshot.retainedMetrics[metricID] {
-                Text(store.text("data.previous") + " · " + (TrainingPresentation(language: store.preferences.language).dayText(retained.sourceDate) ?? retained.sourceDate))
+            if let context = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language).context(metricID) {
+                Text(context)
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }

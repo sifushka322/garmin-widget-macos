@@ -115,8 +115,7 @@ final class AppStore: ObservableObject {
     var isStale: Bool {
         guard !snapshot.isDemo, snapshot.fetchedAt != .distantPast else { return false }
         let now = syncMoment().wallTime
-        return !snapshot.retainedMetrics.isEmpty || snapshot.metrics.keys.contains { metricIsStale($0, at: now) }
-            || now.timeIntervalSince(snapshot.fetchedAt) > preferences.staleInterval
+        return Set(snapshot.metrics.keys).union(snapshot.retainedMetrics.keys).contains { metricIsStale($0, at: now) }
     }
 
     func metricIsStale(_ id: String, at now: Date? = nil) -> Bool {

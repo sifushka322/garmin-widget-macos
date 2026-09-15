@@ -221,8 +221,8 @@ struct GarminWidgetView: View {
                 .font(.system(size: compact ? 31 : 30, weight: .semibold, design: .rounded))
                 .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5).foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true).layoutPriority(1)
-            if data.snapshot.retainedMetrics[id] != nil {
-                Label(text("data.previous"), systemImage: "clock")
+            if let context = formatter.context(id) {
+                Label(context, systemImage: "clock")
                     .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
             }
             if let progress = formatter.progress(id) {
@@ -233,7 +233,7 @@ struct GarminWidgetView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(text(MetricDefinition.find(id).titleKey) + ": " + formatter.display(id))
+        .accessibilityLabel(([text(MetricDefinition.find(id).titleKey) + ": " + formatter.display(id)] + [formatter.context(id)].compactMap { $0 }).joined(separator: ", "))
     }
 
     private func metricRow(_ id: String) -> some View {
@@ -246,7 +246,7 @@ struct GarminWidgetView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(text(MetricDefinition.find(id).titleKey) + ": " + formatter.display(id))
+        .accessibilityLabel(([text(MetricDefinition.find(id).titleKey) + ": " + formatter.display(id)] + [formatter.context(id)].compactMap { $0 }).joined(separator: ", "))
     }
 
     private func compactMetricRow(_ id: String) -> some View {
@@ -259,7 +259,7 @@ struct GarminWidgetView: View {
         }
         .lineLimit(1).minimumScaleFactor(0.75).frame(minHeight: 21)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(text(MetricDefinition.find(id).titleKey) + ": " + formatter.display(id))
+        .accessibilityLabel(([text(MetricDefinition.find(id).titleKey) + ": " + formatter.display(id)] + [formatter.context(id)].compactMap { $0 }).joined(separator: ", "))
     }
 
     private var footer: some View {
@@ -271,7 +271,7 @@ struct GarminWidgetView: View {
                 Image(systemName: "clock")
                 Text(text("data.day") + " " + (training.dayText(day) ?? day))
             } else if let refreshedAt {
-                let stale = entry.date.timeIntervalSince(refreshedAt) > data.preferences.staleInterval
+                let stale = (profile?.contentMode.includesTraining == true && entry.date.timeIntervalSince(refreshedAt) > data.preferences.staleInterval)
                     || visibleMetricIDs.contains { data.snapshot.metricIsStale($0, at: entry.date, staleInterval: data.preferences.staleInterval) }
                 Image(systemName: stale ? "clock.badge.exclamationmark" : "arrow.triangle.2.circlepath")
                 Text(text("data.updated"))

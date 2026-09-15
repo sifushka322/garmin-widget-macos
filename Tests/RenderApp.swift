@@ -48,7 +48,8 @@ import SwiftUI
         for language in [AppLanguage.ru, .en] {
             store.preferences.language = language
             for dark in [false, true] {
-                for state in ["waiting", "retained", "unchanged", "network", "checking", "fresh"] {
+                for state in ["waiting", "retained", "unchanged", "network", "checking", "fresh", "stable-records"] {
+                    store.preferences.profiles = [WidgetProfile()]
                     store.hasSession = true
                     store.isSyncing = state == "checking"
                     store.lastErrorKey = state == "network" ? "error.network" : nil
@@ -69,6 +70,15 @@ import SwiftUI
                         snapshot.metrics = [:]
                         snapshot.metricChangedAt = [:]
                     }
+                    if state == "stable-records" {
+                        store.preferences.profiles[0].primaryMetric = "sleepDuration"
+                        store.preferences.profiles[0].metricIDs = ["sleepDuration", "sleepScore", "hrv", "respiration", "restingHeartRate"]
+                        let old = now.addingTimeInterval(-86400)
+                        snapshot.retainedMetrics = snapshot.metrics.filter { store.preferences.profiles[0].metricIDs.contains($0.key) }.mapValues {
+                            .init(reading: $0, sourceDate: SyncPolicy.sourceDay(for: old, timeZone: .current), retrievedAt: old, changedAt: old)
+                        }
+                        snapshot.metrics = [:]; snapshot.metricChangedAt = [:]
+                    }
                     if state == "network" { snapshot.warnings = ["network.connection"] }
                     store.snapshot = snapshot
                     try render(store, navigation: navigation, dark: dark, size: CGSize(width: 780, height: 760),
@@ -78,7 +88,7 @@ import SwiftUI
         }
         store.isSyncing = false
         store.cancelLogin(resumeAutomatic: false)
-        print("PASS: 56 synthetic app renders; no website or system-widget access")
+        print("PASS: 60 synthetic app renders; no website or system-widget access")
     }
     @MainActor private static func render(_ store: AppStore, navigation: MainWindowNavigation,
                                           dark: Bool, size: CGSize, name: String, output: URL) throws {

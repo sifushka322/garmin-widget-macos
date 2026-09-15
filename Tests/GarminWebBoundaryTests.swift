@@ -20,6 +20,7 @@ struct GarminWebBoundaryTests {
         check(GarminWebAPI.path(group: .stats, sourceDay: "2026-02-30", displayName: "sample") == nil, "Bad source day is rejected")
         let groups = GarminWebAPI.requiredGroups(metricIDs: ["steps", "stress", "restingHeartRate", "calories", "sleepDuration", "sleepScore"])
         check(groups == [.profile, .devices, .stats, .sleep], "Shared metric groups coalesce into four requests instead of one per metric")
+        check(!GarminWebAPI.requiredGroups(metricIDs: ["heartRate"]).contains(.heart), "Instant-pulse data is not requested even for a legacy metric selection")
         check(!groups.contains(.activities) && !groups.contains(.plannedWorkouts), "Training history is fetched only when explicitly included")
         for path in ["https://example.com/gc-api/a", "//example.com/gc-api/a", "/app/home", "/gc-api/a#fragment", "/gc-api/../private", "/gc-api/%2e%2e/private", "/gc-api/\\evil"] {
             check(!GarminWebSession.isAllowedAPIPath(path), "API path must stay within read-only Garmin service routes: \(path)")
