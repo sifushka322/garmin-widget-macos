@@ -46,7 +46,8 @@ final class AppStore: ObservableObject {
     init(supportDirectory: URL? = nil, webSession: (any GarminWebTransport)? = nil,
          defaults: UserDefaults = .standard, clock: (() -> SyncPolicy.Moment)? = nil,
          sourceTimeZone: @escaping () -> TimeZone = { .autoupdatingCurrent },
-         automaticScheduling: Bool = true, writesWidgetData: Bool = true) {
+         automaticScheduling: Bool = true, writesWidgetData: Bool = true,
+         initialWidgetSharingAvailable: Bool = false) {
         self.supportDirectory = supportDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("GarminDesk", isDirectory: true)
         self.webSession = webSession ?? GarminWebSession()
         self.defaults = defaults
@@ -54,6 +55,7 @@ final class AppStore: ObservableObject {
         self.sourceTimeZone = sourceTimeZone
         self.automaticScheduling = automaticScheduling
         self.writesWidgetData = writesWidgetData
+        self.widgetSharingAvailable = initialWidgetSharingAvailable
         let supportDirectory = self.supportDirectory
         let prefsURL = supportDirectory.appendingPathComponent("preferences.json")
         preferences = (try? Data(contentsOf: prefsURL)).flatMap { try? AppJSON.decoder.decode(AppPreferences.self, from: $0) } ?? AppPreferences()

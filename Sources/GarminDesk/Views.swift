@@ -26,6 +26,7 @@ private struct DataStatusView: View {
     private var statusKey: String {
         if store.isSyncing { return store.hasSession ? "data.syncing" : "status.connecting" }
         if store.needsWebSignIn { return "status.signInRequired" }
+        if ["error.network", "error.timeout", "error.protocol", "error.partial", "error.rate_limit"].contains(store.lastErrorKey ?? "") { return "data.checkFailed" }
         if store.hasSession && !store.snapshot.hasMeasurements { return "data.waiting" }
         if store.hasSession && !store.snapshot.retainedMetrics.isEmpty { return "data.waitingNew" }
         if store.hasSession && store.snapshot.hasUnchangedMeasurements { return "data.unchanged" }
@@ -74,8 +75,14 @@ private struct DataStatusView: View {
             }
             if !compact, store.hasSession, !store.isSyncing,
                (!store.snapshot.retainedMetrics.isEmpty || !store.snapshot.hasMeasurements), store.snapshot.warnings.isEmpty {
-                Text(store.text(store.snapshot.hasMeasurements ? "data.retainedHint" : "data.waitingHint"))
+                Text(store.text(!store.snapshot.hasMeasurements ? "data.waitingHint"
+                    : (store.snapshot.metrics.isEmpty ? "data.retainedAllHint" : "data.retainedHint")))
                     .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !compact, store.hasSession, !store.isSyncing, store.lastErrorKey == nil,
+               store.snapshot.retainedMetrics.isEmpty, store.snapshot.hasUnchangedMeasurements {
+                Text(store.text("data.unchangedHint")).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !store.snapshot.warnings.isEmpty {
@@ -332,7 +339,7 @@ private struct WidgetSharingNotice: View {
     @ObservedObject var store: AppStore
 
     var body: some View {
-        if !store.widgetSharingAvailable {
+        if !store.widgetSharingAvailable && (store.hasSession || store.snapshot.hasMeasurements) {
             Label(store.text(WidgetDataStore.configurationAvailable ? "widget.sharingDataUnavailable" : "widget.sharingUnavailable"), systemImage: "exclamationmark.triangle")
                 .font(.caption).foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)

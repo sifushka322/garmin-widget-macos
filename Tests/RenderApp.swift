@@ -29,7 +29,7 @@ import SwiftUI
         let defaults = UserDefaults(suiteName: domain)!
         defer { defaults.removePersistentDomain(forName: domain); try? FileManager.default.removeItem(at: directory) }
         let store = AppStore(supportDirectory: directory, webSession: PreviewTransport(), defaults: defaults,
-                             automaticScheduling: false, writesWidgetData: false)
+                             automaticScheduling: false, writesWidgetData: false, initialWidgetSharingAvailable: true)
         let navigation = MainWindowNavigation()
         for language in [AppLanguage.ru, .en] {
             store.preferences.language = language

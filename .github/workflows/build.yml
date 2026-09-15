@@ -9,7 +9,9 @@ on:
         default: false
   push:
     branches: [main, master]
+    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
 
 permissions:
   contents: read
