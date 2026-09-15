@@ -292,7 +292,7 @@ struct DashboardView: View {
                                 Label(store.text("dashboard.connect"), systemImage: "link")
                                     .padding(.horizontal, 8)
                             }.buttonStyle(.borderedProminent).controlSize(.large).disabled(store.isSyncing)
-                            Label(store.text("data.local"), systemImage: "lock")
+                            Label(store.text("onboarding.privacy"), systemImage: "lock")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading).padding(28)

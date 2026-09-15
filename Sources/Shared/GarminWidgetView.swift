@@ -53,7 +53,7 @@ struct GarminWidgetView: View {
         Group {
             if entry.data == nil {
                 emptyState(symbol: "rectangle.grid.2x2", title: text("widget.openApp"), message: text("widget.openAppHint"))
-            } else if !data.isConnected && !data.snapshot.hasMeasurements {
+            } else if data.snapshot.isDemo || (!data.isConnected && !data.snapshot.hasMeasurements) {
                 emptyState(symbol: "applewatch", title: text("dashboard.connect"), message: text("widget.connect"))
             } else if let profile {
                 if !data.snapshot.hasMeasurements && !profile.contentMode.includesTraining {

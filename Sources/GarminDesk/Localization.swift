@@ -8,6 +8,7 @@ enum Localizer {
 
     private static let english: [String: String] = [
         "onboarding.title": "Your Garmin data, on your Mac",
+        "onboarding.privacy": "Your readings are stored on this Mac",
         "onboarding.detail": "Connect your Garmin account to see your measurements here and in desktop widgets.",
         "data.waiting": "Waiting for your watch data",
         "data.waitingNew": "Waiting for new measurements",
@@ -137,6 +138,7 @@ enum Localizer {
 
     private static let russian: [String: String] = [
         "onboarding.title": "Твои данные Garmin — на Mac",
+        "onboarding.privacy": "Показатели сохраняются на этом Mac",
         "onboarding.detail": "Подключи аккаунт Garmin, чтобы видеть свои показатели здесь и в виджетах рабочего стола.",
         "data.waiting": "Ждём данные с часов",
         "data.waitingNew": "Ждём новые измерения",

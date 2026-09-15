@@ -26,6 +26,10 @@ struct RenderWidgets {
             }
         }
         let now = Date(timeIntervalSince1970: 1_789_473_600)
+        // An extension can read the previous version's demo cache before the host
+        // app has launched and replaced it. Render this exact upgrade state.
+        try render(WidgetData.preview, name: "states-legacy-demo-cache", family: .systemMedium,
+                   size: families[1].2, now: now, output: output, preserveDemo: true)
         // Medium rows must keep a complete numeric line in both densities;
         // long units and sleep duration exercise different horizontal proposals.
         for language in [AppLanguage.ru, .en] {
@@ -120,9 +124,9 @@ struct RenderWidgets {
 
     }
     @MainActor private static func render(_ data: WidgetData, name: String, family: WidgetFamily, size: CGSize,
-                                          now: Date, output: URL) throws {
+                                          now: Date, output: URL, preserveDemo: Bool = false) throws {
         var data = data
-        if data.snapshot.isDemo { data.snapshot.isDemo = false; data.isConnected = true }
+        if data.snapshot.isDemo && !preserveDemo { data.snapshot.isDemo = false; data.isConnected = true }
         for dark in [false, true] {
             let widget = GarminWidgetView(entry: GarminEntry(date: now, data: data, profileID: data.preferences.profiles.first?.id.uuidString), previewFamily: family)
             let view = widget
