@@ -34,34 +34,69 @@ import SwiftUI
         for language in [AppLanguage.ru, .en] {
             store.preferences.language = language
             for dark in [false, true] {
-                let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)!
                 for size in [CGSize(width: 780, height: 620), CGSize(width: 1100, height: 800)] {
                     for section in MainWindowSection.allCases {
                         navigation.section = section
-                        let view = MainWindowView(store: store, navigation: navigation)
-                            .environment(\.colorScheme, dark ? .dark : .light)
-                        let host = NSHostingView(rootView: view)
-                        let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
-                        window.isReleasedWhenClosed = false
-                        window.appearance = appearance
-                        window.contentView = host
-                        host.frame = CGRect(origin: .zero, size: size)
-                        // Let AppKit-backed pickers and SwiftUI drawing settle in
-                        // the runner's off-screen window before taking the bitmap.
-                        window.displayIfNeeded()
-                        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-                        host.layoutSubtreeIfNeeded()
-                        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { fatalError("No bitmap") }
-                        host.cacheDisplay(in: host.bounds, to: bitmap)
-                        guard let bytes = bitmap.representation(using: .png, properties: [:]) else { fatalError("No PNG") }
-                        let name = "\(section.rawValue)-\(language.rawValue)-\(dark ? "dark" : "light")-\(Int(size.width)).png"
-                        try bytes.write(to: output.appendingPathComponent(name))
-                        window.close()
+                        try render(store, navigation: navigation, dark: dark, size: size,
+                                   name: "\(section.rawValue)-\(language.rawValue)-\(dark ? "dark" : "light")-\(Int(size.width))", output: output)
                     }
                 }
             }
         }
+        let now = Date()
+        navigation.section = .dashboard
+        for language in [AppLanguage.ru, .en] {
+            store.preferences.language = language
+            for dark in [false, true] {
+                for state in ["waiting", "retained", "unchanged", "network", "checking", "fresh"] {
+                    store.hasSession = true
+                    store.isSyncing = state == "checking"
+                    store.lastErrorKey = state == "network" ? "error.network" : nil
+                    var snapshot = GarminSnapshot.empty
+                    if state != "waiting" {
+                        snapshot = .demo // Synthetic fixtures only; never a runtime source.
+                        snapshot.isDemo = false
+                        snapshot.sourceDate = SyncPolicy.sourceDay(for: now, timeZone: .current)
+                        snapshot.fetchedAt = now
+                        snapshot.groupUpdatedAt = ["stats": now, "body_battery": now, "sleep": now]
+                        snapshot.metricChangedAt = snapshot.metrics.mapValues { _ in now.addingTimeInterval(state == "unchanged" ? -7200 : 0) }
+                    }
+                    if state == "retained" || state == "network" {
+                        let old = now.addingTimeInterval(-86400)
+                        snapshot.retainedMetrics = snapshot.metrics.mapValues {
+                            RetainedMetricReading(reading: $0, sourceDate: SyncPolicy.sourceDay(for: old, timeZone: .current), retrievedAt: old, changedAt: old)
+                        }
+                        snapshot.metrics = [:]
+                        snapshot.metricChangedAt = [:]
+                    }
+                    store.snapshot = snapshot
+                    try render(store, navigation: navigation, dark: dark, size: CGSize(width: 780, height: 760),
+                               name: "state-\(state)-\(language.rawValue)-\(dark ? "dark" : "light")", output: output)
+                }
+            }
+        }
+        store.isSyncing = false
         store.cancelLogin(resumeAutomatic: false)
-        print("PASS: 32 synthetic app renders; no website or system-widget access")
+        print("PASS: 56 synthetic app renders; no website or system-widget access")
     }
+    @MainActor private static func render(_ store: AppStore, navigation: MainWindowNavigation,
+                                          dark: Bool, size: CGSize, name: String, output: URL) throws {
+        let view = MainWindowView(store: store, navigation: navigation)
+            .environment(\.colorScheme, dark ? .dark : .light)
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)!
+        window.contentView = host
+        host.frame = CGRect(origin: .zero, size: size)
+        window.displayIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        host.layoutSubtreeIfNeeded()
+        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { fatalError("No bitmap") }
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        guard let bytes = bitmap.representation(using: .png, properties: [:]) else { fatalError("No PNG") }
+        try bytes.write(to: output.appendingPathComponent(name + ".png"))
+        window.close()
+    }
+
 }

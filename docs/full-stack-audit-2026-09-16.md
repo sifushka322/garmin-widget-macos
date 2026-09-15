@@ -15,7 +15,7 @@ The owner's Mac is used only to read/edit source and inspect the Git diff. No ap
 | P2 | Stored metric/profile IDs bypass editor validation. Duplicate IDs reach SwiftUI `ForEach`; unknown or absent primary metrics produce inconsistent labels and selections. | Normalize decoded metric lists and primary selection; remove duplicate profile identities and recover an empty profile collection. Reuse the same sanitizer in the editor. |
 | P2 | A successful endpoint advances the overall retrieval timestamp while another reading remains old. The widget previously considered only the primary metric. | Per-group metric freshness in the app, visible stale markers, local-day rollover handling, and the oldest retrieval among all visible widget metrics. Tests distinguish fresh steps from old sleep. |
 | P2 | Mixed-mode previews show metric cards, but actual small/medium widgets show training. Training-only profiles have no preview. | Move the production widget view into Shared and render it in the editor for all content modes and sizes. Preserve readable child accessibility elements. |
-| P2 | A connected installation with a missing/corrupt snapshot initializes with demo health readings. | Connected installations initialize with an empty real snapshot; disconnected onboarding retains explicitly marked demo data. Host regression added. |
+| P2 | A connected installation with a missing/corrupt snapshot initializes with demo health readings. | All installations initialize without invented readings. First launch and widget gallery offer connection/setup; disconnect returns to an empty state. No demo action remains in the app. Host regressions cover onboarding and cleanup. |
 | P2 | The legacy Python normalizer can throw on arbitrarily large integers or produce infinity after unit conversion. Strict JSON serialization then fails. | Reject unrepresentable numbers and non-finite converted results. Dedicated Python regression checks both cases. |
 | P2 | Existing CI executes only two native suites and no JavaScript/Python contracts or visual fixtures. | Run all seven native suites, JavaScript stream checks, Python tests, synthetic rendering, sandbox isolation, signature/dependency checks and packaging on hosted runners. |
 | P3 | A stored supported custom interval is absent from the refresh picker's tags. | Include the current interval and format it with localized minute units. |
@@ -24,8 +24,16 @@ The owner's Mac is used only to read/edit source and inspect the Git diff. No ap
 
 - Reviewed window/sidebar navigation, keyboard shortcuts, profile editing and selection, destructive confirmations, shared colors, number formatting, training layouts, loading/errors, empty/partial/disconnected states and widget links.
 - Production widget content is now the single implementation for both the editor and extension. Small/medium mixed mode follows the actual training layout; large mixed mode includes the primary metric.
-- Visual fixtures cover four app sections × RU/EN × light/dark × 780×620 and 1100×800 windows, plus widget families, both densities, long labels/units, training and missing/stale/disconnected readings.
+- Visual fixtures cover four app sections × RU/EN × light/dark × 780×620 and 1100×800 windows, plus six dashboard data states in both languages/themes; widget families, both densities, long labels/units, training and missing/stale/disconnected/retained readings.
 - PNG generation is a smoke check and review artifact, not proof that text never clips or that VoiceOver/keyboard navigation works. Record visual inspection separately from rendering success.
+
+## User-facing data availability
+
+The follow-up requirement supersedes the older empty-day presentation: absence from today's response must not erase a useful last reading. Current `metrics` remain strictly day-scoped; `retainedMetrics` stores prior real readings with their original day, retrieval time and last-change time. The formatter may display those retained values, while cards and widget footers identify them as last available data. Real zero values replace saved readings normally. Disconnect/account changes clear both collections. No demo value can enter this fallback.
+
+Repeated successful checks preserve each unchanged reading's `metricChangedAt`. A successful HTTP response is presented as a check, not evidence of a newly uploaded watch measurement. The app distinguishes initial connection, waiting for first readings, retained values, unchanged values, active checking and network failure. Guidance to sync the watch on the phone is an action the user can try; the app does not claim to know whether Bluetooth, distance or the phone caused a delay.
+
+The visual audit also found transparency in the widget gradient and off-screen app captures. The shared widget background now has an opaque system-color base with a subtle tint overlay, and the root window has an explicit system background. CI lets native controls settle before capturing.
 
 ## Reviewed boundaries
 

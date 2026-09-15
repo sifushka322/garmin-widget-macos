@@ -16,16 +16,12 @@ enum WidgetSlot: String, CaseIterable, Identifiable {
 
     var previewData: WidgetData { previewData(language: .system) }
 
-    /// Gallery samples are generated independently of the saved account and its
-    /// assignments. Training examples only enter this explicitly marked demo data.
+    /// Gallery/setup previews never invent health readings or workout records.
     func previewData(language: AppLanguage, at date: Date = Date()) -> WidgetData {
         var data = WidgetData.preview
         data.preferences.language = language
         data.isConnected = false
-        data.snapshot.isDemo = true
-        data.snapshot.fetchedAt = date
-        data.snapshot.sourceDate = SyncPolicy.sourceDay(for: date, timeZone: .current)
-        data.snapshot.trainingTimeline = nil
+        data.snapshot = .empty
         var profile = WidgetProfile()
         profile.density = .compact
         let number = (Self.allCases.firstIndex(of: self) ?? 0) + 1
@@ -44,16 +40,7 @@ enum WidgetSlot: String, CaseIterable, Identifiable {
         case .training:
             profile.contentMode = .training
             profile.style = .calm
-            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: date) ?? date.addingTimeInterval(86400)
-            let end = Calendar.current.date(byAdding: .day, value: 7, to: date) ?? date.addingTimeInterval(7 * 86400)
-            data.snapshot.trainingTimeline = TrainingTimelineSnapshot(fetchedAt: date,
-                past: [PastActivitySummary(id: "demo-easy-run", title: Localizer.text("widget.preview.easyRun", language: language),
-                                           sportKey: "running", startedAt: date.addingTimeInterval(-86400), durationMinutes: 42, distanceKM: 7.2)],
-                upcoming: [PlannedWorkoutSummary(occurrenceID: "demo-intervals", localDate: SyncPolicy.sourceDay(for: tomorrow, timeZone: .current),
-                    title: Localizer.text("widget.preview.intervals", language: language), sportKey: "running", durationMinutes: 45)],
-                futureCoverageEnd: SyncPolicy.sourceDay(for: end, timeZone: .current),
-                pastCoverage: .recentActivities, futureCoverage: .publishedCalendar,
-                pastUpdatedAt: date, futureUpdatedAt: date)
+
         }
         profile.primaryMetric = profile.metricIDs[0]
         data.preferences.profiles = [profile]

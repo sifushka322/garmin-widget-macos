@@ -26,13 +26,15 @@ private struct DataStatusView: View {
     private var statusKey: String {
         if store.isSyncing { return store.hasSession ? "data.syncing" : "status.connecting" }
         if store.needsWebSignIn { return "status.signInRequired" }
-        if store.snapshot.isDemo { return "data.demo" }
+        if store.hasSession && !store.snapshot.hasMeasurements { return "data.waiting" }
+        if store.hasSession && !store.snapshot.retainedMetrics.isEmpty { return "data.waitingNew" }
+        if store.hasSession && store.snapshot.hasUnchangedMeasurements { return "data.unchanged" }
         return store.hasSession ? "status.connected" : "status.notConnected"
     }
 
     private var statusSymbol: String {
         if store.needsWebSignIn { return "person.crop.circle.badge.exclamationmark" }
-        if store.snapshot.isDemo { return "sparkles" }
+        if !store.snapshot.hasMeasurements { return "clock" }
         if !store.hasSession { return "link.badge.plus" }
         return store.isStale ? "clock.badge.exclamationmark" : "checkmark.circle.fill"
     }
@@ -60,19 +62,19 @@ private struct DataStatusView: View {
                 }
             }
             .font(.caption.weight(.medium))
-            .foregroundStyle(store.snapshot.isDemo || store.needsWebSignIn ? Color.orange : .secondary)
+            .foregroundStyle(store.needsWebSignIn ? Color.orange : .secondary)
             if !store.snapshot.isDemo && store.snapshot.fetchedAt != .distantPast {
                 Text(store.updatedText)
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if !compact, let sourceDate {
+            if !compact, !store.snapshot.metrics.isEmpty, let sourceDate {
                 Text("\(store.text("data.day")) \(sourceDate)")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if !compact, store.hasSession, !store.isSyncing, !store.snapshot.isDemo,
-               store.snapshot.metrics.isEmpty, store.snapshot.warnings.isEmpty {
-                Text(store.text("data.emptyDay"))
+            if !compact, store.hasSession, !store.isSyncing,
+               (!store.snapshot.retainedMetrics.isEmpty || !store.snapshot.hasMeasurements), store.snapshot.warnings.isEmpty {
+                Text(store.text(store.snapshot.hasMeasurements ? "data.retainedHint" : "data.waitingHint"))
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -80,7 +82,7 @@ private struct DataStatusView: View {
                 Label(store.text("data.partial"), systemImage: "exclamationmark.circle")
                     .font(.caption).foregroundStyle(.orange)
             }
-            if store.isStale && !store.snapshot.isDemo {
+            if store.isStale && store.snapshot.retainedMetrics.isEmpty {
                 Text(store.text("data.stale")).font(.caption).foregroundStyle(.orange)
             }
         }
@@ -159,7 +161,11 @@ private struct MainMetricView: View {
                     .tint(accent)
                     .accessibilityLabel(store.text(definition.titleKey))
             }
-            if store.metricIsStale(metricID) {
+            if let retained = store.snapshot.retainedMetrics[metricID] {
+                Label(store.text("data.previous") + " · " + (TrainingPresentation(language: store.preferences.language).dayText(retained.sourceDate) ?? retained.sourceDate),
+                      systemImage: "clock")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if store.metricIsStale(metricID) {
                 Label(store.text("data.stale"), systemImage: "clock.badge.exclamationmark")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -196,6 +202,10 @@ private struct SmallMetricView: View {
             Text(store.displayValue(metricID))
                 .font(.system(size: compact ? 20 : 24, weight: .semibold, design: .rounded))
                 .monospacedDigit().lineLimit(1).minimumScaleFactor(0.55)
+            if let retained = store.snapshot.retainedMetrics[metricID] {
+                Text(store.text("data.previous") + " · " + (TrainingPresentation(language: store.preferences.language).dayText(retained.sourceDate) ?? retained.sourceDate))
+                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: compact ? 52 : 65, alignment: .leading)
         .padding(compact ? 10 : 12)
@@ -243,7 +253,7 @@ struct DashboardView: View {
                         NextSyncView(store: store)
                     }
                     ErrorNotice(store: store)
-                    if !store.hasSession {
+                    if !store.hasSession && store.snapshot.hasMeasurements {
                         Button {
                             if store.needsWebSignIn { store.connectGarmin() }
                             else { onConnection() }
@@ -252,7 +262,17 @@ struct DashboardView: View {
                         }
                         .buttonStyle(.borderedProminent).disabled(store.isSyncing)
                     }
-                    if let profile {
+                    if !store.hasSession && !store.snapshot.hasMeasurements {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label(store.text("onboarding.title"), systemImage: "applewatch").font(.title3.weight(.semibold))
+                            Text(store.text("onboarding.detail")).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button { store.connectGarmin() } label: {
+                                Label(store.text("dashboard.connect"), systemImage: "link")
+                            }.buttonStyle(.borderedProminent).controlSize(.large).disabled(store.isSyncing)
+                        }.modifier(Surface())
+                    }
+                    if let profile, store.hasSession || store.snapshot.hasMeasurements {
                         Picker(store.text("dashboard.profile"), selection: Binding(
                             get: { self.profile?.id ?? profile.id },
                             set: { selectedProfileID = $0 }
@@ -262,7 +282,7 @@ struct DashboardView: View {
                             }
                         }
                         .pickerStyle(.menu).frame(maxWidth: 360, alignment: .leading)
-                        if profile.contentMode.includesMetrics {
+                        if profile.contentMode.includesMetrics && store.snapshot.hasMeasurements {
                             MainMetricView(store: store, metricID: profile.primaryMetric, style: profile.style,
                                            compact: profile.density == .compact)
                             let secondary = profile.metricIDs.filter { $0 != profile.primaryMetric }
@@ -764,9 +784,6 @@ private struct ConnectionPane: View {
                         Button(store.text("connection.disconnect"), role: .destructive) { confirmDisconnect = true }
                     }
                 }.modifier(Surface())
-                if !store.hasSession {
-                    Button(store.text("connection.demo")) { store.showDemo() }.disabled(store.isSyncing)
-                }
                 VStack(alignment: .leading, spacing: 10) {
                     Label(store.text("connection.localTitle"), systemImage: "lock.shield").font(.headline)
                     Text(store.text("connection.webPrivacy")).font(.callout).foregroundStyle(.secondary)

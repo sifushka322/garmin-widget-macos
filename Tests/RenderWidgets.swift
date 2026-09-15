@@ -111,11 +111,18 @@ struct RenderWidgets {
             data.snapshot = .empty
             data.isConnected = true
             try render(data, name: "states-\(language.rawValue)-empty", family: .systemMedium, size: families[1].2, now: now, output: output)
+            data.snapshot.retainedMetrics = ["bodyBattery": .init(reading: .init(value: 76), sourceDate: "2026-09-14",
+                retrievedAt: now.addingTimeInterval(-86400), changedAt: now.addingTimeInterval(-86400))]
+            for (name, family, size) in families {
+                try render(data, name: "states-\(language.rawValue)-\(name)-retained", family: family, size: size, now: now, output: output)
+            }
         }
 
     }
     @MainActor private static func render(_ data: WidgetData, name: String, family: WidgetFamily, size: CGSize,
                                           now: Date, output: URL) throws {
+        var data = data
+        if data.snapshot.isDemo { data.snapshot.isDemo = false; data.isConnected = true }
         for dark in [false, true] {
             let widget = GarminWidgetView(entry: GarminEntry(date: now, data: data, profileID: data.preferences.profiles.first?.id.uuidString), previewFamily: family)
             let view = widget

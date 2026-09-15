@@ -171,7 +171,32 @@ struct GarminWebCache: Codable {
             if let training { retained.fetchedAt = max(retained.fetchedAt, training.fetchedAt) }
             return retained
         }
-        return GarminSnapshot(fetchedAt: max(newest, training?.fetchedAt ?? .distantPast), sourceDate: sourceDay, devices: devices, metrics: metrics,
-                              warnings: warnings, groupUpdatedAt: retrievals, trainingTimeline: training)
+        var result = GarminSnapshot(fetchedAt: max(newest, training?.fetchedAt ?? .distantPast), sourceDate: sourceDay, devices: devices, metrics: metrics,
+                                    warnings: warnings, groupUpdatedAt: retrievals, trainingTimeline: training)
+        // A successful empty response means no current reading, not permission
+        // to erase the last real value. Keep its original day and timestamps.
+        var previous = fallback.isDemo ? [:] : fallback.retainedMetrics
+        if !fallback.isDemo {
+            for (id, reading) in fallback.metrics {
+                let retrieved = fallback.metricUpdatedAt(id) ?? fallback.fetchedAt
+                previous[id] = .init(reading: reading, sourceDate: fallback.sourceDate,
+                                     retrievedAt: retrieved, changedAt: fallback.metricChangedAt[id] ?? retrieved)
+            }
+        }
+        // Recover last readings even if the standalone snapshot was lost.
+        for group in groups.values {
+            for (id, reading) in group.metrics where metrics[id] == nil {
+                if previous[id] == nil || group.retrievedAt > previous[id]!.retrievedAt {
+                    previous[id] = .init(reading: reading, sourceDate: group.sourceDay,
+                                         retrievedAt: group.retrievedAt, changedAt: group.retrievedAt)
+                }
+            }
+        }
+        result.retainedMetrics = previous.filter { metrics[$0.key] == nil }
+        for (id, reading) in metrics {
+            let unchanged = previous[id]?.reading == reading && previous[id]?.sourceDate == sourceDay
+            result.metricChangedAt[id] = unchanged ? previous[id]!.changedAt : result.metricUpdatedAt(id)
+        }
+        return result
     }
 }

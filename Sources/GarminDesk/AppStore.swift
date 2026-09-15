@@ -59,7 +59,8 @@ final class AppStore: ObservableObject {
         preferences = (try? Data(contentsOf: prefsURL)).flatMap { try? AppJSON.decoder.decode(AppPreferences.self, from: $0) } ?? AppPreferences()
         let cacheURL = supportDirectory.appendingPathComponent("snapshot.json")
         snapshot = (try? Data(contentsOf: cacheURL)).flatMap { try? AppJSON.decoder.decode(GarminSnapshot.self, from: $0) }
-            ?? (defaults.bool(forKey: "GarminDeskWebConnected") ? .empty : .demo)
+            ?? .empty
+        if snapshot.isDemo || !defaults.bool(forKey: "GarminDeskWebConnected") { snapshot = .empty }
         trainingTimeline = snapshot.trainingTimeline
         webConnected = defaults.bool(forKey: "GarminDeskWebConnected")
         let policyURL = supportDirectory.appendingPathComponent("sync-policy.json")
@@ -112,7 +113,7 @@ final class AppStore: ObservableObject {
     var isStale: Bool {
         guard !snapshot.isDemo, snapshot.fetchedAt != .distantPast else { return false }
         let now = syncMoment().wallTime
-        return snapshot.metrics.keys.contains { metricIsStale($0, at: now) }
+        return !snapshot.retainedMetrics.isEmpty || snapshot.metrics.keys.contains { metricIsStale($0, at: now) }
             || now.timeIntervalSince(snapshot.fetchedAt) > preferences.staleInterval
     }
 
@@ -155,10 +156,6 @@ final class AppStore: ObservableObject {
         guard webConnected, !needsWebSignIn else { return }
         runWebSync(trigger: trigger)
     }
-    func showDemo() {
-        guard !hasSession else { return }
-        cancelLogin(resumeAutomatic: false); lastErrorKey = nil; snapshot = .demo
-    }
     func setLaunchAtLogin(_ enabled: Bool) {
         do {
             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
@@ -184,7 +181,6 @@ final class AppStore: ObservableObject {
             let cache = supportDirectory.appendingPathComponent("snapshot.json")
             if FileManager.default.fileExists(atPath: cache.path) { try FileManager.default.removeItem(at: cache) }
         } catch { if lastErrorKey == nil { lastErrorKey = "error.storage" } }
-        snapshot = .demo
     }
 
     func addProfile() {
@@ -284,7 +280,7 @@ final class AppStore: ObservableObject {
                                               failure: batchFailure, at: self.syncMoment())
                         self.needsWebSignIn = Self.requiresSessionAction(self.webPolicy.checkpoint.sessionState)
                         self.hasSession = self.webConnected && !self.needsWebSignIn
-                        // Even a valid empty day replaces yesterday's measurements.
+                        // Current-day absence and last known values remain distinct.
                         self.commitWebCache(sourceDay: day, warnings: warnings)
                     }
                     self.persistWebState()

@@ -149,9 +149,17 @@ struct MetricDefinition: Identifiable {
     static func find(_ id: String) -> MetricDefinition { catalog.first { $0.id == id } ?? catalog[0] }
 }
 
-struct MetricReading: Codable {
+struct MetricReading: Codable, Equatable {
     var value: Double
     var measuredAt: Date?
+}
+
+/// A last known real reading, kept separately from the requested day's values.
+struct RetainedMetricReading: Codable {
+    var reading: MetricReading
+    var sourceDate: String
+    var retrievedAt: Date
+    var changedAt: Date
 }
 
 struct GarminSnapshot: Codable {
@@ -163,6 +171,8 @@ struct GarminSnapshot: Codable {
     var isDemo: Bool
     var groupUpdatedAt: [String: Date]
     var trainingTimeline: TrainingTimelineSnapshot?
+    var retainedMetrics: [String: RetainedMetricReading] = [:]
+    var metricChangedAt: [String: Date] = [:]
 
     init(fetchedAt: Date, sourceDate: String, devices: [String], metrics: [String: MetricReading], warnings: [String] = [], isDemo: Bool = false, groupUpdatedAt: [String: Date] = [:], trainingTimeline: TrainingTimelineSnapshot? = nil) {
         self.fetchedAt = fetchedAt; self.sourceDate = sourceDate; self.devices = devices
@@ -171,7 +181,7 @@ struct GarminSnapshot: Codable {
         self.trainingTimeline = trainingTimeline
     }
 
-    enum CodingKeys: String, CodingKey { case fetchedAt, sourceDate, devices, metrics, warnings, isDemo, groupUpdatedAt, trainingTimeline }
+    enum CodingKeys: String, CodingKey { case fetchedAt, sourceDate, devices, metrics, warnings, isDemo, groupUpdatedAt, trainingTimeline, retainedMetrics, metricChangedAt }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         fetchedAt = try c.decode(Date.self, forKey: .fetchedAt)
@@ -182,6 +192,8 @@ struct GarminSnapshot: Codable {
         isDemo = try c.decodeIfPresent(Bool.self, forKey: .isDemo) ?? false
         groupUpdatedAt = try c.decodeIfPresent([String: Date].self, forKey: .groupUpdatedAt) ?? [:]
         trainingTimeline = try c.decodeIfPresent(TrainingTimelineSnapshot.self, forKey: .trainingTimeline)
+        retainedMetrics = try c.decodeIfPresent([String: RetainedMetricReading].self, forKey: .retainedMetrics) ?? [:]
+        metricChangedAt = try c.decodeIfPresent([String: Date].self, forKey: .metricChangedAt) ?? [:]
     }
 
     static var demo: GarminSnapshot {

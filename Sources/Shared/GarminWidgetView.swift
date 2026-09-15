@@ -53,8 +53,12 @@ struct GarminWidgetView: View {
         Group {
             if entry.data == nil {
                 emptyState(symbol: "rectangle.grid.2x2", title: text("widget.openApp"), message: text("widget.openAppHint"))
+            } else if !data.isConnected && !data.snapshot.hasMeasurements {
+                emptyState(symbol: "applewatch", title: text("dashboard.connect"), message: text("widget.connect"))
             } else if let profile {
-                content(profile)
+                if !data.snapshot.hasMeasurements && !profile.contentMode.includesTraining {
+                    emptyState(symbol: "clock", title: text("widget.waiting"), message: text("widget.waitingHint"))
+                } else { content(profile) }
             } else {
                 let unconfigured = entry.profileID == "unconfigured"
                 emptyState(symbol: "slider.horizontal.3", title: text(unconfigured ? "widget.openApp" : "widget.profileMissing"),
@@ -70,10 +74,6 @@ struct GarminWidgetView: View {
                     .foregroundStyle(accent).accessibilityHidden(true)
                 Text(profile.name.isEmpty ? text("profile.default") : profile.name).lineLimit(1)
                 Spacer(minLength: 0)
-                if data.snapshot.isDemo {
-                    Text(text("widget.demo")).font(.system(size: 9, weight: .semibold))
-                        .padding(.horizontal, 5).padding(.vertical, 3).background(.quaternary, in: Capsule())
-                }
             }
             .font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
             if profile.contentMode.includesTraining {
@@ -221,6 +221,10 @@ struct GarminWidgetView: View {
                 .font(.system(size: compact ? 31 : 30, weight: .semibold, design: .rounded))
                 .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5).foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true).layoutPriority(1)
+            if data.snapshot.retainedMetrics[id] != nil {
+                Label(text("data.previous"), systemImage: "clock")
+                    .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+            }
             if let progress = formatter.progress(id) {
                 GeometryReader { proxy in
                     Capsule().fill(accent.opacity(0.14))
@@ -260,11 +264,12 @@ struct GarminWidgetView: View {
 
     private var footer: some View {
         HStack(spacing: 4) {
-            if data.snapshot.isDemo {
-                Text(text("widget.connect"))
-            } else if !data.isConnected {
+            if !data.isConnected {
                 Image(systemName: "exclamationmark.circle")
                 Text(text("status.notConnected"))
+            } else if let day = visibleMetricIDs.compactMap({ data.snapshot.retainedMetrics[$0]?.sourceDate }).min() {
+                Image(systemName: "clock")
+                Text(text("data.day") + " " + (training.dayText(day) ?? day))
             } else if let refreshedAt {
                 let stale = entry.date.timeIntervalSince(refreshedAt) > data.preferences.staleInterval
                     || visibleMetricIDs.contains { data.snapshot.metricIsStale($0, at: entry.date, staleInterval: data.preferences.staleInterval) }

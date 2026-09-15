@@ -6,7 +6,7 @@ struct MetricFormatter {
 
     func text(_ key: String) -> String { Localizer.text(key, language: language) }
     func value(_ id: String) -> Double? {
-        guard let value = snapshot.metrics[id]?.value, value.isFinite else { return nil }
+        guard let value = snapshot.visibleReading(id)?.value, value.isFinite, value >= 0 else { return nil }
         return value
     }
 
