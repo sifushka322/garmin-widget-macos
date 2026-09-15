@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>GarminDesk</string>
+    <key>CFBundleExecutable</key>
+    <string>GarminDesk</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.mikhail.garmindesk</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>GarminDesk</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon.icns</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>ru</string>
+    </array>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>GARMIN_APP_GROUP</key>
+    <string></string>
+    <key>GARMIN_LEGACY_CONNECTOR_INCLUDED</key>
+    <false/>
+    <key>GARMIN_APPINTENTS_METADATA_AVAILABLE</key>
+    <false/>
+    <key>GARMIN_WIDGET_CONFIGURATION_AVAILABLE</key>
+    <false/>
+    <key>GARMIN_WIDGET_CONFIGURATION_MODE</key>
+    <string>unavailable</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key><string>com.mikhail.garmindesk</string>
+            <key>CFBundleURLSchemes</key><array><string>garmindesk</string></array>
+        </dict>
+    </array>
+</dict>
+</plist>

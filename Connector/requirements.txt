@@ -1,0 +1,11 @@
+# Versions inspected and tested for the in-memory DI OAuth session protocol.
+garminconnect==0.3.15
+curl_cffi==0.16.3
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.5.1
+idna==3.19
+pycparser==3.0
+requests==2.34.2
+ua-generator==2.1.5
+urllib3==2.7.0

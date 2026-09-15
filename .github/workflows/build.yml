@@ -1,0 +1,109 @@
+name: Build macOS app
+
+on:
+  workflow_dispatch:
+    inputs:
+      include_legacy_connector:
+        description: Include the optional legacy Python connector for diagnostics
+        type: boolean
+        default: false
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      # Use the same static four-kind widget variant as the tested local app.
+      # Full Xcode discovers App Intents metadata tools and selects a different variant.
+      DEVELOPER_DIR: /Library/Developer/CommandLineTools
+      CONFIGURATION: release
+      APP_VERSION: '0.3.0'
+      APP_BUILD: '9'
+      GARMIN_REQUIRE_APPINTENTS_METADATA: '0'
+      INCLUDE_LEGACY_CONNECTOR: ${{ github.event_name == 'workflow_dispatch' && inputs.include_legacy_connector && '1' || '0' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            arch: arm64
+          - runner: macos-26-intel
+            arch: x86_64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        if: env.INCLUDE_LEGACY_CONNECTOR == '1'
+        with:
+          python-version: '3.12'
+      - name: Check selected Command Line Tools and static widget configuration
+        run: |
+          test "$(uname -m)" = '${{ matrix.arch }}'
+          test -d "$DEVELOPER_DIR"
+          xcrun --find swiftc
+          xcrun swiftc --version
+          xcrun --sdk macosx --show-sdk-path
+          xcrun --sdk macosx --show-sdk-version
+          if xcrun --find appintentsmetadataprocessor >/dev/null 2>&1; then
+            printf '::error::Selected tools would produce profile-intents widgets instead of the tested static variant.\n' >&2
+            exit 1
+          fi
+      - name: Check shared models and localization
+        run: |
+          mkdir -p build/module-cache
+          xcrun swiftc -parse-as-library -swift-version 5 -module-name GarminDeskSharedTests \
+            -target "$(uname -m)-apple-macos14.0" -module-cache-path build/module-cache \
+            Sources/Shared/*.swift Sources/GarminDesk/Localization.swift Tests/SharedModelTests.swift \
+            -framework SwiftUI -framework Security -o build/shared-model-tests
+          build/shared-model-tests
+      - name: Check training presentation
+        run: |
+          xcrun swiftc -parse-as-library -swift-version 5 -module-name GarminDeskTrainingPresentationTests \
+            -target "$(uname -m)-apple-macos14.0" -module-cache-path build/module-cache \
+            Sources/Shared/*.swift Sources/GarminDesk/Localization.swift Tests/TrainingPresentationTests.swift \
+            -framework SwiftUI -framework Security -o build/training-presentation-tests
+          build/training-presentation-tests
+      - name: Verify read-only widget sharing in an ad-hoc sandbox
+        run: bash scripts/test-widget-sandbox.sh
+      - name: Build self-contained application
+        run: bash scripts/build-app.sh
+      - name: Verify release version and static WidgetKit bundle
+        run: |
+          bash scripts/verify-release.sh build/GarminDesk.app
+          app_info=build/GarminDesk.app/Contents/Info.plist
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_info")" = "$APP_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_info")" = "$APP_BUILD"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :GARMIN_WIDGET_CONFIGURATION_MODE' "$app_info")" = static
+          test "$(/usr/libexec/PlistBuddy -c 'Print :GARMIN_APPINTENTS_METADATA_AVAILABLE' "$app_info")" = false
+      - name: Verify bundled connector without developer environment
+        if: env.INCLUDE_LEGACY_CONNECTOR == '1'
+        run: |
+          printf '%s\n' '{"command":"demo"}' | env -i PATH=/usr/bin:/bin \
+            build/GarminDesk.app/Contents/Resources/Connector/garmin-bridge/garmin-bridge \
+            > build/connector-demo.json
+          python -c 'import json; d=json.load(open("build/connector-demo.json")); assert d["event"] == "result"; assert d["snapshot"]["isDemo"] is True; assert d["snapshot"]["metrics"]'
+          printf '%s\n' '{"command":"diagnose"}' | env -i PATH=/usr/bin:/bin \
+            build/GarminDesk.app/Contents/Resources/Connector/garmin-bridge/garmin-bridge \
+            > build/connector-diagnose.json
+          python -c 'import json; d=json.load(open("build/connector-diagnose.json")); assert d["event"] == "diagnostics"; assert d["ok"] is True'
+      - name: Package ZIP and drag-to-Applications disk image
+        run: bash scripts/package-release.sh
+      - name: Upload ad-hoc packages for testing
+        uses: actions/upload-artifact@v7
+        with:
+          name: GarminDesk-${{ env.APP_VERSION }}-build${{ env.APP_BUILD }}-${{ matrix.arch }}-development
+          path: |
+            build/GarminDesk-*-${{ matrix.arch }}.zip
+            build/GarminDesk-*-${{ matrix.arch }}.dmg
+            build/GarminDesk-*-${{ matrix.arch }}-SHA256.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
