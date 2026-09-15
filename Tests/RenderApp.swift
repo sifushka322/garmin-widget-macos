@@ -46,6 +46,10 @@ import SwiftUI
                         window.appearance = appearance
                         window.contentView = host
                         host.frame = CGRect(origin: .zero, size: size)
+                        // Let AppKit-backed pickers and SwiftUI drawing settle in
+                        // the runner's off-screen window before taking the bitmap.
+                        window.displayIfNeeded()
+                        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
                         host.layoutSubtreeIfNeeded()
                         guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { fatalError("No bitmap") }
                         host.cacheDisplay(in: host.bounds, to: bitmap)

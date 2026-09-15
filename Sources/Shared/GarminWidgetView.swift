@@ -44,8 +44,9 @@ struct GarminWidgetView: View {
     }
 
     var background: some View {
-        LinearGradient(colors: [Color(nsColor: .windowBackgroundColor), accent.opacity(0.08)],
-                       startPoint: .topLeading, endPoint: .bottomTrailing)
+        Color(nsColor: .windowBackgroundColor)
+            .overlay(LinearGradient(colors: [.clear, accent.opacity(0.08)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing))
     }
 
     private var widgetContent: some View {

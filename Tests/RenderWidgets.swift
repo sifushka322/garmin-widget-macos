@@ -117,18 +117,18 @@ struct RenderWidgets {
     @MainActor private static func render(_ data: WidgetData, name: String, family: WidgetFamily, size: CGSize,
                                           now: Date, output: URL) throws {
         for dark in [false, true] {
-        let widget = GarminWidgetView(entry: GarminEntry(date: now, data: data, profileID: data.preferences.profiles.first?.id.uuidString), previewFamily: family)
-        let view = widget
-            .environment(\.colorScheme, dark ? .dark : .light)
-            .padding(16).frame(width: size.width, height: size.height)
-            .background(widget.background)
-            .environment(\.colorScheme, dark ? .dark : .light)
-            .clipShape(RoundedRectangle(cornerRadius: 24))
-        let renderer = ImageRenderer(content: view); renderer.scale = 2
-        guard let image = renderer.cgImage else { fatalError("Unable to render widget") }
-        let bitmap = NSBitmapImageRep(cgImage: image)
-        guard let bytes = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else { fatalError("Unable to encode PNG") }
-        try bytes.write(to: output.appendingPathComponent(name + (dark ? "-dark" : "-light") + ".png"))
+            let widget = GarminWidgetView(entry: GarminEntry(date: now, data: data, profileID: data.preferences.profiles.first?.id.uuidString), previewFamily: family)
+            let view = widget
+                .environment(\.colorScheme, dark ? .dark : .light)
+                .padding(16).frame(width: size.width, height: size.height)
+                .background(widget.background)
+                .environment(\.colorScheme, dark ? .dark : .light)
+                .clipShape(RoundedRectangle(cornerRadius: 24))
+            let renderer = ImageRenderer(content: view); renderer.scale = 2
+            guard let image = renderer.cgImage else { fatalError("Unable to render widget") }
+            let bitmap = NSBitmapImageRep(cgImage: image)
+            guard let bytes = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else { fatalError("Unable to encode PNG") }
+            try bytes.write(to: output.appendingPathComponent(name + (dark ? "-dark" : "-light") + ".png"))
         }
     }
 

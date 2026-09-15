@@ -513,6 +513,7 @@ struct MainWindowView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 780, minHeight: 620)
+        .background(Color(nsColor: .windowBackgroundColor))
         .environment(\.locale, store.preferences.language.locale)
     }
 

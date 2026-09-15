@@ -31,12 +31,13 @@ Sources/GarminDesk/PythonBridge.swift
 Sources/GarminDesk/TrainingTimelineView.swift
 Sources/GarminDesk/Views.swift
 Sources/GarminDeskWidgets/GarminDeskWidgets.swift
-Sources/Shared/GarminWidgetView.swift
 Sources/Shared/GarminDeskBrandGeometry.swift
 Sources/Shared/GarminDeskBrandMark.swift
 Sources/Shared/GarminPayloadNormalizer.swift
 Sources/Shared/GarminWebAPI.swift
+Sources/Shared/GarminWidgetView.swift
 Sources/Shared/MetricFormatter.swift
+Sources/Shared/MetricFreshness.swift
 Sources/Shared/Models.swift
 Sources/Shared/SyncPolicy.swift
 Sources/Shared/TrainingModels.swift
@@ -46,6 +47,7 @@ Sources/Shared/WidgetSlot.swift
 Tests/AppStoreSyncTests.swift
 Tests/GarminPayloadNormalizerTests.swift
 Tests/GarminWebBoundaryTests.swift
+Tests/RenderApp.swift
 Tests/RenderWidgets.swift
 Tests/SharedModelTests.swift
 Tests/SyncPolicyTests.swift
@@ -69,6 +71,7 @@ docs/concepts/system-widgets.png
 docs/connector-protocol.md
 docs/development-progress.md
 docs/distribution.md
+docs/full-stack-audit-2026-09-16.md
 docs/garmin-ingestion-audit-2026-09-15.md
 docs/native-contract.md
 docs/native-sync-validation.md
@@ -87,5 +90,6 @@ scripts/generate-icon.sh
 scripts/generate-icon.swift
 scripts/package-release.sh
 scripts/sign-release.sh
+scripts/test-offline.sh
 scripts/test-widget-sandbox.sh
 scripts/verify-release.sh
