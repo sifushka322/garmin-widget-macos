@@ -78,6 +78,9 @@ import SwiftUI
                             .init(reading: $0, sourceDate: SyncPolicy.sourceDay(for: old, timeZone: .current), retrievedAt: old, changedAt: old)
                         }
                         snapshot.metrics = [:]; snapshot.metricChangedAt = [:]
+                        // An unrelated old progress value from another profile
+                        // must not warn that this sleep-only profile is out of date.
+                        snapshot.retainedMetrics["bodyBattery"] = .init(reading: .init(value: 40), sourceDate: "2026-09-13", retrievedAt: old, changedAt: old)
                     }
                     if state == "network" { snapshot.warnings = ["network.connection"] }
                     store.snapshot = snapshot

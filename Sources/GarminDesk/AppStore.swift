@@ -113,7 +113,7 @@ final class AppStore: ObservableObject {
     func progress(_ id: String) -> Double? { formatter.progress(id) }
 
     var isStale: Bool {
-        guard !snapshot.isDemo, snapshot.fetchedAt != .distantPast else { return false }
+        guard !snapshot.isDemo else { return false }
         let now = syncMoment().wallTime
         return Set(snapshot.metrics.keys).union(snapshot.retainedMetrics.keys).contains { metricIsStale($0, at: now) }
     }

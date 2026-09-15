@@ -460,6 +460,11 @@ struct AppStoreSyncTests {
         try expect(rig.store.snapshot.metrics["steps"]?.value == 0 && rig.store.snapshot.retainedMetrics["steps"] == nil,
                    "A real zero replaces the saved value and clears its stale marker")
         try expect(!rig.store.snapshot.hasUnchangedMeasurements, "Changed measurements clear the unchanged state")
+        rig.store.snapshot = .empty
+        rig.store.snapshot.retainedMetrics["steps"] = .init(reading: .init(value: 123), sourceDate: "2026-09-14", retrievedAt: original.fetchedAt, changedAt: original.fetchedAt)
+        try expect(rig.store.isStale, "Retained progress remains dated even when no current-day fetch has completed")
+        rig.store.snapshot.retainedMetrics = ["sleepDuration": .init(reading: .init(value: 480), sourceDate: "2026-09-14", retrievedAt: original.fetchedAt, changedAt: original.fetchedAt)]
+        try expect(!rig.store.isStale, "A completed sleep record alone cannot mark the host as a stale live feed")
         rig.store.disconnect()
         try expect(!rig.store.snapshot.hasMeasurements && !rig.store.snapshot.isDemo, "Disconnect clears current and retained values without entering demo")
         for slot in WidgetSlot.allCases {

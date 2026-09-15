@@ -22,23 +22,38 @@ private struct Surface: ViewModifier {
 private struct DataStatusView: View {
     @ObservedObject var store: AppStore
     var compact = false
+    var metricIDs: [String]? = nil
+
+    private var statusSnapshot: GarminSnapshot {
+        var snapshot = store.snapshot
+        if let metricIDs {
+            let ids = Set(metricIDs)
+            snapshot.metrics = snapshot.metrics.filter { ids.contains($0.key) }
+            snapshot.retainedMetrics = snapshot.retainedMetrics.filter { ids.contains($0.key) }
+            snapshot.metricChangedAt = snapshot.metricChangedAt.filter { ids.contains($0.key) }
+        }
+        return snapshot
+    }
+    private var isStale: Bool {
+        Set(statusSnapshot.metrics.keys).union(statusSnapshot.retainedMetrics.keys).contains { store.metricIsStale($0) }
+    }
 
     private var statusKey: String {
         if store.isSyncing { return store.hasSession ? "data.syncing" : "status.connecting" }
         if store.needsWebSignIn { return "status.signInRequired" }
         if ["error.network", "error.timeout", "error.protocol", "error.partial", "error.rate_limit"].contains(store.lastErrorKey ?? "") { return "data.checkFailed" }
-        if store.hasSession && !store.snapshot.hasMeasurements { return "data.waiting" }
-        if store.hasSession && store.snapshot.hasRetainedTimeSensitiveMetrics { return "data.waitingNew" }
-        if store.hasSession && store.snapshot.hasUnchangedMeasurements { return "data.unchanged" }
+        if store.hasSession && !statusSnapshot.hasMeasurements { return "data.waiting" }
+        if store.hasSession && statusSnapshot.hasRetainedTimeSensitiveMetrics { return "data.waitingNew" }
+        if store.hasSession && statusSnapshot.hasUnchangedMeasurements { return "data.unchanged" }
         return store.hasSession ? "data.available" : "status.notConnected"
     }
 
     private var statusSymbol: String {
         if store.needsWebSignIn { return "person.crop.circle.badge.exclamationmark" }
         if ["error.network", "error.timeout", "error.protocol", "error.partial", "error.rate_limit"].contains(store.lastErrorKey ?? "") { return "exclamationmark.triangle" }
-        if !store.snapshot.hasMeasurements { return "clock" }
+        if !statusSnapshot.hasMeasurements { return "clock" }
         if !store.hasSession { return "link.badge.plus" }
-        return store.isStale ? "clock.badge.exclamationmark" : "checkmark.circle.fill"
+        return isStale ? "clock.badge.exclamationmark" : "checkmark.circle.fill"
     }
 
     private var hint: String? {
@@ -46,13 +61,13 @@ private struct DataStatusView: View {
         if let error = store.lastErrorKey { return store.text(error) }
         if store.needsWebSignIn { return store.text("connection.reconnectDetail") }
         guard store.hasSession else { return nil }
-        if !store.snapshot.warnings.isEmpty { return store.text("data.partial") }
-        if !store.snapshot.hasMeasurements { return store.text("data.waitingHint") }
-        if store.snapshot.hasRetainedTimeSensitiveMetrics {
-            return store.text(store.snapshot.metrics.isEmpty ? "data.retainedAllHint" : "data.retainedHint")
+        if !statusSnapshot.warnings.isEmpty { return store.text("data.partial") }
+        if !statusSnapshot.hasMeasurements { return store.text("data.waitingHint") }
+        if statusSnapshot.hasRetainedTimeSensitiveMetrics {
+            return store.text(statusSnapshot.metrics.isEmpty ? "data.retainedAllHint" : "data.retainedHint")
         }
-        if store.snapshot.hasUnchangedMeasurements { return store.text("data.unchangedHint") }
-        return store.isStale ? store.text("data.stale") : nil
+        if statusSnapshot.hasUnchangedMeasurements { return store.text("data.unchangedHint") }
+        return isStale ? store.text("data.stale") : nil
     }
 
     private var needsAttention: Bool { store.lastErrorKey != nil || store.needsWebSignIn }
@@ -80,12 +95,12 @@ private struct DataStatusView: View {
                         Text(hint).font(.system(size: 13)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true).lineSpacing(3)
                     }
-                    if !store.snapshot.isDemo && store.snapshot.fetchedAt != .distantPast {
+                    if !statusSnapshot.isDemo && statusSnapshot.fetchedAt != .distantPast {
                         Text(store.updatedText).font(.caption).foregroundStyle(.secondary)
                     }
-                    if !store.snapshot.metrics.isEmpty,
-                       store.snapshot.sourceDate != SyncPolicy.sourceDay(for: Date(), timeZone: .autoupdatingCurrent),
-                       let day = TrainingPresentation(language: store.preferences.language).dayText(store.snapshot.sourceDate) {
+                    if !statusSnapshot.metrics.isEmpty,
+                       statusSnapshot.sourceDate != SyncPolicy.sourceDay(for: Date(), timeZone: .autoupdatingCurrent),
+                       let day = TrainingPresentation(language: store.preferences.language).dayText(statusSnapshot.sourceDate) {
                         Text(store.text("data.day") + " " + day).font(.caption).foregroundStyle(.secondary)
                     }
                     NextSyncView(store: store)
@@ -260,7 +275,7 @@ struct DashboardView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if store.hasSession || store.snapshot.hasMeasurements || store.isSyncing || store.lastErrorKey != nil || store.needsWebSignIn {
-                        DataStatusView(store: store)
+                        DataStatusView(store: store, metricIDs: profile.flatMap { $0.contentMode.includesMetrics ? $0.metricIDs : nil })
                     }
                     if !store.hasSession && store.snapshot.hasMeasurements {
                         Button {
