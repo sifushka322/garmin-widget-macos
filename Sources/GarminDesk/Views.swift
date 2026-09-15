@@ -41,60 +41,62 @@ private struct DataStatusView: View {
         return store.isStale ? "clock.badge.exclamationmark" : "checkmark.circle.fill"
     }
 
-    private var sourceDate: String? {
-        let parser = DateFormatter()
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.timeZone = TimeZone(secondsFromGMT: 0)
-        parser.dateFormat = "yyyy-MM-dd"
-        guard let date = parser.date(from: store.snapshot.sourceDate) else { return nil }
-        parser.locale = store.preferences.language.locale
-        parser.dateStyle = .medium
-        parser.timeStyle = .none
-        return parser.string(from: date)
+    private var hint: String? {
+        if store.isSyncing { return nil }
+        if let error = store.lastErrorKey { return store.text(error) }
+        if store.needsWebSignIn { return store.text("connection.reconnectDetail") }
+        guard store.hasSession else { return nil }
+        if !store.snapshot.warnings.isEmpty { return store.text("data.partial") }
+        if !store.snapshot.hasMeasurements { return store.text("data.waitingHint") }
+        if !store.snapshot.retainedMetrics.isEmpty {
+            return store.text(store.snapshot.metrics.isEmpty ? "data.retainedAllHint" : "data.retainedHint")
+        }
+        if store.snapshot.hasUnchangedMeasurements { return store.text("data.unchangedHint") }
+        return store.isStale ? store.text("data.stale") : nil
     }
 
+    private var needsAttention: Bool { store.lastErrorKey != nil || store.needsWebSignIn }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: statusSymbol)
-                Text(store.text(statusKey))
-                if store.isSyncing {
-                    Spacer(minLength: 4)
-                    ProgressView().controlSize(.small).accessibilityLabel(store.text("data.syncing"))
+        if compact {
+            Label(store.text(store.needsWebSignIn ? "status.signInRequired" : (store.hasSession ? "status.connected" : "status.notConnected")),
+                  systemImage: store.needsWebSignIn ? "person.crop.circle.badge.exclamationmark" : "link")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12).fill(needsAttention ? Color.orange.opacity(0.1) : Color.primary.opacity(0.045))
+                    if store.isSyncing {
+                        ProgressView().controlSize(.small).accessibilityLabel(store.text("data.syncing"))
+                    } else {
+                        Image(systemName: statusSymbol).font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(needsAttention ? Color.orange : .secondary)
+                    }
+                }.frame(width: 42, height: 42).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(store.text(statusKey)).font(.system(size: 14, weight: .semibold)).foregroundStyle(.primary)
+                    if let hint {
+                        Text(hint).font(.system(size: 13)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true).lineSpacing(3)
+                    }
+                    if !store.snapshot.isDemo && store.snapshot.fetchedAt != .distantPast {
+                        Text(store.updatedText).font(.caption).foregroundStyle(.secondary)
+                    }
+                    if !store.snapshot.metrics.isEmpty,
+                       store.snapshot.sourceDate != SyncPolicy.sourceDay(for: Date(), timeZone: .autoupdatingCurrent),
+                       let day = TrainingPresentation(language: store.preferences.language).dayText(store.snapshot.sourceDate) {
+                        Text(store.text("data.day") + " " + day).font(.caption).foregroundStyle(.secondary)
+                    }
+                    NextSyncView(store: store)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .font(.caption.weight(.medium))
-            .foregroundStyle(store.needsWebSignIn ? Color.orange : .secondary)
-            if !store.snapshot.isDemo && store.snapshot.fetchedAt != .distantPast {
-                Text(store.updatedText)
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !compact, !store.snapshot.metrics.isEmpty, let sourceDate {
-                Text("\(store.text("data.day")) \(sourceDate)")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if !compact, store.hasSession, !store.isSyncing, store.lastErrorKey == nil,
-               (!store.snapshot.retainedMetrics.isEmpty || !store.snapshot.hasMeasurements), store.snapshot.warnings.isEmpty {
-                Text(store.text(!store.snapshot.hasMeasurements ? "data.waitingHint"
-                    : (store.snapshot.metrics.isEmpty ? "data.retainedAllHint" : "data.retainedHint")))
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !compact, store.hasSession, !store.isSyncing, store.lastErrorKey == nil,
-               store.snapshot.retainedMetrics.isEmpty, store.snapshot.hasUnchangedMeasurements {
-                Text(store.text("data.unchangedHint")).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !store.snapshot.warnings.isEmpty {
-                Label(store.text("data.partial"), systemImage: "exclamationmark.circle")
-                    .font(.caption).foregroundStyle(.orange)
-            }
-            if store.isStale && store.snapshot.retainedMetrics.isEmpty {
-                Text(store.text("data.stale")).font(.caption).foregroundStyle(.orange)
-            }
+            .padding(16)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.primary.opacity(0.07)))
+            .accessibilityElement(children: .combine)
         }
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -158,7 +160,7 @@ private struct MainMetricView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 10 : 14) {
             Label(store.text(definition.titleKey), systemImage: definition.symbol)
-                .font(.subheadline.weight(.medium)).foregroundStyle(accent)
+                .font(.system(size: 13, weight: .medium)).foregroundStyle(.primary)
                 .lineLimit(2)
             Text(store.displayValue(metricID))
                 .font(.system(size: compact ? 34 : 44, weight: .semibold, design: .rounded))
@@ -212,7 +214,7 @@ private struct SmallMetricView: View {
                 .monospacedDigit().lineLimit(1).minimumScaleFactor(0.55)
             if let retained = store.snapshot.retainedMetrics[metricID] {
                 Text(store.text("data.previous") + " · " + (TrainingPresentation(language: store.preferences.language).dayText(retained.sourceDate) ?? retained.sourceDate))
-                    .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, minHeight: compact ? 52 : 65, alignment: .leading)
@@ -242,25 +244,25 @@ struct DashboardView: View {
                         .font(.callout).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 12)
-                Button(action: onSettings) {
-                    Label(store.text("dashboard.configure"), systemImage: "slider.horizontal.3")
+                if store.hasSession || store.snapshot.hasMeasurements {
+                    Button(action: onSettings) {
+                        Label(store.text("dashboard.configure"), systemImage: "slider.horizontal.3")
+                    }
+                    .help(store.text("dashboard.configure"))
+                    Button { store.sync() } label: {
+                        Label(store.text("action.sync"), systemImage: "arrow.clockwise")
+                    }
+                    .disabled(store.isSyncing || !store.hasSession)
+                    .keyboardShortcut("r", modifiers: .command)
                 }
-                .help(store.text("dashboard.configure"))
-                Button { store.sync() } label: {
-                    Label(store.text("action.sync"), systemImage: "arrow.clockwise")
-                }
-                .disabled(store.isSyncing || !store.hasSession)
-                .keyboardShortcut("r", modifiers: .command)
             }
             .padding(28)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 8) {
+                    if store.hasSession || store.snapshot.hasMeasurements || store.isSyncing || store.lastErrorKey != nil || store.needsWebSignIn {
                         DataStatusView(store: store)
-                        NextSyncView(store: store)
                     }
-                    ErrorNotice(store: store)
                     if !store.hasSession && store.snapshot.hasMeasurements {
                         Button {
                             if store.needsWebSignIn { store.connectGarmin() }
@@ -271,25 +273,47 @@ struct DashboardView: View {
                         .buttonStyle(.borderedProminent).disabled(store.isSyncing)
                     }
                     if !store.hasSession && !store.snapshot.hasMeasurements {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Label(store.text("onboarding.title"), systemImage: "applewatch").font(.title3.weight(.semibold))
-                            Text(store.text("onboarding.detail")).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: 22) {
+                            Image(systemName: "applewatch")
+                                .font(.system(size: 30, weight: .light))
+                                .foregroundStyle(CardPalette.accent(.calm))
+                                .frame(width: 64, height: 64)
+                                .background(CardPalette.accent(.calm).opacity(0.09), in: RoundedRectangle(cornerRadius: 20))
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(store.text("onboarding.title"))
+                                    .font(.system(size: 25, weight: .semibold, design: .rounded))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text(store.text("onboarding.detail")).font(.system(size: 14))
+                                    .foregroundStyle(.secondary).lineSpacing(4)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                             Button { store.connectGarmin() } label: {
                                 Label(store.text("dashboard.connect"), systemImage: "link")
+                                    .padding(.horizontal, 8)
                             }.buttonStyle(.borderedProminent).controlSize(.large).disabled(store.isSyncing)
-                        }.modifier(Surface())
+                            Label(store.text("data.local"), systemImage: "lock")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(28)
+                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 22))
+                        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(.primary.opacity(0.06)))
                     }
                     if let profile, store.hasSession || store.snapshot.hasMeasurements {
-                        Picker(store.text("dashboard.profile"), selection: Binding(
-                            get: { self.profile?.id ?? profile.id },
-                            set: { selectedProfileID = $0 }
-                        )) {
-                            ForEach(store.preferences.profiles) { item in
-                                Text(item.name.isEmpty ? store.text("profile.default") : item.name).tag(item.id)
+                        if store.preferences.profiles.count > 1 {
+                            Picker(store.text("dashboard.profile"), selection: Binding(
+                                get: { self.profile?.id ?? profile.id },
+                                set: { selectedProfileID = $0 }
+                            )) {
+                                ForEach(store.preferences.profiles) { item in
+                                    Text(item.name.isEmpty ? store.text("profile.default") : item.name).tag(item.id)
+                                }
                             }
+                            .pickerStyle(.menu).frame(maxWidth: 360, alignment: .leading)
+                        } else if store.snapshot.hasMeasurements || profile.contentMode.includesTraining {
+                            Text(profile.name.isEmpty ? store.text("profile.default") : profile.name)
+                                .font(.title3.weight(.semibold))
                         }
-                        .pickerStyle(.menu).frame(maxWidth: 360, alignment: .leading)
                         if profile.contentMode.includesMetrics && store.snapshot.hasMeasurements {
                             MainMetricView(store: store, metricID: profile.primaryMetric, style: profile.style,
                                            compact: profile.density == .compact)
@@ -308,7 +332,7 @@ struct DashboardView: View {
                         Button { showWidgetHelp = true } label: {
                             Label(store.text("widget.setup"), systemImage: "rectangle.3.group")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderless).font(.callout).foregroundStyle(.secondary)
                     }
                     WidgetSharingNotice(store: store)
                 }
@@ -758,7 +782,7 @@ private struct ConnectionPane: View {
                 ErrorNotice(store: store)
                 VStack(alignment: .leading, spacing: 16) {
                     if store.hasSession || store.needsWebSignIn {
-                        DataStatusView(store: store)
+                        DataStatusView(store: store, compact: true)
                     }
                     if store.needsWebSignIn {
                         Text(store.text("connection.reconnectDetail")).font(.callout).foregroundStyle(.secondary)

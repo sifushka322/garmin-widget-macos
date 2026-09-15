@@ -4,7 +4,7 @@ Baseline: `f6d68a3`, GarminDesk 0.3.0. Review and fixes: [draft PR #1](https://g
 
 ## Execution boundary
 
-The owner's Mac is used only to read/edit source and inspect the Git diff. No app launch, installation, native test binary, compiler, WebKit session, Keychain operation, UI automation or login-item change is used. Native tests, sandbox probes, rendering and packaging run on ephemeral GitHub Actions machines. Fixtures contain synthetic data only. The normal application and main branch are not updated by this audit.
+The owner's Mac is used only to read/edit source, inspect the Git diff and review CI-generated images. No app launch, installation, native test binary, compiler, WebKit session, Keychain operation, UI automation or login-item change is used. Native tests, sandbox probes, rendering and packaging run on ephemeral GitHub Actions machines. Fixtures contain synthetic data only. The normal application and main branch are not updated by this audit.
 
 ## Findings and fixes
 
@@ -27,6 +27,10 @@ The owner's Mac is used only to read/edit source and inspect the Git diff. No ap
 - Visual fixtures cover four app sections × RU/EN × light/dark × 780×620 and 1100×800 windows, plus six dashboard data states in both languages/themes; widget families, both densities, long labels/units, training and missing/stale/disconnected/retained readings.
 - PNG generation is a smoke check and review artifact, not proof that text never clips or that VoiceOver/keyboard navigation works. Record visual inspection separately from rendering success.
 
+### Visual hierarchy refinement
+
+The initial functional layout still repeated refresh errors in the sidebar, used small low-emphasis status text and exposed setup actions before connection. The dashboard now has one readable status surface with the relevant action guidance, a single primary connection action on first launch, a quiet account indicator in the sidebar, stronger measurement headings, and a secondary widget-setup link. A lone profile is a section heading rather than a one-item selector. Connection diagnostics remain in the account pane. Both locales receive shorter, action-oriented waiting copy. These changes are evaluated through remote native renders; passing unit tests alone does not establish design quality.
+
 ## User-facing data availability
 
 The follow-up requirement supersedes the older empty-day presentation: absence from today's response must not erase a useful last reading. Current `metrics` remain strictly day-scoped; `retainedMetrics` stores prior real readings with their original day, retrieval time and last-change time. The formatter may display those retained values, while cards and widget footers identify them as last available data. Real zero values replace saved readings normally. Disconnect/account changes clear both collections. No demo value can enter this fallback.
@@ -44,7 +48,7 @@ These observations describe reviewed code, not penetration testing or proof of a
 ## Validation ledger
 
 - Source diff whitespace check: passed.
-- Remote run: [GitHub Actions](https://github.com/sifushka322/garmin-widget-macos/actions/runs/35032993874). Results pending; update after completion.
+- The [PR validation summary](https://github.com/sifushka322/garmin-widget-macos/pull/1) records the exact tested revision, hosted Actions run, suite counts, packaging results and visual inspection. It is the canonical final execution ledger, so later documentation does not require rebuilding unchanged application code.
 - No current-audit runtime result is inferred from historical build 7/9 validation.
 
 ## Remaining runtime coverage
