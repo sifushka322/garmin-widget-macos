@@ -237,5 +237,10 @@ struct SharedModelTests {
         try expect(cached.metricIsStale("steps", at: now, timeZone: zone, staleInterval: 3600), "Yesterday's data is stale even during server backoff")
         cached.isDemo = true
         try expect(!cached.metricIsStale("steps", at: now, timeZone: zone, staleInterval: 3600), "Demo remains explicitly demo")
+        var historical = GarminSnapshot.empty
+        historical.retainedMetrics["steps"] = .init(reading: .init(value: 8000), sourceDate: "2026-09-14", retrievedAt: now, changedAt: now)
+        historical.metrics["stepGoal"] = .init(value: 10000)
+        try expect(MetricFormatter(snapshot: historical, language: .en).progress("steps") == nil,
+                   "Yesterday's steps must not appear as progress toward today's goal")
     }
 }

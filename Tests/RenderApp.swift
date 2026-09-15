@@ -69,6 +69,7 @@ import SwiftUI
                         snapshot.metrics = [:]
                         snapshot.metricChangedAt = [:]
                     }
+                    if state == "network" { snapshot.warnings = ["network.connection"] }
                     store.snapshot = snapshot
                     try render(store, navigation: navigation, dark: dark, size: CGSize(width: 780, height: 760),
                                name: "state-\(state)-\(language.rawValue)-\(dark ? "dark" : "light")", output: output)

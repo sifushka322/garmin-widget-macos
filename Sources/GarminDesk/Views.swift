@@ -35,6 +35,7 @@ private struct DataStatusView: View {
 
     private var statusSymbol: String {
         if store.needsWebSignIn { return "person.crop.circle.badge.exclamationmark" }
+        if ["error.network", "error.timeout", "error.protocol", "error.partial", "error.rate_limit"].contains(store.lastErrorKey ?? "") { return "exclamationmark.triangle" }
         if !store.snapshot.hasMeasurements { return "clock" }
         if !store.hasSession { return "link.badge.plus" }
         return store.isStale ? "clock.badge.exclamationmark" : "checkmark.circle.fill"
@@ -73,7 +74,7 @@ private struct DataStatusView: View {
                 Text("\(store.text("data.day")) \(sourceDate)")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if !compact, store.hasSession, !store.isSyncing,
+            if !compact, store.hasSession, !store.isSyncing, store.lastErrorKey == nil,
                (!store.snapshot.retainedMetrics.isEmpty || !store.snapshot.hasMeasurements), store.snapshot.warnings.isEmpty {
                 Text(store.text(!store.snapshot.hasMeasurements ? "data.waitingHint"
                     : (store.snapshot.metrics.isEmpty ? "data.retainedAllHint" : "data.retainedHint")))

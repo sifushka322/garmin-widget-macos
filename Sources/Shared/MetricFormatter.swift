@@ -44,8 +44,10 @@ struct MetricFormatter {
     }
 
     func progress(_ id: String) -> Double? {
+        // Historical readings cannot imply progress toward today's goal.
+        guard snapshot.retainedMetrics[id] == nil else { return nil }
         guard let value = value(id) else { return nil }
-        if id == "steps", let goal = self.value("stepGoal"), goal > 0 { return min(1, max(0, value / goal)) }
+        if id == "steps", snapshot.retainedMetrics["stepGoal"] == nil, let goal = self.value("stepGoal"), goal > 0 { return min(1, max(0, value / goal)) }
         if ["bodyBattery", "stress", "sleepScore", "trainingReadiness", "spo2"].contains(id) { return min(1, max(0, value / 100)) }
         return nil
     }
