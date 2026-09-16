@@ -80,11 +80,10 @@ struct GarminWidgetView: View {
         .privacySensitive(true)
     }
 
-    @ViewBuilder private func metricsContent(_ profile: WidgetProfile) -> some View {
+    private func metricsContent(_ profile: WidgetProfile) -> some View {
+        Group {
             if family == .systemSmall {
-                Spacer(minLength: 0)
                 primary(profile.primaryMetric, compact: true)
-                Spacer(minLength: 0)
             } else if family == .systemMedium {
                 HStack(alignment: .top, spacing: 16) {
                     primary(profile.primaryMetric, compact: false).frame(maxWidth: .infinity, alignment: .leading)
@@ -95,40 +94,44 @@ struct GarminWidgetView: View {
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Spacer(minLength: 0)
             } else {
-                primary(profile.primaryMetric, compact: false)
-                Rectangle().fill(theme.ink.opacity(0.16)).frame(height: 1)
-                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: profile.density == .compact ? 10 : 16) {
-                    ForEach(Array(secondary(profile).prefix(profile.density == .compact ? 8 : 6)), id: \.self) { metric in
-                        metricRow(metric)
+                VStack(alignment: .leading, spacing: 12) {
+                    primary(profile.primaryMetric, compact: false)
+                    Rectangle().fill(theme.ink.opacity(0.16)).frame(height: 1)
+                    LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: profile.density == .compact ? 10 : 16) {
+                        ForEach(Array(secondary(profile).prefix(profile.density == .compact ? 8 : 6)), id: \.self) { metric in
+                            metricRow(metric)
+                        }
                     }
                 }
-                Spacer(minLength: 0)
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: family == .systemSmall ? .leading : .topLeading)
     }
 
-    @ViewBuilder private func trainingContent(_ profile: WidgetProfile) -> some View {
-        if family == .systemSmall {
-            trainingCard(future: smallShowsFuture, roomy: false)
-            Spacer(minLength: 0)
-        } else if family == .systemMedium {
-            HStack(alignment: .top, spacing: 10) {
-                trainingCard(future: false, roomy: false)
-                trainingCard(future: true, roomy: false)
+    private func trainingContent(_ profile: WidgetProfile) -> some View {
+        Group {
+            if family == .systemSmall {
+                trainingCard(future: smallShowsFuture, roomy: false)
+            } else if family == .systemMedium {
+                HStack(alignment: .top, spacing: 10) {
+                    trainingCard(future: false, roomy: false)
+                    trainingCard(future: true, roomy: false)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    if profile.contentMode.includesMetrics {
+                        primary(profile.primaryMetric, compact: false)
+                        Rectangle().fill(theme.ink.opacity(0.16)).frame(height: 1)
+                    }
+                    VStack(spacing: profile.density == .compact ? 8 : 10) {
+                        trainingCard(future: false, roomy: true)
+                        trainingCard(future: true, roomy: true)
+                    }
+                }
             }
-            Spacer(minLength: 0)
-        } else {
-            if profile.contentMode.includesMetrics {
-                primary(profile.primaryMetric, compact: false)
-                Rectangle().fill(theme.ink.opacity(0.16)).frame(height: 1)
-            }
-            VStack(spacing: profile.density == .compact ? 8 : 10) {
-                trainingCard(future: false, roomy: true)
-                trainingCard(future: true, roomy: true)
-            }
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func trainingCard(future: Bool, roomy: Bool) -> some View {

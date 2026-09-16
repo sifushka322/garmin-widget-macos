@@ -263,7 +263,7 @@ struct DashboardView: View {
                         Label(store.text("action.sync"), systemImage: "arrow.clockwise")
                     }
                     .buttonStyle(DeskButtonStyle(prominent: true))
-                    .help(store.updatedText)
+                    .help(store.snapshot.hasMeasurements ? store.updatedText : store.text("action.sync"))
                     .disabled(store.isSyncing || !store.hasSession)
                     .keyboardShortcut("r", modifiers: .command)
                 }
