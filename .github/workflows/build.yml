@@ -67,7 +67,7 @@ jobs:
     name: macOS ${{ matrix.arch }}
     needs: version
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       # Both architectures build the same five fixed StaticConfiguration widgets.
       # The installed metadata tooling no longer changes the product model.
