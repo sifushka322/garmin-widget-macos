@@ -4,7 +4,13 @@ Baseline: `f6d68a3`, GarminDesk 0.3.0. Review and fixes: [draft PR #1](https://g
 
 ## Execution boundary
 
-The owner's Mac is used only to read/edit source, inspect the Git diff and review CI-generated images. No app launch, installation, native test binary, compiler, WebKit session, Keychain operation, UI automation or login-item change is used. Native tests, sandbox probes, rendering and packaging run on ephemeral GitHub Actions machines. Fixtures contain synthetic data only. The normal application and main branch are not updated by this audit.
+The original audit used the owner's Mac only to read/edit source, inspect the Git diff and review CI-generated images. No app launch, installation, native test binary, compiler, WebKit session, Keychain operation, UI automation or login-item change was used in that phase. Native tests, sandbox probes, rendering and packaging ran on ephemeral GitHub Actions machines. Fixtures contain synthetic data only. The normal application and main branch were not updated by that audit phase. The later widget-upgrade incident below is a separate, explicitly requested live investigation.
+
+## Later finding: update-path coverage gap
+
+On September 16, the real macOS gallery showed the previous icon and widget previews even though the installed package was 0.4.0 build 10 and its icon matched the current resource. The extension process had started the previous evening, before the installed binaries were replaced. Local registration refreshes and extension/NotificationCenter restarts restored the watch icon and the inspected teal/orange previews. This proves a recovery on that Mac, not that an ordinary upgrade works.
+
+The original audit and automatic publication gate covered fresh hosted builds, synthetic rendering and artifact integrity; they did not exercise replacement of a previous release while existing widgets and an old extension remained present. That was a release-coverage gap. Correct files on disk were insufficient evidence for the visible result. Future CI prepares a verified draft, and public promotion requires the [normal upgrade validation](widget-upgrade-validation.md) against the exact downloaded package. Existing release artifacts have not been changed by documenting this finding.
 
 ## Findings and fixes
 
@@ -64,8 +70,8 @@ These observations describe reviewed code, not penetration testing or proof of a
 ## Remaining runtime coverage
 
 1. Real Garmin authentication, session renewal and device/account-specific response shapes need consented live integration testing. Offline mocks cannot establish external service compatibility.
-2. WidgetKit gallery registration, desktop placement, refresh throttling, reboot and Notification Center need actual macOS runtime checks. PNGs and signed bundles cannot establish those behaviors.
+2. WidgetKit normal upgrades, all gallery types/sizes, desktop placement, refresh throttling, reboot and Notification Center need actual macOS runtime checks. The later partial gallery recovery above does not satisfy normal upgrade acceptance. PNGs and signed bundles cannot establish those behaviors.
 3. Hosted macOS 26 runs do not validate the minimum macOS 14 deployment target, VoiceOver interaction, Increase Contrast or every system display setting.
 4. An ad-hoc application remains unnotarized. This audit does not change the selected distribution model or publish a release.
 
-GitHub runner labels were checked against the [official runner image catalog](https://github.com/actions/runner-images/blob/main/README.md). Remote execution is intentionally used in place of the owner's desktop for this audit.
+GitHub runner labels were checked against the [official runner image catalog](https://github.com/actions/runner-images/blob/main/README.md). The original audit intentionally used remote execution in place of the owner's desktop; the separate incident investigation does not retroactively extend its validation coverage.

@@ -9,15 +9,17 @@ struct WidgetData: Codable {
     var isConnected: Bool
 
     static var preview: WidgetData {
-        var preferences = AppPreferences()
-        preferences.profiles[0].id = UUID(uuidString: "8C913B3D-EE7A-4F9E-831F-000000000001")!
-        return WidgetData(preferences: preferences, snapshot: .demo, isConnected: false)
+        WidgetData(preferences: AppPreferences(), snapshot: .demo, isConnected: false)
+    }
+    enum CodingKeys: String, CodingKey { case version, preferences, snapshot, isConnected }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version, forKey: .version)
+        try preferences.encodeWidgetSnapshot(to: c.superEncoder(forKey: .preferences))
+        try c.encode(snapshot, forKey: .snapshot)
+        try c.encode(isConnected, forKey: .isConnected)
     }
 
-    func profile(id: String?) -> WidgetProfile? {
-        guard let id else { return preferences.profiles.first }
-        return preferences.profiles.first { $0.id.uuidString == id }
-    }
 }
 
 enum WidgetDataStore {

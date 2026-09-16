@@ -30,6 +30,7 @@ if [[ "$create_dmg" == "1" ]]; then
     /usr/bin/ditto "$app_path" "$staging_dir/disk/GarminDesk.app"
     ln -s /Applications "$staging_dir/disk/Applications"
     cp "$project_dir/Resources/INSTALL.txt" "$staging_dir/disk/INSTALL.txt"
+    cp "$app_path/Contents/Resources/LICENSE.md" "$app_path/Contents/Resources/NOTICE.md" "$staging_dir/disk/"
     /usr/bin/codesign --verify --deep --strict "$staging_dir/disk/GarminDesk.app"
     /usr/bin/hdiutil create -volname GarminDesk -fs HFS+ -format UDZO \
         -srcfolder "$staging_dir/disk" "$staging_dir/$package_name.dmg"

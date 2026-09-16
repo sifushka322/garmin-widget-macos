@@ -1,73 +1,75 @@
-# Аудит получения данных Garmin — 15 сентября 2026
+# Garmin data-ingestion audit — September 15, 2026
 
-## Вывод
+## Conclusion
 
-Повторная проверка локализовала отказ: первый запрос входа штатного модуля приложения получает HTTP 429 и JSON-код Garmin 429, до выдачи токена и получения измерений. При этом существующая сессия Garmin Connect в Chrome показывает реальные данные, а официальный дневной экспорт успешно скачан и проверен. Основная проблема текущей версии — способ первого входа модуля приложения; найденные сопутствующие ошибки сохранения сессии и диагностики исправлены. Предыдущий ответ `429` не доказывает неверный пароль, блокировку именно аккаунта или IP, а также не сообщает срок восстановления. Пауза 30 минут была нашей мерой ограничения повторов, а не полученным от Garmin временем ожидания.
+A follow-up check located the failure: the app module's first login request returned HTTP 429 and Garmin JSON error code 429, before token issuance or measurement retrieval. Meanwhile, the existing Garmin Connect session in Chrome displayed real data, and an official daily export was successfully downloaded and verified. The main issue in the version reviewed was the module's initial login method; related session-persistence and diagnostic defects were fixed. The previous `429` response does not prove an incorrect password, an account-specific or IP-specific restriction, or a recovery deadline. The 30-minute pause was our retry-limiting measure, not a wait time supplied by Garmin.
 
-Самодостаточный `.app`, SwiftUI и WidgetKit не решают доступ к Garmin: приложение использует неофициальные интерфейсы Garmin Connect. Надёжность этого подключения нужно подтвердить отдельно на реальном аккаунте и при восстановлении сохранённой сессии.
+A self-contained `.app`, SwiftUI, and WidgetKit do not solve Garmin access: the app uses unofficial Garmin Connect interfaces. Connection reliability must be verified separately with a real account and restoration of a saved session. This document records the September 15 investigation, not the status of subsequent implementations.
 
-## Что обнаружено в нашей реализации
+## Findings in our implementation
 
-| Находка | Последствие | Статус |
+| Finding | Consequence | Status |
 | --- | --- | --- |
-| Оставлен только мобильный вариант входа | У него есть известная история отказов 429; ожидание само по себе не исправляет несовместимый способ входа | Нужна проверка конкретного этапа и поддерживаемого пути |
-| Сессия возвращалась только после всех запросов измерений | Успешный вход или обновлённый токен могли потеряться из-за более позднего сбоя | Исправлено: отдельное событие сессии до скачивания и при изменении токенов |
-| Watchdog приложения 120 секунд при бюджете модуля 180 секунд | Приложение могло оборвать ещё работающую загрузку | Исправлено: 210 секунд на этап |
-| Разные причины сводились к «сеть» или «войти заново» | Нельзя было отличить API 401, запрет 403, защитную проверку и ограничение 429 | Добавлены безопасные сведения об этапе, HTTP-коде, коде Garmin и Retry-After |
-| Библиотека допускает сессию только на веб-cookie, но сохраняет только DI-токены | Такая сессия не восстановилась бы после перезапуска | Теперь явно отклоняется как неподдерживаемая, без сообщения о неверном пароле |
-| Все 12 групп измерений и устройства запрашиваются при каждом обновлении | Минимум 14 запросов за синхронизацию с проверкой профиля; часть данных меняется редко | Рекомендовано разнести расписания и запрашивать нужные группы |
+| Only the mobile login method remained | It has a known history of 429 failures; waiting alone does not fix an incompatible login method | The exact stage and supported path need verification |
+| The session was returned only after all measurement requests | A successful login or refreshed token could be lost after a later failure | Fixed: a separate session event before downloading and when tokens change |
+| App watchdog allowed 120 seconds versus the module's 180-second budget | The app could interrupt a download still in progress | Fixed: 210 seconds per stage |
+| Different causes became “network” or “sign in again” | API 401, access denial 403, a security challenge, and rate limiting 429 could not be distinguished | Safe stage, HTTP-code, Garmin-code, and Retry-After diagnostics added |
+| The library accepts a web-cookie-only session but serializes only DI tokens | Such a session would not survive a restart | Now explicitly rejected as unsupported, without claiming an incorrect password |
+| All 12 measurement groups and devices are requested on every refresh | At least 14 requests per sync including the profile check; some data rarely changes | Separate schedules and requests limited to needed groups are recommended |
 
-У автора библиотеки есть [сообщение от 11 августа о частых отказах первых мобильных стратегий](https://github.com/cyberjunky/python-garminconnect/discussions/387). Оно предшествует установленному выпуску 0.3.15 от 12 сентября и не доказывает, что этот выпуск сломан у всех. Но выбирать данный путь единственным без успешной проверки на аккаунте было недостаточно обоснованно.
+The library author posted an [August 11 report of frequent failures in the initial mobile strategies](https://github.com/cyberjunky/python-garminconnect/discussions/387). It predates the installed 0.3.15 release from September 12 and does not prove that release fails for everyone. However, selecting it as the only route without a successful account check was insufficiently justified.
 
-Текущая библиотека актуальна. Откат на garth не считается решением: его [финальный выпуск](https://github.com/matin/garth/releases/tag/v0.8.0) объявляет прекращение поддержки новых входов после изменений Garmin.
+The installed library was current at the time of this audit. Reverting to garth was not considered a solution: its [final release](https://github.com/matin/garth/releases/tag/v0.8.0) announces the end of support for new logins after Garmin's changes.
 
-## Как получать данные
+## Data-access options
 
-| Вариант | Что даёт | Ограничение |
+| Option | Provides | Limitation |
 | --- | --- | --- |
-| Garmin Connect через сохранённую локальную сессию | Широкий набор показателей, автоматическое обновление, собственный сервер не нужен | Неофициальный интерфейс; сначала необходимо доказать вход, чтение данных и восстановление сессии |
-| Обычный вход на сайте + дневной Wellness Export | Официальный путь к FIT-файлам шагов, сна, стресса и HRV; подходит для резервного импорта | Ручной экспорт; наличие Body Battery и готовности в конкретном архиве ещё надо проверить |
-| Официальный Garmin Health API | Поддерживаемая интеграция | Требует допуска в программу Garmin; не готовый публичный API для личного Mac-приложения |
-| Apple Health | Часть показателей через iPhone | Не переносит весь нужный Garmin-набор; непосредственно на macOS HealthKit-хранилища нет |
-| Прямое чтение fēnix 8 | Возможны файлы устройства через MTP и отдельную реализацию доступа | Не готовая замена Connect и не гарантированное покрытие всех показателей |
+| Garmin Connect through a saved local session | Broad metric coverage, automatic refresh, no developer-operated server | Unofficial interface; login, data retrieval, and session restoration must first be demonstrated |
+| Normal website login + daily Wellness Export | Official access to FIT files for steps, sleep, stress, and HRV; suitable for backup import | Manual export; Body Battery and readiness must still be confirmed in the specific archive |
+| Official Garmin Health API | A supported integration | Requires admission to Garmin's program; not a ready-to-use public API for a personal Mac app |
+| Apple Health | Some metrics through an iPhone | Does not transfer the full required Garmin data set; macOS has no direct HealthKit store |
+| Direct fēnix 8 access | Device files may be available through MTP and a separate access implementation | Not a ready replacement for Connect or guaranteed coverage of every metric |
 
-Для резервного пути нужен именно [экспорт дневных wellness-данных](https://support.garmin.com/en-IE/marine/faq/W1TvTPW8JZ6LfJSfK512Q8/), а не только экспорт тренировок. Подробные первоисточники и ограничения приведены в [аудите источников](audit-data-options.md).
+The backup route requires a [daily wellness-data export](https://support.garmin.com/en-IE/marine/faq/W1TvTPW8JZ6LfJSfK512Q8/), not just workout exports. Detailed primary sources and limitations are in the [data-source audit](audit-data-options.md).
 
-## Предлагаемый порядок доведения до работы
+## Proposed path to a working connection
 
-1. Выполнить одну разрешённую проверку с новой диагностикой, соблюдая паузу после отказа. Не менять IP, TLS-профиль или клиент для обхода ограничения.
-2. Разделить результат на этапы: вход → выдача токена → принятие токена API → профиль → измерения. При отказе сохранить только безопасные диагностические сведения.
-3. После успеха немедленно сохранить сессию в Keychain. Отдельным свежим процессом подтвердить восстановление без повторного ввода пароля.
-4. При доступном обычном веб-входе скачать дневной Wellness Export как официальный резервный путь к реальным данным. Это не означает, что браузер автоматически выдаёт пригодную для нашего DI-клиента сессию.
-5. После проверки данных разделить частоту обновлений: текущая сводка чаще, сон/HRV/тренировочные оценки реже, список устройств редко. Виджеты читают локальный кэш.
+1. Perform one authorized check with the new diagnostics after observing the pause following a failure. Do not change IP, TLS fingerprint, or client to bypass the restriction.
+2. Separate the stages: login → token issuance → API acceptance of the token → profile → measurements. On failure, retain only safe diagnostic details.
+3. On success, immediately save the session in Keychain. Confirm restoration in a separate fresh process without entering the password again.
+4. If normal web login is available, download a daily Wellness Export as the official backup route to real data. This does not imply that the browser automatically yields a session usable by our DI client.
+5. Once data is verified, separate refresh frequencies: current summary more often, sleep/HRV/training assessments less often, device list rarely. Widgets read the local cache.
 
-Критерий готовности — реальные показатели плюс успешное восстановление сессии после перезапуска. Демоданные, компиляция и тесты на искусственных ответах этот критерий не заменяют.
+Readiness means real readings plus successful session restoration after restart. Demo data, compilation, and synthetic-response tests do not replace this criterion.
 
-## Проверки и оставшаяся неопределённость
+## Checks and remaining uncertainty
 
-34 теста модуля проходят, включая безопасную диагностику, раннее сохранение сессии, сохранение обновлённого токена при последующем отказе и различение ошибок. Проверка типов нативного приложения проходит. Реальные секреты в исходники, диагностический отчёт и артефакты сборки не записываются.
+The module's 34 tests passed, including safe diagnostics, early session persistence, retention of a refreshed token after a later failure, and error classification. Native app type checking passed. Real secrets were not written to source, diagnostic reports, or build artifacts.
 
-### Проверка реальных данных
+### Real-data validation
 
-В существующей сессии Chrome успешно открылась учётная запись пользователя Garmin Connect с актуальной сводкой. Повторно вводить пароль не потребовалось. Через штатный раздел «Экспорт данных о здоровье» скачан дневной ZIP за 15 сентября 2026 года (31 774 байта).
+The user's Garmin Connect account opened successfully in the existing Chrome session with a current summary. No password re-entry was required. The standard health-data export section downloaded a daily ZIP for September 15, 2026 (31,774 bytes).
 
-Официальный Garmin FIT SDK 21.214.0 проверил все 11 FIT-файлов: целостность/CRC и декодирование без ошибок. Публично описанные поля подтверждают наличие шагов, расстояния, активных калорий, пульса, пульса в покое, стресса, SpO₂, дыхания, ночного HRV, оценки и стадий сна. Body Battery и тренировочные оценки по описанным полям ещё не подтверждены; неопознанные сообщения не интерпретируются догадками.
+The official Garmin FIT SDK 21.214.0 verified all 11 FIT files: integrity/CRC and decoding completed without errors. Publicly documented fields confirmed steps, distance, active calories, heart rate, resting heart rate, stress, SpO₂, respiration, overnight HRV, sleep score, and sleep stages. Body Battery and training assessments had not yet been confirmed through documented fields; unrecognized messages were not interpreted by guesswork.
 
-Архив остался в пользовательских «Загрузках» и не включён в исходники или сборку. Это подтверждённая ручная выгрузка, а не работающая автоматическая синхронизация GarminDesk. Импорт FIT в приложение пока не реализован. Подробности: [проверка архива](audit-wellness-export.md).
+The archive remained in the user's Downloads folder and was not included in source or the build. This was a verified manual export, not working automatic GarminDesk synchronization. FIT import in the app was not yet implemented. Details: [archive validation](audit-wellness-export.md).
 
-Автоматическая проверка разрешений ранее отклонила ввод логина и пароля на новой веб-форме Garmin SSO. Этот ввод не выполнялся; работа с уже открытой авторизованной сессией не потребовала передачи пароля. ### Повторная проверка модуля приложения
+Automatic permission review had previously rejected entering a username and password in a new Garmin SSO web form. That entry was not performed; using the existing authenticated session required no password transfer.
 
-После консервативной 30-минутной паузы выполнена одна проверка упакованного модуля через локальный диагностический процесс. Сохранённые учётные данные прочитаны из Keychain и переданы модулю только через stdin. Проверка не использовала браузерные cookies, не меняла IP, TLS-профиль или маршрут входа.
+### App-module recheck
 
-Результат в 18:52 МСК:
+After a conservative 30-minute pause, one check of the packaged module ran through a local diagnostic process. Saved credentials were read from Keychain and passed to the module only through stdin. The check did not use browser cookies or change the IP, TLS fingerprint, or login route.
+
+Result at 18:52 Moscow time:
 
 - `stage: login`, `requestCount: 1`.
 - `httpStatus: 429`, `apiErrorStatus: 429`.
-- `responseKind: json`, `challenge: false` (отсутствие известного маркера не исключает другую защиту Garmin).
-- `Retry-After` не получен.
-- Токен и snapshot не получены; проверка восстановления сессии поэтому не запускалась.
-- Последующие запросы прекращены; локальная пауза сохранена.
+- `responseKind: json`, `challenge: false` (absence of a known marker does not exclude other Garmin protection).
+- No `Retry-After` received.
+- No token or snapshot received; session-restoration validation therefore did not run.
+- Further requests stopped; the local pause remained in place.
 
-Таким образом, автоматическое подключение GarminDesk остаётся неработающим, несмотря на доступность данных через обычный сайт. Успешный браузерный доступ не подтверждает работоспособность выбранного программного входа и не даёт автоматически переносимую DI-сессию.
+At the end of this investigation, automatic GarminDesk connection remained unavailable despite data access through the normal website. Successful browser access did not establish that the selected programmatic login worked or provide an automatically transferable DI session.
 
-Подробности: [аутентификация](audit-auth.md), [путь данных](audit-data-flow.md), [источники](audit-data-options.md).
+Details: [authentication](audit-auth.md), [data flow](audit-data-flow.md), [data sources](audit-data-options.md).

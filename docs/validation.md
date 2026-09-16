@@ -58,7 +58,7 @@ These checks expand support beyond the tested personal installation; they are no
 - The GitHub workflow has **not run**. Intel, other macOS versions (including the macOS 14 deployment target), and a separate clean Mac remain unverified.
 - The optional Xcode/App Intents configuration variant has not received local metadata extraction or gallery testing. The working local release uses four static kinds with profile assignment in the app.
 - Long-running observation does not prove indefinite session validity, every Garmin endpoint, every watch, all widget sizes, or all Notification Center and reboot scenarios.
-- Before publishing source, review the exact staged files. The owner has authorized public source without selecting a license; no license is assigned here. No license has been selected on the owner's behalf; no public release has been published by these checks.
+- Before publishing source, review the exact staged files. At this historical checkpoint, source publication without a selected license was authorized and these checks did not publish a release. Current revisions include [PolyForm Noncommercial 1.0.0](../LICENSE.md), added at the owner's later request; see [NOTICE.md](../NOTICE.md).
 
 ## Historical investigations
 

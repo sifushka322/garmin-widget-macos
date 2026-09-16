@@ -1,62 +1,62 @@
-# Аудит источников данных Garmin для macOS
+# Audit of Garmin data sources for macOS
 
-Проверено: 15 сентября 2026. Это исследование публичной документации, а не подтверждение входа или получения данных конкретного аккаунта. Использованы Garmin, Apple и репозитории авторов библиотек. При этой проверке вход в аккаунты и чтение секретов не выполнялись.
+Reviewed on September 15, 2026. This is research into public documentation, not confirmation of login or data retrieval for a particular account. Sources are Garmin, Apple, and the libraries' own repositories. No account logins or secret reads were performed during this review. Findings describe the sources as reviewed on that date.
 
-## Вывод
+## Conclusion
 
-Для личного Mac-приложения с Body Battery, сном, стрессом и Training Readiness практичный автоматический путь — локальный клиент Garmin Connect с кэшем. Свой сервер для него не нужен, но остаётся зависимость от облака Garmin и неофициальной авторизации. Полностью автономный вариант без облака, телефона и лицензий, который гарантированно получает весь этот набор с fēnix 8 на Mac, публичными интерфейсами не подтверждён.
+For a personal Mac app with Body Battery, sleep, stress, and Training Readiness, a local Garmin Connect client with a cache is a practical automatic route. It needs no developer-operated server, but still depends on Garmin's cloud and unofficial authentication. Public interfaces do not establish a fully offline route, without cloud services, a phone, or licenses, that guarantees this complete data set from a fēnix 8 to a Mac.
 
-Поддерживаемый запасной путь к настоящим данным — ручной **дневной Wellness Export**, затем локальный разбор FIT. Это отдельная возможность от экспорта тренировки. Garmin документирует шаги, сон, стресс и HRV; наличие Body Battery и Training Readiness в конкретном архиве необходимо проверить. [Экспорт Garmin](https://support.garmin.com/en-IE/marine/faq/W1TvTPW8JZ6LfJSfK512Q8/)
+A supported fallback for real data is a manual **daily Wellness Export**, followed by local FIT parsing. This is separate from exporting a workout. Garmin documents steps, sleep, stress, and HRV; Body Battery and Training Readiness must be verified in the specific archive. [Garmin export instructions](https://support.garmin.com/en-IE/marine/faq/W1TvTPW8JZ6LfJSfK512Q8/)
 
-## Сравнение
+## Comparison
 
-| Источник | Суточные показатели | Тренировки | Что потребуется | Пригодность |
+| Source | Daily metrics | Workouts | Requirements | Suitability |
 |---|---|---|---|---|
-| Health API + Activity API | Health API подтверждает Body Battery, сон, стресс, шаги, пульс; Training Readiness в публичном перечне не обещан | Activity API отдаёт подробности и FIT/TCX/GPX | Одобрение Garmin для бизнеса, OAuth 2.0, интеграция с облаком Garmin | Поддерживаемый путь для коммерческой платформы, не гарантированный вход для личного виджета |
-| Локальный `python-garminconnect` | Методы для Body Battery, сна, стресса, HRV и readiness; наличие данных зависит от аккаунта/устройства | Да | Пользовательский вход Garmin, иногда MFA; действующая сессия; интернет | Наиболее полный практичный путь для личного приложения, без гарантии стабильности Garmin |
-| Дневной Wellness Export → FIT | Garmin явно перечисляет шаги, сон, стресс, HRV; остальные поля нужно проверить | Отдельный экспорт активности | Ручной экспорт из Garmin Connect и локальный декодер | Реальные данные для проверки и резервного импорта; не фоновая синхронизация |
-| FIT активности | Дневная сводка не гарантирована | Сенсорные данные, события, круги и сводка записанной активности | Файл с устройства или Export Original | Подходит для тренировок; нельзя считать заменой суточному wellness |
-| USB/MTP с fēnix 8 | Зависит от реально доступных файлов, без публичной гарантии полного набора | Возможен импорт доступного файла | USB и работающее чтение MTP; стандартный Finder этого не обеспечивает | Отдельный эксперимент, не готовый надёжный маршрут на Mac |
-| Garmin Connect → Apple Health | Шаги, сон, энергия, пульс и часть других данных; Body Battery, Garmin stress и readiness не перечислены | Есть, без GPS-маршрута; пульс активности ограничен min/max | Garmin Connect на iPhone, разрешения Health и дополнительный канал iPhone → Mac | Не покрывает полный Garmin-набор и не работает напрямую через HealthKit на Mac |
-| Garmin Health Standard/Companion SDK | Standard: суточные показатели; Companion: текущие значения и потоки, историю дополняет Health API | Зависит от SDK/модели | Enterprise-доступ, Android/iOS, подтверждение модели и лицензии | Не публичный SDK для обычного Mac-приложения |
+| Health API + Activity API | Health API confirms Body Battery, sleep, stress, steps, and heart rate; the public list does not promise Training Readiness | Activity API provides details and FIT/TCX/GPX | Garmin business approval, OAuth 2.0, integration with Garmin's cloud | Supported route for a commercial platform; not guaranteed access for a personal widget |
+| Local `python-garminconnect` | Methods for Body Battery, sleep, stress, HRV, and readiness; availability depends on the account/device | Yes | User Garmin login, sometimes MFA; a valid session; internet | Broad practical coverage for a personal app, without guaranteed Garmin stability |
+| Daily Wellness Export → FIT | Garmin explicitly lists steps, sleep, stress, and HRV; other fields need verification | A separate activity export | Manual Garmin Connect export and a local decoder | Real data for validation and backup import; no background synchronization |
+| Activity FIT | Daily summary not guaranteed | Sensor data, events, laps, and summary of a recorded activity | A device file or Export Original | Suitable for workouts; not a substitute for daily wellness data |
+| USB/MTP from fēnix 8 | Depends on available files, with no public guarantee of a complete set | Available files may be imported | USB and functioning MTP access; standard Finder does not provide this | A separate experiment, not a ready reliable Mac route |
+| Garmin Connect → Apple Health | Steps, sleep, energy, heart rate, and some other data; Body Battery, Garmin stress, and readiness are not listed | Available without GPS tracks; activity heart rate limited to min/max | Garmin Connect on iPhone, Health permissions, and an additional iPhone → Mac channel | Does not cover the full Garmin data set or work directly through HealthKit on Mac |
+| Garmin Health Standard/Companion SDK | Standard: daily metrics; Companion: current values and streams, with history supplied by Health API | Depends on SDK/model | Enterprise access, Android/iOS, confirmed model support and licensing | Not a public SDK for an ordinary Mac app |
 
-## Что подтверждено источниками
+## Findings supported by the sources
 
-### Официальные API и прямой SDK
+### Official APIs and direct SDK
 
-Garmin Connect Developer Program предназначен для business/enterprise use. FAQ не обещает доступ частному пользователю; API используют OAuth 2.0. Бесплатный доступ к программе не означает доступ всем желающим. На публичной форме заявки при проверке в браузере отображалось только «Stay tuned for more updates on the program.» Поэтому срок одобрения из FAQ нельзя превращать в обещание подключения сейчас. [FAQ](https://developer.garmin.com/gc-developer-program/program-faq/), [форма заявки](https://www.garmin.com/en-US/forms/GarminConnectDeveloperAccess/)
+The Garmin Connect Developer Program is intended for business/enterprise use. Its FAQ does not promise individual access; the APIs use OAuth 2.0. Free program access does not mean everyone is eligible. When checked in a browser, the public application form displayed only “Stay tuned for more updates on the program.” The FAQ's approval timeline therefore cannot be treated as a promise of immediate access. [FAQ](https://developer.garmin.com/gc-developer-program/program-faq/), [application form](https://www.garmin.com/en-US/forms/GarminConnectDeveloperAccess/)
 
-Health API получает данные после загрузки с часов в Garmin Connect. Body Battery, сон, стресс, пульс, шаги, SpO₂ и дыхание перечислены явно. Публичная страница не подтверждает весь набор Training Readiness/HRV Status; это требуется проверять по выданной спецификации и доступным подпискам. Activity API описывает данные записанных тренировок, а не эквивалент всех wellness-метрик. [Health API](https://developer.garmin.com/gc-developer-program/health-api/), [Activity API](https://developer.garmin.com/gc-developer-program/activity-api/)
+Health API receives data after the watch uploads it to Garmin Connect. Body Battery, sleep, stress, heart rate, steps, SpO₂, and respiration are explicitly listed. The public page does not confirm the complete Training Readiness/HRV Status set; this requires checking the provided specification and available subscriptions. Activity API describes recorded workout data, not an equivalent of all wellness metrics. [Health API](https://developer.garmin.com/gc-developer-program/health-api/), [Activity API](https://developer.garmin.com/gc-developer-program/activity-api/)
 
-Health SDK предлагается enterprise-партнёрам для Android/iOS. Standard SDK может собирать суточные данные без серверов Garmin, но в таблице указан как несовместимый с Garmin Connect. Companion сохраняет совместимость с Connect, отдаёт текущие значения/потоки; суточная история обеспечивается через Health API. Семейство Fenix перечислено, но точную поддержку fēnix 8 и нужных режимов надо подтвердить у Garmin. Публичного macOS SDK здесь не заявлено. [Garmin Health SDK](https://developer.garmin.com/health-sdk/)
+Health SDK is offered to enterprise partners for Android/iOS. Standard SDK can collect daily data without Garmin servers, but the comparison table lists it as incompatible with Garmin Connect. Companion preserves Connect compatibility and provides current values/streams; daily history comes through Health API. The Fenix family is listed, but exact fēnix 8 and mode support must be confirmed with Garmin. No public macOS SDK is advertised here. [Garmin Health SDK](https://developer.garmin.com/health-sdk/)
 
-### Файлы, USB и резервный импорт
+### Files, USB, and backup import
 
-Garmin разделяет экспорт активности и дневной экспорт wellness. Для wellness: профиль → Account Settings → Account Information → дата → Export. Результат — ZIP оригинальных FIT за день. Полный экспорт аккаунта — отдельный запрос с последующей ссылкой по email; Garmin указывает типичные 48 часов, но допускает до 30 дней. Он подходит для архива, не для текущего виджета. [Инструкция Garmin](https://support.garmin.com/en-IE/marine/faq/W1TvTPW8JZ6LfJSfK512Q8/)
+Garmin distinguishes activity exports from daily wellness exports. For wellness: profile → Account Settings → Account Information → date → Export. The result is a ZIP containing the day's original FIT files. A full account export is a separate request followed by an emailed link; Garmin states a typical 48 hours but allows up to 30 days. It is suitable for archiving, not a current widget. [Garmin instructions](https://support.garmin.com/en-IE/marine/faq/W1TvTPW8JZ6LfJSfK512Q8/)
 
-FIT — контейнер сообщений, а не обещание фиксированного набора данных. Activity FIT хранит активную сессию; FIT SDK декодирует присутствующие сообщения, но не создаёт отсутствующие показатели. Даже наличие wellness FIT ещё не подтверждает поддержку всех проприетарных полей нашим парсером. [Типы FIT](https://developer.garmin.com/fit/file-types/), [официальный Python FIT SDK](https://github.com/garmin/fit-python-sdk)
+FIT is a message container, not a promise of a fixed data set. Activity FIT stores an active session; the FIT SDK decodes present messages but cannot create missing metrics. Even a wellness FIT file does not establish that our parser supports every proprietary field. [FIT file types](https://developer.garmin.com/fit/file-types/), [official Python FIT SDK](https://github.com/garmin/fit-python-sdk)
 
-fēnix 8 AMOLED/Solar явно включён в список MTP-устройств. Garmin не обещает доступ к их системным файлам через macOS и рекомендует Windows; одновременно устройство может быть занято только одним Garmin-приложением. Garmin Express на Mac поддерживает синхронизацию часов с аккаунтом Garmin Connect, но это не документированный локальный API для нашего приложения. [Garmin MTP](https://support.garmin.com/en-US/?faq=CZqibgTHMb0dAYEaj2UiU7), [руководство fēnix 8](https://www8.garmin.com/manuals/webhelp/GUID-EECCAC99-90D6-4AB1-9A3A-EC433D3365E2/EN-US/fenix_8_Series_OM_EN-US.pdf)
+fēnix 8 AMOLED/Solar is explicitly listed among MTP devices. Garmin does not promise access to their system files through macOS and recommends Windows; only one Garmin application can use a device at a time. Garmin Express on Mac supports syncing watches with a Garmin Connect account, but is not a documented local API for our app. [Garmin MTP](https://support.garmin.com/en-US/?faq=CZqibgTHMb0dAYEaj2UiU7), [fēnix 8 manual](https://www8.garmin.com/manuals/webhelp/GUID-EECCAC99-90D6-4AB1-9A3A-EC433D3365E2/EN-US/fenix_8_Series_OM_EN-US.pdf)
 
 ### Apple Health
 
-Garmin перечисляет: активную/базовую энергию, жир/BMI, этажи, пульс, сон, шаги, дистанцию, воду, вес и тренировки. Body Battery, Garmin stress и Training Readiness в списке отсутствуют. Для передачи Connect должен быть на переднем плане после успешной синхронизации часов. Это дополнительная задержка; сведения об активности передаются без GPS-трека и с ограничением пульса до min/max. [Garmin → Apple Health](https://support.garmin.com/sv-SE/?faq=lK5FPB9iPF5PXFkIpFlFPA)
+Garmin lists active/resting energy, body fat/BMI, flights climbed, heart rate, sleep, steps, distance, water, weight, and workouts. Body Battery, Garmin stress, and Training Readiness are absent from the list. To transfer data, Connect must be in the foreground after successful watch synchronization. This introduces another delay; activity data omits GPS tracks and limits heart rate to min/max. [Garmin → Apple Health](https://support.garmin.com/sv-SE/?faq=lK5FPB9iPF5PXFkIpFlFPA)
 
-На macOS нет HealthKit store: наличие самого framework не даёт чтение данных Health. Поэтому понадобилось бы отдельное iPhone-приложение, которое читает разрешённые записи и передаёт их на Mac. Локальная передача без своего облака возможна как наша разработка, но готового пути полного Garmin-набора это не даёт. [Apple: HealthKit](https://developer.apple.com/documentation/healthkit/about-the-healthkit-framework)
+macOS has no HealthKit store: the framework's presence does not enable reading Health data. A separate iPhone app would therefore need to read permitted records and send them to the Mac. Local transfer without our own cloud is possible as custom development, but does not provide a ready path to the full Garmin data set. [Apple: HealthKit](https://developer.apple.com/documentation/healthkit/about-the-healthkit-framework)
 
-### Неофициальный клиент и Connect IQ
+### Unofficial client and Connect IQ
 
-`python-garminconnect` поддерживается и использует собственный SSO-клиент, токены и MFA. Он обращается к сервисам Garmin, не подключается к часам напрямую. Старый `garth` прекращён после изменения авторизации Garmin; автор предупреждает, что новые входы не работают. Нельзя обещать бессрочную сессию или гарантированный интервал запросов. [python-garminconnect](https://github.com/cyberjunky/python-garminconnect), [Garth](https://github.com/matin/garth)
+`python-garminconnect` is maintained and uses its own SSO client, tokens, and MFA. It accesses Garmin services rather than connecting directly to the watch. The older `garth` was discontinued after Garmin authentication changes; its author warns that new logins no longer work. Neither an indefinite session nor a guaranteed request interval can be promised. [python-garminconnect](https://github.com/cyberjunky/python-garminconnect), [Garth](https://github.com/matin/garth)
 
-Connect IQ позволяет приложению на часах читать, например, SensorHistory с Body Battery. Объём истории зависит от модели. Это повод исследовать отдельный watch-companion, но не доказательство доступа ко всем sleep/readiness данным или готового прямого канала в macOS. [Garmin SensorHistory](https://developer.garmin.com/connect-iq/api-docs/Toybox/SensorHistory.html)
+Connect IQ lets a watch app read sources such as SensorHistory, including Body Battery. History depth depends on the model. This is a reason to investigate a separate watch companion, not proof of access to every sleep/readiness field or a ready direct macOS channel. [Garmin SensorHistory](https://developer.garmin.com/connect-iq/api-docs/Toybox/SensorHistory.html)
 
-## Рекомендация для текущего приложения
+## Recommendations for the app at the time of review
 
-Это инженерные выводы из ограничений выше:
+These are engineering conclusions drawn from the limitations above:
 
-1. Основной путь: локальный коннектор → Garmin Connect → локальный нормализованный кэш → интерфейс и WidgetKit. Считать подключение работающим только после успешного чтения непустых данных аккаунта, не после одного лишь получения токена.
-2. До обещания каждой карточки сопоставить её значение и временную отметку с Garmin Connect/часами. Разделять последний замер, время синхронизации часов и время HTTP-проверки. Средний стресс за день не подписывать как текущий стресс.
-3. При ошибке отдельной метрики сохранять корректные остальные; недоступное значение — `нет данных`, а не `0`. При 401 требовать восстановление сессии, при 429 делать паузу; не запускать частые повторные входы.
-4. Запасной путь: импорт пользовательского wellness ZIP/FIT. Сначала проверить реальный архив и список распознанных полей; явно показать дату импорта и происхождение значений. Не имитировать автообновление.
-5. Репозиторий может содержать весь наш клиент, нормализацию, UI и импорт, но не пользовательские токены, пароли, реальные FIT/JSON или серверные ключи. «Не нужен свой сервер» означает отсутствие нашей инфраструктуры; для автоматического Connect-пути интернет и Garmin остаются обязательны.
-6. Поставлять зафиксированную проверенную версию коннектора и обновлять отдельно от UI. Автоматизация через GitHub Actions не нужна: синхронизация должна выполняться на Mac пользователя, а секреты и health-данные оставаться вне репозитория.
+1. Primary route: local connector → Garmin Connect → normalized local cache → UI and WidgetKit. Treat the connection as working only after successfully reading nonempty account data, not merely receiving a token.
+2. Before promising each card, compare its value and timestamp with Garmin Connect/the watch. Distinguish the last measurement, watch sync time, and HTTP check time. Do not label average daily stress as current stress.
+3. If one metric fails, preserve valid others; an unavailable value means `no data`, not `0`. Require session recovery after 401 and pause after 429; do not repeatedly attempt login at short intervals.
+4. Fallback: import a user-provided wellness ZIP/FIT. First inspect a real archive and its recognized fields; clearly show the import date and data source. Do not imply automatic refresh.
+5. The repository may contain our complete client, normalization, UI, and import code, but no user tokens, passwords, real FIT/JSON files, or server keys. “No developer-operated server” means no infrastructure of our own; internet access and Garmin remain necessary for the automatic Connect route.
+6. Ship a pinned, verified connector version and update it separately from the UI. GitHub Actions is unnecessary for synchronization: it should run on the user's Mac, with secrets and health data kept outside the repository.

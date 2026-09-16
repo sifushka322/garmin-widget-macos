@@ -69,13 +69,10 @@ private final class Rig {
     let store: AppStore
     init(state: SyncPolicy.SessionState = .available, connected: Bool = true,
          checkpoint: SyncPolicy.Checkpoint? = nil, previous: GarminSnapshot? = nil,
-         groups: GarminWebCache? = nil, metrics: [String] = ["steps"], contentMode: WidgetContentMode = .metrics) throws {
+         groups: GarminWebCache? = nil) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("GarminDeskHostTests-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        var preferences = AppPreferences()
-        preferences.profiles[0].metricIDs = metrics
-        preferences.profiles[0].contentMode = contentMode
-        preferences.profiles[0].primaryMetric = metrics[0]
+        let preferences = AppPreferences()
         var initial = checkpoint ?? .init(); if checkpoint == nil { initial.sessionState = state }
         try AppJSON.encoder.encode(preferences).write(to: directory.appendingPathComponent("preferences.json"))
         try AppJSON.encoder.encode(initial).write(to: directory.appendingPathComponent("sync-policy.json"))
@@ -115,6 +112,7 @@ struct AppStoreSyncTests {
         let moment = TestClock().moment
         checkpoint.gate = .init(startedAt: moment, duration: 3600, reason: .rateLimit)
         let rig = try Rig(checkpoint: checkpoint); defer { rig.clean() }
+        rig.store.preferences.summaryMetrics = ["weight", "hydration"]
         rig.store.sync(trigger: .automatic); rig.store.sync(trigger: .wake); rig.store.connectGarmin()
         try expect(rig.web.prepares == 0 && rig.web.calls.isEmpty && rig.web.opens == 0,
                    "A server pause must prevent prepare, profile reads and opening sign-in")
@@ -144,42 +142,196 @@ struct AppStoreSyncTests {
         try expect(try rig.checkpoint().sessionState == .available, "Verified website session must be persisted as available")
     }
 
-    static func testFreshCadenceAndProfileReads() async throws {
+    private static func initialStages(at date: Date) -> [String] {
+        let day = SyncPolicy.sourceDay(for: date, timeZone: TimeZone(secondsFromGMT: 0)!)
+        return ["profile", "stats", "body_battery", "sleep", "hrv", "readiness", "respiration",
+                "vo2_max", "training", "devices", "activities"]
+            + GarminWebAPI.calendarRequests(sourceDay: day).map { "planned_workouts." + $0.month }
+    }
+
+    static func testFixedWidgetsAndIndependentCadences() async throws {
         let rig = try Rig(); defer { rig.clean() }
+        let first = initialStages(at: rig.clock.moment.wallTime)
         rig.store.sync(trigger: .automatic); try await settled(rig.store)
-        try expect(rig.web.calls == ["profile", "stats", "devices"], "Initial batch should request only selected metrics plus metadata")
+        try expect(rig.web.calls == first,
+                   "A fresh installation must fetch every fixed widget's metric and calendar data without profile assignments")
+        try expect(rig.web.calls.count == Set(rig.web.calls).count,
+                   "Summary and dedicated widgets must share each endpoint request within a batch")
+        try expect(!rig.web.calls.contains("weight") && !rig.web.calls.contains("hydration") && !rig.web.calls.contains("heart"),
+                   "The fixed product must not fetch optional manual-entry data or unsupported live heart rate")
         try expect(rig.store.snapshot.metrics["steps"]?.value == 123, "Actual normalized values should reach the snapshot")
         try expect(rig.store.nextSyncAt == rig.clock.moment.wallTime.addingTimeInterval(900), "Completion must schedule a single next due refresh")
         rig.store.sync(trigger: .automatic); rig.store.sync(trigger: .wake)
         try expect(rig.web.prepares == 1, "Fresh automatic/wake refresh must do no website I/O")
         rig.clock.advance(900)
         rig.store.sync(trigger: .automatic); try await settled(rig.store)
-        try expect(rig.web.calls == ["profile", "stats", "devices", "stats"], "Fast metric cadence must not re-fetch profile or devices")
+        try expect(Array(rig.web.calls.dropFirst(first.count)) == ["stats", "body_battery", "activities"],
+                   "Fast daily readings and activity history must refresh without repeating sleep, training, metadata, or calendar requests")
+        let count = rig.web.calls.count
+        rig.clock.advance(900)
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(Array(rig.web.calls.dropFirst(count)) == ["stats", "body_battery", "sleep", "hrv", "readiness", "respiration", "training", "activities"],
+                   "Thirty-minute groups must refresh independently of hourly VO2 max and scheduled workouts")
         rig.clock.advance(86400)
         rig.store.sync(trigger: .wake); try await settled(rig.store)
-        try expect(rig.web.calls.filter { $0 == "profile" }.count == 2, "Due profile group must perform a real request")
+        try expect(rig.web.calls.filter { $0 == "profile" }.count == 2, "Due account metadata must perform a real request")
         try expect(rig.web.calls.filter { $0 == "devices" }.count == 2, "Device metadata should refresh daily")
         try expect(try rig.checkpoint().successfulGroups[.profile]?.moment.wallTime == rig.clock.moment.wallTime,
-                   "Profile cadence stamp must reflect the actual profile request")
+                   "Account cadence stamp must reflect the actual account request")
     }
 
-    static func testProfileChangesCoalesce() async throws {
+    static func testPresentationChangesAndRefreshCoalesce() async throws {
         let rig = try Rig(); defer { rig.clean() }
         rig.web.holdStage = "stats"
         rig.store.sync(trigger: .automatic); try await held(rig.web)
-        rig.store.preferences.profiles[0].metricIDs.append("sleepDuration")
+        rig.store.preferences.widgetAppearance = .dark
+        rig.store.preferences.language = .de
         rig.store.sync(trigger: .wake); rig.store.sync()
-        try expect(rig.web.prepares == 1, "Changes and refresh clicks during a batch must join the current request")
+        try expect(rig.web.prepares == 1, "Appearance edits and refresh clicks during a batch must join the current request")
         rig.web.release(); try await settled(rig.store)
-        try expect(rig.store.nextSyncAt == rig.clock.moment.wallTime, "A newly selected group must be scheduled immediately after completion")
-        rig.store.sync(trigger: .automatic); try await settled(rig.store)
-        try expect(rig.web.calls == ["profile", "stats", "devices", "sleep"], "Follow-up must fetch only newly selected groups")
-        try expect(rig.store.snapshot.metrics["sleepDuration"]?.value == 300, "New profile metrics must appear without a second user refresh")
+        try expect(rig.web.calls == initialStages(at: rig.clock.moment.wallTime),
+                   "Presentation changes must not restart or broaden the fixed data request")
+        try expect(rig.store.nextSyncAt == rig.clock.moment.wallTime.addingTimeInterval(900),
+                   "Presentation changes must preserve normal cadence after completion")
         let prepares = rig.web.prepares
-        rig.store.preferences.profiles[0].name = "Renamed"
-        try expect(rig.web.prepares == prepares, "Presentation-only profile edits must not trigger data requests")
-        rig.store.preferences.menuMetric = "hydration"
-        try expect(rig.web.prepares == prepares, "A legacy menu preference must not add requests to the regular app")
+        rig.store.preferences.appearance = .light
+        rig.store.preferences.widgetAppearance = .colorful
+        rig.store.preferences.language = .ja
+        try expect(rig.web.prepares == prepares, "Language and appearance changes must not trigger website requests")
+        let persisted = try AppJSON.decoder.decode(AppPreferences.self, from: Data(contentsOf: rig.directory.appendingPathComponent("preferences.json")))
+        try expect(persisted.language == .ja && persisted.appearance == .light && persisted.widgetAppearance == .colorful,
+                   "Presentation settings must persist without a data refresh")
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: rig.directory.appendingPathComponent("preferences.json"))) as? [String: Any]
+        try expect(object?["profiles"] == nil && object?["widgetProfileIDs"] == nil,
+                   "The host's persisted preferences must not recreate removed user profiles")
+    }
+
+    static func testAvailableReadingsKeepRealZero() async throws {
+        let rig = try Rig(); defer { rig.clean() }
+        rig.web.payloads["stats"] = ["totalSteps": 0]
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        let day = WidgetSlot.day.profile(in: rig.store.preferences)
+        let visible = WidgetMetricPolicy.selection(for: day, snapshot: rig.store.snapshot)
+        try expect(visible.primary == "steps" && visible.secondary == ["sleepDuration"],
+                   "A real zero is available while absent daily readings remain hidden")
+        try expect(day.primaryMetric == "bodyBattery" && day.prefersAvailableMetrics,
+                   "Choosing an available reading must not change the fixed recipe or disable availability")
+        try expect(rig.store.trainingTimeline?.past.isEmpty == true && rig.store.trainingTimeline?.futureIssue == nil,
+                   "Successful empty training responses produce a verified empty timeline, not invented activities")
+    }
+
+    static func testSportAndCalendarStayDistinct() async throws {
+        let rig = try Rig(); defer { rig.clean() }
+        rig.web.payloads["readiness"] = [["score": 73, "recoveryTime": 0]]
+        rig.web.payloads["activities"] = [["activityId": 91, "activityName": "Fixture activity", "duration": 600]]
+        let day = SyncPolicy.sourceDay(for: rig.clock.moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!)
+        let calendar = GarminWebAPI.calendarRequests(sourceDay: day)
+        for request in calendar { rig.web.payloads["planned_workouts." + request.month] = ["calendarItems": []] }
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        let sport = WidgetSlot.sport.profile(in: rig.store.preferences)
+        let training = WidgetSlot.training.profile(in: rig.store.preferences)
+        try expect(sport.contentMode == .metrics && !sport.contentMode.includesTraining && sport.style == .sport,
+                   "Sport is a metric view even when the shared snapshot contains activities")
+        try expect(training.contentMode == .training && !training.contentMode.includesMetrics,
+                   "Training remains a calendar, without an unrelated metric grid")
+        try expect(!WidgetSlot.overview.includesTraining && !WidgetSlot.sport.includesTraining && WidgetSlot.training.includesTraining,
+                   "Summary and Sport show metrics; the dedicated Training widget owns the calendar")
+        let selection = WidgetMetricPolicy.selection(for: sport, snapshot: rig.store.snapshot)
+        try expect(selection.primary == "trainingReadiness" && selection.secondary.contains("recoveryTime"),
+                   "Sport must display readiness and a real zero recovery time")
+        try expect(rig.store.snapshot.metrics["trainingReadiness"]?.value == 73 && rig.store.snapshot.metrics["recoveryTime"]?.value == 0,
+                   "Sport readings must reach the same snapshot as calendar data")
+        try expect(rig.store.trainingTimeline?.past.first?.title == "Fixture activity" && rig.store.trainingTimeline?.futureCoverageEnd == calendar.last?.lastDay,
+                   "The dedicated Training widget receives actual history and explicitly verified empty calendar coverage")
+    }
+
+    static func testSummaryOptionalReadingsAndRemoval() async throws {
+        let rig = try Rig(); defer { rig.clean() }
+        rig.web.payloads["weight"] = ["dateWeightList": [["weight": 73400]]]
+        rig.web.payloads["hydration"] = ["valueInML": 0]
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        let initialCount = rig.web.calls.count
+        rig.store.preferences.summaryMetrics = ["hydration", "weight", "steps"]
+        try await settled(rig.store)
+        try expect(Array(rig.web.calls.dropFirst(initialCount)) == ["weight", "hydration"],
+                   "Explicit Summary selections must request only their new optional groups while fixed widget caches remain fresh")
+        let selection = WidgetMetricPolicy.summarySelection(preferences: rig.store.preferences, snapshot: rig.store.snapshot)
+        try expect(selection.primary == "hydration" && selection.secondary == ["weight", "steps"],
+                   "A selected zero hydration reading must remain the first Summary metric and preserve the selected order")
+        try expect(rig.store.snapshot.metrics["weight"]?.value == 73.4 && rig.store.snapshot.metrics["hydration"]?.value == 0,
+                   "Explicit optional readings must reach the shared snapshot with real normalized values")
+        let count = rig.web.calls.count
+        rig.store.preferences.summaryMetrics = ["steps", "weight", "hydration"]
+        try expect(rig.web.calls.count == count, "Reordering the same chosen readings must not fetch any endpoint again")
+        rig.store.preferences.summaryMetrics = ["steps"]
+        try await settled(rig.store)
+        let single = WidgetMetricPolicy.summarySelection(preferences: rig.store.preferences, snapshot: rig.store.snapshot)
+        try expect(single.primary == "steps" && single.secondary.isEmpty,
+                   "Removing a Summary reading must hide it even while its cached value remains available")
+        rig.clock.advance(3600)
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        let later = Array(rig.web.calls.dropFirst(count))
+        try expect(!later.contains("weight") && !later.contains("hydration"),
+                   "Removed optional Summary groups must stop refreshing when their cadence becomes due")
+        try expect(later.contains("sleep") && later.contains("readiness") && later.contains("activities")
+                   && later.filter { $0.hasPrefix("planned_workouts.") }.count == 2,
+                   "A one-metric Summary must not disable the dedicated Sleep, Sport, or Training data requests")
+        let persisted = try AppJSON.decoder.decode(AppPreferences.self, from: Data(contentsOf: rig.directory.appendingPathComponent("preferences.json")))
+        try expect(persisted.summaryMetrics == ["steps"], "The chosen Summary list must persist without restoring hidden readings")
+    }
+
+    static func testSummaryChangesDuringSyncCoalesce() async throws {
+        let rig = try Rig(); defer { rig.clean() }
+        rig.web.holdStage = "stats"
+        rig.store.sync(trigger: .automatic); try await held(rig.web)
+        rig.store.preferences.summaryMetrics = ["hydration", "steps"]
+        rig.store.sync(trigger: .wake); rig.store.sync()
+        try expect(rig.web.prepares == 1, "Adding a Summary group during sync must coalesce with the active batch")
+        rig.web.release(); try await settled(rig.store)
+        try expect(rig.web.calls == initialStages(at: rig.clock.moment.wallTime),
+                   "The original batch must finish once without duplicate requests from a mid-sync selection change")
+        try expect(rig.store.nextSyncAt == rig.clock.moment.wallTime,
+                   "A newly selected Summary group must become due immediately after the active batch")
+        let count = rig.web.calls.count
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(Array(rig.web.calls.dropFirst(count)) == ["hydration"],
+                   "The follow-up must fetch only the newly selected Summary endpoint")
+    }
+
+    static func testProfileRemovalMigratesWithoutSigningOut() async throws {
+        let rig = try Rig(); defer { rig.clean() }
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        let oldID = UUID().uuidString
+        let old: [String: Any] = ["language": "fr", "appearance": "dark", "refreshMinutes": 30,
+            "profiles": [["id": oldID, "name": "Old fixture", "metricIDs": ["weight"], "primaryMetric": "weight",
+                          "style": "monochrome", "density": "compact", "contentMode": "mixed"]],
+            "widgetProfileIDs": ["sport": oldID, "sleep": "missing"]]
+        let preferenceURL = rig.directory.appendingPathComponent("preferences.json")
+        try JSONSerialization.data(withJSONObject: old).write(to: preferenceURL)
+        let checkpointURL = rig.directory.appendingPathComponent("sync-policy.json")
+        let groupsURL = rig.directory.appendingPathComponent("metric-groups.json")
+        let checkpointBefore = try Data(contentsOf: checkpointURL)
+        let groupsBefore = try Data(contentsOf: groupsURL)
+        let web = MockWeb()
+        let restored = AppStore(supportDirectory: rig.directory, webSession: web, defaults: rig.defaults,
+                                clock: { rig.clock.moment }, sourceTimeZone: { TimeZone(secondsFromGMT: 0)! },
+                                automaticScheduling: false, writesWidgetData: false)
+        defer { restored.cancelLogin(resumeAutomatic: false) }
+        try expect(restored.hasSession && !restored.needsWebSignIn && web.prepares == 0,
+                   "Removing profile preferences must not sign out a connected user or start migration network requests")
+        try expect(restored.preferences.language == .fr && restored.preferences.refreshMinutes == 30 && restored.preferences.widgetAppearance == .dark,
+                   "First launch must migrate independent settings and monochrome appearance")
+        try expect(restored.preferences.summaryMetrics == AppPreferences.defaultSummaryMetrics,
+                   "Old custom profiles must migrate to the new editable Summary defaults")
+        try expect(restored.snapshot.metrics["steps"]?.value == 123 && restored.trainingTimeline == rig.store.trainingTimeline,
+                   "Profile migration must keep cached measurements and calendar coverage")
+        try expect(try Data(contentsOf: checkpointURL) == checkpointBefore && Data(contentsOf: groupsURL) == groupsBefore,
+                   "Preference migration must not rewrite cadence, account ownership, or endpoint caches")
+        let persisted = try JSONSerialization.jsonObject(with: Data(contentsOf: preferenceURL)) as! [String: Any]
+        try expect(persisted["profiles"] == nil && persisted["widgetProfileIDs"] == nil && persisted["widgetAppearance"] as? String == "dark",
+                   "First launch must finish migrating the preference file without retaining obsolete user profiles")
+        restored.sync(trigger: .automatic)
+        try expect(web.prepares == 0, "Migrating to fixed widgets must preserve already fresh group cadence")
     }
 
     static func testRateLimitAndClockRollback() async throws {
@@ -215,7 +367,7 @@ struct AppStoreSyncTests {
     }
 
     static func testPartialAndEmptyDays() async throws {
-        let rig = try Rig(metrics: ["steps", "sleepDuration"]); defer { rig.clean() }
+        let rig = try Rig(); defer { rig.clean() }
         rig.store.sync(trigger: .automatic); try await settled(rig.store)
         rig.clock.advance(1800)
         rig.web.payloads["stats"] = ["totalSteps": 456]
@@ -262,7 +414,7 @@ struct AppStoreSyncTests {
         }
         let rig = try Rig(checkpoint: checkpoint, groups: GarminWebCache(accountDisplayName: "fixture-user")); defer { rig.clean() }
         rig.store.sync(trigger: .automatic); try await settled(rig.store)
-        try expect(rig.web.calls == ["profile", "stats"], "Missing group cache must invalidate freshness without re-fetching valid metadata")
+        try expect(rig.web.calls == initialStages(at: time.wallTime).filter { $0 != "devices" }, "Missing group caches must invalidate freshness without re-fetching valid device metadata")
         let freshWeb = MockWeb()
         let restored = AppStore(supportDirectory: rig.directory, webSession: freshWeb, defaults: rig.defaults,
                                 clock: { rig.clock.moment }, sourceTimeZone: { TimeZone(secondsFromGMT: 0)! },
@@ -313,8 +465,8 @@ struct AppStoreSyncTests {
                    "Fallback retained after total failure must still expose the current failure")
     }
 
-    static func testTrainingOptInAndCadence() async throws {
-        let rig = try Rig(contentMode: .mixed); defer { rig.clean() }
+    static func testTrainingAlwaysAvailableAndCadence() async throws {
+        let rig = try Rig(); defer { rig.clean() }
         let day = SyncPolicy.sourceDay(for: rig.clock.moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!)
         let requests = GarminWebAPI.calendarRequests(sourceDay: day)
         rig.web.payloads["activities"] = [["activityId": 42, "activityName": "Synthetic run", "duration": 1800, "distance": 5000]]
@@ -323,7 +475,7 @@ struct AppStoreSyncTests {
                 "workoutId": 7, "date": request.lastDay, "title": "Synthetic plan"]]]
         }
         rig.store.sync(trigger: .automatic); try await settled(rig.store)
-        try expect(rig.web.calls.suffix(3) == ["activities"] + requests.map { "planned_workouts." + $0.month }, "Training opt-in must fetch the activity list and exactly two calendar months")
+        try expect(rig.web.calls.suffix(3) == ["activities"] + requests.map { "planned_workouts." + $0.month }, "The fixed Training widget must fetch the activity list and exactly two calendar months")
         try expect(rig.store.trainingTimeline?.past.first?.distanceKM == 5, "Training normalization must reach published state")
         try expect(rig.store.trainingTimeline?.upcoming.count == 2, "Repeated workout templates on different dates remain separate appointments")
         try expect(rig.store.trainingTimeline?.futureCoverageEnd == requests.last?.lastDay, "Calendar coverage must end at the verified month boundary")
@@ -337,7 +489,7 @@ struct AppStoreSyncTests {
     }
 
     static func testTrainingPartialAndRateLimit() async throws {
-        let rig = try Rig(contentMode: .training); defer { rig.clean() }
+        let rig = try Rig(); defer { rig.clean() }
         let day = SyncPolicy.sourceDay(for: rig.clock.moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!)
         let requests = GarminWebAPI.calendarRequests(sourceDay: day)
         let firstStage = "planned_workouts." + requests[0].month
@@ -346,7 +498,7 @@ struct AppStoreSyncTests {
         rig.web.payloads[firstStage] = ["calendarItems": [["itemType": "workout", "id": 8, "date": requests[0].lastDay]]]
         rig.web.errors[secondStage] = .rateLimited(3600)
         rig.store.sync(trigger: .automatic); try await settled(rig.store)
-        try expect(!rig.web.calls.contains("stats") && !rig.web.calls.contains("body_battery"), "Training-only profiles do not fetch stored metric selections or the legacy menu metric")
+        try expect(rig.web.calls.contains("stats") && rig.web.calls.contains("body_battery"), "Metric widgets must retain their successful readings even when a later calendar page fails")
         try expect(rig.store.trainingTimeline?.past.count == 1 && rig.store.trainingTimeline?.upcoming.count == 1, "A second-month failure must preserve independently successful history and first month")
         try expect(rig.store.trainingTimeline?.futureCoverageEnd == requests[0].lastDay, "Partial calendar cannot claim coverage of a failed month")
         try expect(rig.store.trainingTimeline?.futureIssue == "rate_limit", "Partial training must expose rate-limit provenance")
@@ -378,7 +530,7 @@ struct AppStoreSyncTests {
     }
 
     static func testTrainingFirstPageRateLimitStops() async throws {
-        let rig = try Rig(contentMode: .mixed); defer { rig.clean() }
+        let rig = try Rig(); defer { rig.clean() }
         let day = SyncPolicy.sourceDay(for: rig.clock.moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!)
         let requests = GarminWebAPI.calendarRequests(sourceDay: day)
         rig.web.errors["planned_workouts." + requests[0].month] = .rateLimited(nil)
@@ -393,8 +545,13 @@ struct AppStoreSyncTests {
             try await testAccountOwnershipAcrossRestart()
             try await testPolicyBeforeWebsite()
             try await testBootstrapExpiration()
-            try await testFreshCadenceAndProfileReads()
-            try await testProfileChangesCoalesce()
+            try await testFixedWidgetsAndIndependentCadences()
+            try await testPresentationChangesAndRefreshCoalesce()
+            try await testAvailableReadingsKeepRealZero()
+            try await testSportAndCalendarStayDistinct()
+            try await testSummaryOptionalReadingsAndRemoval()
+            try await testSummaryChangesDuringSyncCoalesce()
+            try await testProfileRemovalMigratesWithoutSigningOut()
             try await testRateLimitAndClockRollback()
             try await testLegacyCooldownMigration()
             try await testPartialAndEmptyDays()
@@ -402,7 +559,7 @@ struct AppStoreSyncTests {
             try await testCacheAndCheckpointConsistency()
             try await testDisconnectCleanupOrdering()
             try testCacheDateBoundary()
-            try await testTrainingOptInAndCadence()
+            try await testTrainingAlwaysAvailableAndCadence()
             try await testTrainingPartialAndRateLimit()
             try await testTrainingFirstPageRateLimitStops()
             print("PASS: \(checks) host lifecycle and cache checks")
@@ -416,7 +573,7 @@ struct AppStoreSyncTests {
             var cache = GarminWebCache(accountDisplayName: owner)
             cache.groups["sleep"] = .init(sourceDay: day, retrievedAt: now.addingTimeInterval(-7200), metrics: ["sleepDuration": .init(value: 999)])
             let previous = cache.snapshot(sourceDay: day, warnings: [])
-            let rig = try Rig(previous: previous, groups: cache, metrics: ["steps", "sleepDuration"])
+            let rig = try Rig(previous: previous, groups: cache)
             defer { rig.clean() }
             rig.web.payloads["sleep"] = ["unexpected": true]
             rig.store.sync(trigger: .automatic); try await settled(rig.store)
@@ -434,6 +591,13 @@ struct AppStoreSyncTests {
         let firstInstall = try Rig(connected: false); defer { firstInstall.clean() }
         try expect(!firstInstall.store.snapshot.isDemo && !firstInstall.store.snapshot.hasMeasurements,
                    "First launch has no invented values")
+        let legacyDemo = try Rig(previous: .demo); defer { legacyDemo.clean() }
+        try expect(!legacyDemo.store.snapshot.isDemo && !legacyDemo.store.snapshot.hasMeasurements,
+                   "A historical cached demo must never become live account readings on relaunch")
+        let gallery = WidgetPreviewData.make(preferences: AppPreferences(), at: firstInstall.clock.moment.wallTime)
+        let savedGallery = try Rig(previous: gallery.snapshot); defer { savedGallery.clean() }
+        try expect(!savedGallery.store.snapshot.isDemo && !savedGallery.store.snapshot.hasMeasurements && savedGallery.store.trainingTimeline == nil,
+                   "Even accidentally persisted gallery examples must be cleared from live readings and calendar state")
         let rig = try Rig(); defer { rig.clean() }
         rig.store.sync(); try await settled(rig.store)
         let original = rig.store.snapshot
@@ -468,8 +632,9 @@ struct AppStoreSyncTests {
         rig.store.disconnect()
         try expect(!rig.store.snapshot.hasMeasurements && !rig.store.snapshot.isDemo, "Disconnect clears current and retained values without entering demo")
         for slot in WidgetSlot.allCases {
-            try expect(!slot.previewData.snapshot.hasMeasurements && slot.previewData.snapshot.trainingTimeline == nil,
-                       "Widget gallery must not invent readings or workouts")
+            let preview = slot.previewData(language: .en, at: rig.clock.moment.wallTime)
+            try expect(preview.snapshot.isDemo && preview.snapshot.hasMeasurements && preview.snapshot.trainingTimeline != nil,
+                       "Filled gallery examples must stay explicitly synthetic for every widget type")
         }
     }
 }

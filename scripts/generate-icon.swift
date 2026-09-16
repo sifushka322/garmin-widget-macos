@@ -1,4 +1,4 @@
-// Package the selected artwork without redrawing it; export the shared menu glyph.
+// Package the selected artwork with a clean, opaque tile; export the shared menu glyph.
 // Run: bash scripts/generate-icon.sh
 import AppKit
 import CoreGraphics
@@ -7,6 +7,36 @@ import Foundation
 
 @main
 enum IconGenerator {
+    static func preparedArtwork(_ artwork: CGImage) throws -> CGImage {
+        // Image generation left the solid tile at alpha 252–253 and scattered
+        // nearly invisible pixels outside it. Keep the source colors and shape,
+        // but make its interior opaque before macOS classifies this legacy icon.
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: artwork.width, height: artwork.height,
+                  bitsPerComponent: 8, bytesPerRow: artwork.width * 4, space: space,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                      | CGBitmapInfo.byteOrder32Big.rawValue),
+              let bytes = context.data?.assumingMemoryBound(to: UInt8.self) else {
+            throw NSError(domain: "IconGenerator", code: 5)
+        }
+        context.draw(artwork, in: CGRect(x: 0, y: 0, width: artwork.width, height: artwork.height))
+        for pixel in 0..<(artwork.width * artwork.height) {
+            let offset = pixel * 4
+            let alpha = Int(bytes[offset + 3])
+            let normalizedAlpha = alpha <= 8 ? 0 : (alpha >= 248 ? 255 : alpha)
+            guard normalizedAlpha != alpha else { continue }
+            for channel in 0..<3 {
+                bytes[offset + channel] = alpha == 0 ? 0
+                    : UInt8(min(255, (Int(bytes[offset + channel]) * normalizedAlpha + alpha / 2) / alpha))
+            }
+            bytes[offset + 3] = UInt8(normalizedAlpha)
+        }
+        guard let image = context.makeImage() else {
+            throw NSError(domain: "IconGenerator", code: 6)
+        }
+        return image
+    }
+
     static func png(pixels: Int, draw: (CGContext) -> Void) throws -> Data {
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: pixels, height: pixels,
@@ -43,12 +73,13 @@ enum IconGenerator {
         try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
         let original = branding.appendingPathComponent("AppIcon-source.png")
         guard let source = CGImageSourceCreateWithURL(original as CFURL, nil),
-              let artwork = CGImageSourceCreateImageAtIndex(source, 0, nil),
-              artwork.width == artwork.height, artwork.width >= 1024 else {
+              let originalArtwork = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              originalArtwork.width == originalArtwork.height, originalArtwork.width >= 1024 else {
             throw NSError(domain: "IconGenerator", code: 3, userInfo: [
                 NSLocalizedDescriptionKey: "AppIcon-source.png must be a square PNG of at least 1024 pixels."
             ])
         }
+        let artwork = try preparedArtwork(originalArtwork)
         for size in [16, 32, 128, 256, 512] {
             for scale in [1, 2] {
                 let pixels = size * scale

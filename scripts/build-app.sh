@@ -96,6 +96,7 @@ staged_app="$staging_dir/GarminDesk.app"
 mkdir -p "$staged_app/Contents/MacOS" "$staged_app/Contents/Resources" "$staged_app/Contents/PlugIns"
 cp "$swift_bin_dir/GarminDesk" "$staged_app/Contents/MacOS/GarminDesk"
 cp "$project_dir/Resources/Info.plist" "$staged_app/Contents/Info.plist"
+cp "$project_dir/LICENSE.md" "$project_dir/NOTICE.md" "$staged_app/Contents/Resources/"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $app_version" "$staged_app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $app_build" "$staged_app/Contents/Info.plist"
 legacy_included=false

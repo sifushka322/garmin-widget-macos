@@ -1,49 +1,20 @@
-GarminDesk 0.4.0 — установка / installation
+GarminDesk — installation
 
-РУССКИЙ
-1. Перетащите GarminDesk.app на значок Applications («Программы»).
-2. Извлеките диск и откройте GarminDesk из «Программ».
-3. В разделе «Аккаунт Garmin» выполните обычный вход Garmin Connect.
-4. В «Профили виджетов» настройте показатели и назначьте профили четырём
-   видам виджетов.
-5. Правой кнопкой на рабочий стол → «Изменить виджеты» → GarminDesk.
-   Выберите вид и размер, затем добавьте виджет.
-
-GarminDesk открывается обычным окном и находится в Dock. Нажатие виджета
-открывает приложение с его профилем. Закрытие окна оставляет синхронизацию
-работающей; ⌘Q завершает приложение. Язык меняется в разделе «Основные».
-
-Python, Homebrew, библиотеки и терминал для установки не нужны. Приложение
-использует системный WebKit и подключается напрямую к Garmin Connect.
-Для новых измерений нужны интернет и синхронизация часов с Garmin Connect.
-
-Если macOS сообщает о неизвестном разработчике или отсутствии заверения,
-после попытки открытия доверенной копии используйте «Системные настройки» →
-«Конфиденциальность и безопасность» → «Всё равно открыть» → «Открыть».
-Пароль Mac вводите только в системном диалоге, если система его запросит.
-Это действие не предназначено для предупреждений о вредоносном или
-повреждённом приложении; на управляемом Mac оно может быть недоступно.
-Справка Apple: https://support.apple.com/102445
-
-Выберите пакет arm64 для Apple Silicon или x86_64 для Intel Mac.
-Целевая система — macOS 14+.
-Проверенные версии macOS перечислены в описании выпуска:
-https://github.com/sifushka322/garmin-widget-macos/releases
-
-ENGLISH
 1. Drag GarminDesk.app onto Applications.
 2. Eject the disk, then open GarminDesk from Applications.
 3. Sign in normally to Garmin Connect under Garmin account.
-4. Under Widget profiles, choose metrics and assign profiles to the four
-   widget kinds.
-5. Right-click the desktop → Edit Widgets → GarminDesk. Choose a kind and
-   size, then add the widget.
+4. Under Widgets, choose Colorful, Light, or Dark and preview each widget.
+   No profiles or assignments are needed.
+5. Right-click the desktop → Edit Widgets → GarminDesk. Add Summary, Day,
+   Sport, Sleep, or Training calendar in the size you want.
+   A large Summary combines the main measurements in one layout. Choose
+   its measurements under Widgets; add Sleep or Training for more detail.
 
 GarminDesk is a regular windowed app with a Dock icon. Clicking a widget
-opens the app with its profile. Closing the window keeps synchronization
+opens its corresponding view in the app. Closing the window keeps synchronization
 running; ⌘Q quits. Choose the interface language under General.
 
-No Python, Homebrew, extra libraries or terminal setup is needed. The app
+No Python, Homebrew, extra libraries, or terminal setup is needed. The app
 connects directly to Garmin Connect using system WebKit. New readings require
 internet access and a watch synced with Garmin Connect.
 
@@ -53,6 +24,9 @@ notarized, first try opening it, then use System Settings → Privacy & Security
 This is not for malware or damaged-app warnings; managed Macs may disallow it.
 Apple instructions: https://support.apple.com/102445
 
-Choose arm64 for Apple Silicon or x86_64 for Intel Mac. Target: macOS 14+.
+Choose arm64 for Apple Silicon or x86_64 for an Intel Mac. Target: macOS 14+.
 See the release notes for verified macOS versions:
 https://github.com/sifushka322/garmin-widget-macos/releases
+
+Licensed for noncommercial use under PolyForm Noncommercial 1.0.0.
+See LICENSE.md and NOTICE.md included with this package.

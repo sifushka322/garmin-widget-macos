@@ -2,12 +2,77 @@ import Foundation
 import SwiftUI
 
 enum AppLanguage: String, CaseIterable, Codable, Identifiable {
-    case system, ru, en
+    // Existing values stay stable because preferences and widget snapshots persist them.
+    case system, en, ru, de, fr, es, it
+    case ptBR = "pt-BR"
+    case nl, pl, ja, ko
+    case zhHans = "zh-Hans"
     var id: String { rawValue }
-    var effectiveCode: String {
-        self == .system ? (Locale.preferredLanguages.first?.hasPrefix("ru") == true ? "ru" : "en") : rawValue
+    static var supported: [AppLanguage] { allCases.filter { $0 != .system } }
+
+    /// Try each preferred language in order, including region/script variants.
+    /// Traditional Chinese must not silently select the Simplified Chinese table.
+    static func preferred(in identifiers: [String]) -> AppLanguage {
+        for identifier in identifiers {
+            let parts = identifier.replacingOccurrences(of: "_", with: "-")
+                .lowercased().split(separator: "-").map(String.init)
+            guard let base = parts.first else { continue }
+            if base == "zh" {
+                if let script = parts.dropFirst().first(where: { $0.count == 4 && $0.allSatisfy(\.isLetter) }) {
+                    if script == "hans" { return .zhHans }
+                    continue
+                }
+                if parts.contains(where: { ["tw", "hk", "mo"].contains($0) }) { continue }
+                return .zhHans
+            }
+            if base == "pt" { return .ptBR }
+            if let match = AppLanguage(rawValue: base), match != .system { return match }
+        }
+        return .en
     }
-    var locale: Locale { self == .system ? .autoupdatingCurrent : Locale(identifier: self == .ru ? "ru_RU" : "en_US") }
+
+    var effectiveLanguage: AppLanguage { self == .system ? Self.preferred(in: Locale.preferredLanguages) : self }
+    var effectiveCode: String { effectiveLanguage.rawValue }
+
+    /// Use autonyms so people can recover their language from any translated UI.
+    var nativeName: String {
+        switch self {
+        case .system: return Localizer.text("general.system", language: .system)
+        case .en: return "English"
+        case .ru: return "Русский"
+        case .de: return "Deutsch"
+        case .fr: return "Français"
+        case .es: return "Español"
+        case .it: return "Italiano"
+        case .ptBR: return "Português (Brasil)"
+        case .nl: return "Nederlands"
+        case .pl: return "Polski"
+        case .ja: return "日本語"
+        case .ko: return "한국어"
+        case .zhHans: return "简体中文"
+        }
+    }
+
+    var locale: Locale {
+        // Following the system preserves the user's independent regional settings.
+        if self == .system { return .autoupdatingCurrent }
+        let identifier: String
+        switch self {
+        case .system, .en: identifier = "en_US"
+        case .ru: identifier = "ru_RU"
+        case .de: identifier = "de_DE"
+        case .fr: identifier = "fr_FR"
+        case .es: identifier = "es_ES"
+        case .it: identifier = "it_IT"
+        case .ptBR: identifier = "pt_BR"
+        case .nl: identifier = "nl_NL"
+        case .pl: identifier = "pl_PL"
+        case .ja: identifier = "ja_JP"
+        case .ko: identifier = "ko_KR"
+        case .zhHans: identifier = "zh_Hans_CN"
+        }
+        return Locale(identifier: identifier)
+    }
 }
 
 enum AppAppearance: String, CaseIterable, Codable, Identifiable {
@@ -29,21 +94,24 @@ enum WidgetDensity: String, CaseIterable, Codable, Identifiable {
 enum WidgetContentMode: String, CaseIterable, Codable, Identifiable {
     case metrics, training, mixed
     var id: String { rawValue }
-    var includesTraining: Bool { self != .metrics }
+    // `mixed` remains decodable for existing profiles; its presentation is now metrics only.
+    var includesTraining: Bool { self == .training }
     var includesMetrics: Bool { self != .training }
 }
 
+/// Fixed render recipe and legacy snapshot wire format; never a user-created profile.
 struct WidgetProfile: Identifiable, Codable, Equatable {
     var id = UUID()
     var name = ""
-    var metricIDs = ["bodyBattery", "sleepDuration", "steps", "stress", "restingHeartRate"]
+    var metricIDs = ["bodyBattery", "steps", "stress", "sleepDuration", "restingHeartRate", "sleepScore", "intensityMinutes"]
     var primaryMetric = "bodyBattery"
     var style: WidgetStyle = .calm
     var density: WidgetDensity = .comfortable
     var contentMode: WidgetContentMode = .metrics
+    var prefersAvailableMetrics = true
 
     init() {}
-    enum CodingKeys: String, CodingKey { case id, name, metricIDs, primaryMetric, style, density, contentMode }
+    enum CodingKeys: String, CodingKey { case id, name, metricIDs, primaryMetric, style, density, contentMode, prefersAvailableMetrics }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -53,6 +121,8 @@ struct WidgetProfile: Identifiable, Codable, Equatable {
         style = try c.decode(WidgetStyle.self, forKey: .style)
         density = try c.decode(WidgetDensity.self, forKey: .density)
         contentMode = try c.decodeIfPresent(WidgetContentMode.self, forKey: .contentMode) ?? .metrics
+        if contentMode == .mixed { contentMode = .metrics }
+        prefersAvailableMetrics = try c.decodeIfPresent(Bool.self, forKey: .prefersAvailableMetrics) ?? true
         sanitize()
     }
 
@@ -66,31 +136,68 @@ struct WidgetProfile: Identifiable, Codable, Equatable {
     }
 }
 
+enum WidgetAppearance: String, CaseIterable, Codable, Identifiable {
+    case colorful, light, dark
+    var id: String { rawValue }
+    var titleKey: String { "widget.appearance." + rawValue }
+}
+
 struct AppPreferences: Codable {
     var language: AppLanguage = .system
     var appearance: AppAppearance = .system
+    var widgetAppearance: WidgetAppearance = .colorful
+    var summaryMetrics: [String] = defaultSummaryMetrics
     var refreshMinutes = 15
-    var menuMetric = "bodyBattery"
-    var profiles = [WidgetProfile()]
-    var widgetProfileIDs: [String: String] = [:]
 
-    // Bound before arithmetic, including for programmatically changed preferences.
+    static let defaultSummaryMetrics = ["bodyBattery", "steps", "sleepDuration", "stress", "trainingReadiness", "restingHeartRate", "sleepScore", "intensityMinutes", "activeCalories", "recoveryTime", "hrv"]
+    static func validatedSummaryMetrics(_ ids: [String]) -> [String] {
+        var seen = Set<String>()
+        let known = ids.filter { MetricDefinition.isSupported($0) && seen.insert($0).inserted }
+        return known.isEmpty ? defaultSummaryMetrics : known
+    }
+
     var refreshInterval: TimeInterval { Double(min(1440, max(5, refreshMinutes))) * 60 }
     var staleInterval: TimeInterval { max(refreshInterval * 3, 3600) }
 
     init() {}
-    enum CodingKeys: String, CodingKey { case language, appearance, refreshMinutes, menuMetric, profiles, widgetProfileIDs }
+    enum CodingKeys: String, CodingKey { case language, widgetLanguage, appearance, widgetAppearance, summaryMetrics, refreshMinutes, profiles, widgetProfileIDs }
+    private struct LegacyStyle: Decodable { var style: String? }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        language = try c.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .system
-        appearance = try c.decodeIfPresent(AppAppearance.self, forKey: .appearance) ?? .system
-        refreshMinutes = min(1440, max(5, try c.decodeIfPresent(Int.self, forKey: .refreshMinutes) ?? 15))
-        menuMetric = try c.decodeIfPresent(String.self, forKey: .menuMetric) ?? "bodyBattery"
-        profiles = try c.decodeIfPresent([WidgetProfile].self, forKey: .profiles) ?? [WidgetProfile()]
-        var seen = Set<UUID>()
-        profiles = profiles.filter { seen.insert($0.id).inserted }
-        if profiles.isEmpty { profiles = [WidgetProfile()] }
-        widgetProfileIDs = try c.decodeIfPresent([String: String].self, forKey: .widgetProfileIDs) ?? [:]
+        language = (try? c.decode(AppLanguage.self, forKey: .widgetLanguage))
+            ?? (try? c.decode(AppLanguage.self, forKey: .language)) ?? .system
+        appearance = (try? c.decode(AppAppearance.self, forKey: .appearance)) ?? .system
+        refreshMinutes = min(1440, max(5, (try? c.decode(Int.self, forKey: .refreshMinutes)) ?? 15))
+        summaryMetrics = Self.validatedSummaryMetrics((try? c.decode([String].self, forKey: .summaryMetrics)) ?? Self.defaultSummaryMetrics)
+        if let raw = try? c.decode(String.self, forKey: .widgetAppearance), let value = WidgetAppearance(rawValue: raw) {
+            widgetAppearance = value
+        } else if !c.contains(.widgetAppearance),
+                  let previous = try? c.decode([LegacyStyle].self, forKey: .profiles), previous.first?.style == "monochrome" {
+            widgetAppearance = appearance == .dark ? .dark : .light
+        } else { widgetAppearance = .colorful }
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(language, forKey: .language)
+        try c.encode(appearance, forKey: .appearance)
+        try c.encode(widgetAppearance, forKey: .widgetAppearance)
+        try c.encode(Self.validatedSummaryMetrics(summaryMetrics), forKey: .summaryMetrics)
+        try c.encode(refreshMinutes, forKey: .refreshMinutes)
+    }
+    /// Old extension processes can briefly outlive an app update. This private
+    /// snapshot-only projection keeps their four existing kinds configured.
+    /// No profile or assignment is saved in the app's preferences anymore.
+    func encodeWidgetSnapshot(to encoder: Encoder) throws {
+        try encode(to: encoder)
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        // The previous extension only understands system/en/ru. New readers use
+        // widgetLanguage; old readers get an honest supported fallback.
+        try c.encode(language, forKey: .widgetLanguage)
+        try c.encode([AppLanguage.system, .en, .ru].contains(language) ? language : .en, forKey: .language)
+        let slots: [WidgetSlot] = [.overview, .sport, .sleep, .training]
+        let layouts = slots.map { $0.profile(in: self) }
+        try c.encode(layouts, forKey: .profiles)
+        try c.encode(Dictionary(uniqueKeysWithValues: zip(slots, layouts).map { ($0.0.rawValue, $0.1.id.uuidString) }), forKey: .widgetProfileIDs)
     }
 }
 

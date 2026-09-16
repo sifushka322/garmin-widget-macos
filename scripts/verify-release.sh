@@ -6,6 +6,8 @@ info="$app_path/Contents/Info.plist"
 widget="$app_path/Contents/PlugIns/GarminDeskWidgets.appex"
 /usr/bin/plutil -lint "$info" "$widget/Contents/Info.plist"
 /usr/bin/codesign --verify --deep --strict "$app_path"
+test -s "$app_path/Contents/Resources/LICENSE.md"
+test -s "$app_path/Contents/Resources/NOTICE.md"
 architecture="$(/usr/bin/lipo -archs "$app_path/Contents/MacOS/GarminDesk")"
 if [[ "$architecture" != "arm64" && "$architecture" != "x86_64" ]]; then
     printf 'Expected a single supported app architecture.\n' >&2; exit 1
@@ -51,12 +53,7 @@ done
 mode="$(/usr/libexec/PlistBuddy -c 'Print :GARMIN_WIDGET_CONFIGURATION_MODE' "$info")"
 metadata="$(/usr/libexec/PlistBuddy -c 'Print :GARMIN_APPINTENTS_METADATA_AVAILABLE' "$info")"
 case "$mode" in
-    profile-intents)
-        test "$metadata" == "true"
-        test -s "$widget/Contents/Resources/Metadata.appintents/extract.actionsdata"
-        /usr/bin/plutil -lint "$widget/Contents/Resources/Metadata.appintents/extract.actionsdata" "$widget/Contents/Resources/Metadata.appintents/version.json"
-        ;;
     static) test "$metadata" == "false" ;;
-    *) printf 'Unknown compiled widget configuration mode.\n' >&2; exit 1 ;;
+    *) printf 'Release must contain the five fixed StaticConfiguration widgets.\n' >&2; exit 1 ;;
 esac
 printf 'PASS: system-only native dependencies, bundle architecture, versions, configuration flags, and signatures.\n'

@@ -9,10 +9,14 @@
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>GarminDeskWidgets</string>
     <key>CFBundlePackageType</key><string>XPC!</string>
-    <key>CFBundleShortVersionString</key><string>0.4.0</string>
-    <key>CFBundleVersion</key><string>10</string>
+    <key>CFBundleShortVersionString</key><string>0.5.0</string>
+    <key>CFBundleVersion</key><string>11</string>
     <key>CFBundleLocalizations</key>
-    <array><string>en</string><string>ru</string></array>
+    <array>
+        <string>en</string><string>ru</string><string>de</string><string>fr</string>
+        <string>es</string><string>it</string><string>pt-BR</string><string>nl</string>
+        <string>pl</string><string>ja</string><string>ko</string><string>zh-Hans</string>
+    </array>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSExtension</key>
     <dict>

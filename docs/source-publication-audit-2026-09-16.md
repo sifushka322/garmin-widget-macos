@@ -23,7 +23,7 @@ The ignore rules include `build/`, `.venv/`, local tool configuration, secret/ce
 
 The parent should compare the final staged paths against the manifest, inspect unexpected additions, and review the staged diff. File content can change between this audit and commit. No history audit or guarantee about future files is implied. Review of `.github/workflows/build.yml` behavior belongs to the separate workflow audit; inclusion in this file list is only a source/privacy check.
 
-No source LICENSE is present. The owner explicitly authorized public source without selecting a license; this audit does not invent a license or make it a publication blocker. A public source tree is not described here as licensed open source.
+At the time of this historical audit, no source LICENSE was present and the owner had authorized publication without selecting one. Later on September 16, the owner requested a noncommercial license. Current revisions include [PolyForm Noncommercial 1.0.0](../LICENSE.md) and a [licensing notice](../NOTICE.md); third-party terms remain separate. This historical audit does not establish the license contents of previously published archives.
 
 ## Release boundary
 

@@ -7,75 +7,41 @@ struct TrainingPresentation {
     var timeZone: TimeZone = .current
 
     func text(_ key: String) -> String {
-        let copy: [String: (String, String)] = [
-            "title": ("Тренировки", "Training"),
-            "last": ("Последняя завершённая", "Last completed"),
-            "next": ("Ближайшая по плану", "Next planned"),
-            "completed": ("Выполнена", "Completed"),
-            "planned": ("По плану", "Scheduled"),
-            "recent": ("Последние занятия", "Recent activities"),
-            "upcoming": ("Расписание", "Upcoming workouts"),
-            "workout": ("Тренировка", "Workout"),
-            "dateUnknown": ("Дата не указана", "Date not provided"),
-            "timeUnknown": ("Время не указано", "Time not provided"),
-            "localTime": ("местное время записи", "recorded local time"),
-            "durationUnknown": ("Длительность не указана", "Duration not provided"),
-            "pastUnavailable": ("История пока недоступна", "History is not available yet"),
-            "pastUnavailableHint": ("Для этого раздела ещё нет подтверждённой загрузки Garmin.", "This section has not been successfully retrieved from Garmin yet."),
-            "pastEmpty": ("В последней выборке нет занятий", "No activities in the latest response"),
-            "pastCoverage": ("До 20 последних занятий · не вся история", "Up to 20 recent activities · not the full history"),
-            "futureUnavailable": ("Расписание пока недоступно", "Schedule is not available yet"),
-            "futureUnavailableHint": ("Недоступный календарь не означает, что тренировок нет.", "An unavailable calendar does not mean there are no workouts."),
-            "futureEmpty": ("В загруженной части нет тренировок", "No workouts in the retrieved portion"),
-            "calendar": ("Опубликованный календарь Garmin", "Published Garmin calendar"),
-            "adaptive": ("Проверенный адаптивный календарь", "Verified adaptive calendar"),
-            "partial": ("Часть календаря недоступна", "Part of the calendar is unavailable"),
-            "expiredCoverage": ("Проверенный период закончился", "The checked period has ended"),
-            "refreshCalendar": ("Обновите данные, чтобы увидеть новый период.", "Refresh to check a new period."),
-            "updated": ("Обновлено", "Updated"),
-            "updatedUnknown": ("Время обновления неизвестно", "Update time is unknown"),
-            "cached": ("Сохранённые данные", "Saved data"),
-            "refreshFailed": ("Не удалось обновить раздел", "This section could not be refreshed"),
-            "rateLimit": ("Garmin временно ограничил запросы", "Garmin is temporarily limiting requests"),
-            "signIn": ("Для обновления войдите в Garmin Connect", "Sign in to Garmin Connect to refresh"),
-            "hour": ("ч", "h"), "minute": ("мин", "min"), "second": ("с", "s"), "km": ("км", "km")
-        ]
-        guard let value = copy[key] else { return key }
-        return language.effectiveCode == "ru" ? value.0 : value.1
+        Localizer.text("training." + key, language: language)
     }
 
-    private func sport(_ key: String) -> (String, String, String) {
+    private func sport(_ key: String) -> (titleKey: String, symbol: String) {
         switch key.lowercased() {
-        case "running", "run": return ("Бег", "Running", "figure.run")
-        case "trail_running": return ("Трейл", "Trail running", "figure.run")
-        case "treadmill_running", "indoor_running": return ("Беговая дорожка", "Treadmill running", "figure.run")
-        case "track_running": return ("Бег на стадионе", "Track running", "figure.run")
-        case "cycling", "biking", "road_biking": return ("Велосипед", "Cycling", "figure.outdoor.cycle")
-        case "mountain_biking", "gravel_cycling": return ("Велосипед по бездорожью", "Off-road cycling", "figure.outdoor.cycle")
-        case "indoor_cycling", "virtual_ride": return ("Велотренировка в помещении", "Indoor cycling", "figure.indoor.cycle")
-        case "swimming", "lap_swimming", "pool_swim": return ("Плавание", "Swimming", "figure.pool.swim")
-        case "open_water_swimming": return ("Открытая вода", "Open-water swimming", "figure.open.water.swim")
-        case "walking", "casual_walking", "speed_walking": return ("Ходьба", "Walking", "figure.walk")
-        case "hiking", "mountaineering": return ("Поход", "Hiking", "figure.hiking")
-        case "strength_training", "strength": return ("Силовая тренировка", "Strength training", "dumbbell.fill")
-        case "cardio_training", "indoor_cardio", "fitness_equipment", "hiit": return ("Кардио", "Cardio", "heart.fill")
-        case "elliptical": return ("Эллипс", "Elliptical", "figure.elliptical")
-        case "stair_climbing": return ("Подъём по лестнице", "Stair climbing", "figure.stairs")
-        case "yoga": return ("Йога", "Yoga", "figure.yoga")
-        case "pilates": return ("Пилатес", "Pilates", "figure.pilates")
-        case "rowing", "indoor_rowing": return ("Гребля", "Rowing", "figure.rower")
-        case "tennis": return ("Теннис", "Tennis", "figure.tennis")
-        case "golf": return ("Гольф", "Golf", "figure.golf")
-        case "alpine_skiing", "resort_skiing": return ("Горные лыжи", "Alpine skiing", "figure.skiing.downhill")
-        case "cross_country_skiing": return ("Беговые лыжи", "Cross-country skiing", "figure.skiing.crosscountry")
-        case "snowboarding": return ("Сноуборд", "Snowboarding", "figure.snowboarding")
-        case "triathlon", "multisport": return ("Мультиспорт", "Multisport", "figure.run")
-        default: return (text("workout"), text("workout"), "figure.mixed.cardio")
+        case "running", "run": return ("sport.running", "figure.run")
+        case "trail_running": return ("sport.trail_running", "figure.run")
+        case "treadmill_running", "indoor_running": return ("sport.treadmill_running", "figure.run")
+        case "track_running": return ("sport.track_running", "figure.run")
+        case "cycling", "biking", "road_biking": return ("sport.cycling", "figure.outdoor.cycle")
+        case "mountain_biking", "gravel_cycling": return ("sport.mountain_biking", "figure.outdoor.cycle")
+        case "indoor_cycling", "virtual_ride": return ("sport.indoor_cycling", "figure.indoor.cycle")
+        case "swimming", "lap_swimming", "pool_swim": return ("sport.swimming", "figure.pool.swim")
+        case "open_water_swimming": return ("sport.open_water_swimming", "figure.open.water.swim")
+        case "walking", "casual_walking", "speed_walking": return ("sport.walking", "figure.walk")
+        case "hiking", "mountaineering": return ("sport.hiking", "figure.hiking")
+        case "strength_training", "strength": return ("sport.strength_training", "dumbbell.fill")
+        case "cardio_training", "indoor_cardio", "fitness_equipment", "hiit": return ("sport.cardio_training", "heart.fill")
+        case "elliptical": return ("sport.elliptical", "figure.elliptical")
+        case "stair_climbing": return ("sport.stair_climbing", "figure.stairs")
+        case "yoga": return ("sport.yoga", "figure.yoga")
+        case "pilates": return ("sport.pilates", "figure.pilates")
+        case "rowing", "indoor_rowing": return ("sport.rowing", "figure.rower")
+        case "tennis": return ("sport.tennis", "figure.tennis")
+        case "golf": return ("sport.golf", "figure.golf")
+        case "alpine_skiing", "resort_skiing": return ("sport.alpine_skiing", "figure.skiing.downhill")
+        case "cross_country_skiing": return ("sport.cross_country_skiing", "figure.skiing.crosscountry")
+        case "snowboarding": return ("sport.snowboarding", "figure.snowboarding")
+        case "triathlon", "multisport": return ("sport.triathlon", "figure.run")
+        default: return ("workout", "figure.mixed.cardio")
         }
     }
 
-    func sportTitle(_ key: String) -> String { let value = sport(key); return language.effectiveCode == "ru" ? value.0 : value.1 }
-    func sportSymbol(_ key: String) -> String { sport(key).2 }
+    func sportTitle(_ key: String) -> String { text(sport(key).titleKey) }
+    func sportSymbol(_ key: String) -> String { sport(key).symbol }
     func title(for activity: PastActivitySummary) -> String { nonempty(activity.title) ?? sportTitle(activity.sportKey) }
     func title(for workout: PlannedWorkoutSummary) -> String { nonempty(workout.title) ?? sportTitle(workout.sportKey) }
 
@@ -159,7 +125,7 @@ struct TrainingPresentation {
         if let end = snapshot?.futureCoverageEnd, parseDay(end) != nil {
             if end < today { return text("expiredCoverage") }
             if let date = dayText(end) {
-                return language.effectiveCode == "ru" ? "Нет опубликованных тренировок по \(date)" : "No published workouts through \(date)"
+                return String(format: text("noPublishedThrough"), locale: language.locale, date)
             }
         }
         return text("futureEmpty")
@@ -169,7 +135,7 @@ struct TrainingPresentation {
         guard futureAvailable(snapshot) else { return text("futureUnavailableHint") }
         let base = text(snapshot?.futureCoverage == .adaptiveVerified ? "adaptive" : "calendar")
         if let end = snapshot?.futureCoverageEnd, let date = dayText(end) {
-            return base + " · " + (language.effectiveCode == "ru" ? "проверено по \(date)" : "checked through \(date)")
+            return base + " · " + String(format: text("checkedThrough"), locale: language.locale, date)
         }
         return base + " · " + text("partial")
     }

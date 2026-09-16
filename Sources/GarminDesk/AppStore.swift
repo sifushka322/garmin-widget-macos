@@ -10,8 +10,10 @@ final class AppStore: ObservableObject {
         didSet {
             persistPreferences()
             webPolicy.configuration.refreshInterval = preferences.refreshInterval
+            if requestedWebGroups(for: oldValue) != requestedWebGroups(for: preferences) {
+                runWebSync(trigger: .profilesChanged)
+            }
             if oldValue.refreshMinutes != preferences.refreshMinutes { scheduleRefresh() }
-            if webConnected && requestedWebGroups(for: oldValue) != requestedWebGroups(for: preferences) { sync(trigger: .profilesChanged) }
         }
     }
     @Published var snapshot: GarminSnapshot { didSet { trainingTimeline = snapshot.trainingTimeline; publishWidgetData() } }
@@ -100,13 +102,11 @@ final class AppStore: ObservableObject {
         }
         nextAllowedSync = Date(timeIntervalSince1970: defaults.double(forKey: "GarminDeskNextAllowedSync"))
         launchAtLogin = SMAppService.mainApp.status == .enabled
-        if preferences.profiles.isEmpty { preferences.profiles = [WidgetProfile()] }
         scheduleRefresh()
-        publishWidgetData()
+        persistPreferences()
     }
 
     func text(_ key: String) -> String { Localizer.text(key, language: preferences.language) }
-    func profile(_ id: UUID) -> WidgetProfile? { preferences.profiles.first { $0.id == id } }
     private var formatter: MetricFormatter { MetricFormatter(snapshot: snapshot, language: preferences.language) }
     func numericValue(_ id: String) -> Double? { formatter.value(id) }
     func displayValue(_ id: String) -> String { formatter.display(id) }
@@ -184,26 +184,6 @@ final class AppStore: ObservableObject {
         } catch { if lastErrorKey == nil { lastErrorKey = "error.storage" } }
     }
 
-    func addProfile() {
-        var item = WidgetProfile(); item.name = text("profile.new")
-        preferences.profiles.append(item)
-    }
-    func duplicateProfile(_ id: UUID) {
-        guard var item = profile(id) else { return }
-        item.id = UUID(); item.name = (item.name.isEmpty ? text("profile.default") : item.name) + " · " + text("profile.copy")
-        preferences.profiles.append(item)
-    }
-    func deleteProfile(_ id: UUID) {
-        guard preferences.profiles.count > 1 else { return }
-        preferences.profiles.removeAll { $0.id == id }
-    }
-    func updateProfile(_ profile: WidgetProfile) {
-        guard let index = preferences.profiles.firstIndex(where: { $0.id == profile.id }) else { return }
-        var cleaned = profile
-        cleaned.sanitize()
-        preferences.profiles[index] = cleaned
-    }
-
     private static func requiresSessionAction(_ state: SyncPolicy.SessionState) -> Bool {
         switch state {
         case .expired, .unsupported, .securityChallenge, .accessDenied: return true
@@ -212,8 +192,7 @@ final class AppStore: ObservableObject {
     }
 
     private func requestedWebGroups(for preferences: AppPreferences) -> Set<SyncPolicy.Group> {
-        GarminWebAPI.requiredGroups(metricIDs: Set(preferences.profiles.filter { $0.contentMode.includesMetrics }.flatMap(\.metricIDs)),
-                                    includeTraining: preferences.profiles.contains { $0.contentMode.includesTraining })
+        GarminWebAPI.requiredGroups(metricIDs: WidgetSlot.requiredMetricIDs(in: preferences), includeTraining: true)
     }
 
     private func webDecision(policy: inout SyncPolicy, trigger: SyncPolicy.Trigger,

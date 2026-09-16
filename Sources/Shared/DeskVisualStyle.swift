@@ -20,9 +20,11 @@ struct DeskMetricTheme {
         }
         let definition = MetricDefinition.find(id)
         let colors: (UInt32, UInt32, UInt32)
-        if definition.category == .sleep || ["hrv", "respiration"].contains(id) {
+        if style == .sport {
+            colors = (0xAD491D, 0x71351F, 0xFFE0A6)
+        } else if definition.category == .sleep || ["hrv", "respiration"].contains(id) {
             colors = (0x403477, 0x202545, 0xD3C7FF)
-        } else if definition.category == .activity || style == .sport {
+        } else if definition.category == .activity {
             colors = (0xAD491D, 0x71351F, 0xFFE0A6)
         } else if ["restingHeartRate", "spo2", "stress"].contains(id) {
             colors = (0x305C78, 0x203B56, 0xA7DEF4)
@@ -30,6 +32,35 @@ struct DeskMetricTheme {
             colors = (0x11665C, 0x153F46, 0xD4F29B)
         }
         return .init(top: color(colors.0), bottom: color(colors.1), highlight: color(colors.2), ink: .white, monochrome: false)
+    }
+
+    static func calendar(style: WidgetStyle = .calm) -> DeskMetricTheme {
+        if style == .monochrome { return metric("bodyBattery", style: .monochrome) }
+        return .init(top: color(0x27699A), bottom: color(0x173758), highlight: color(0xB4E4FF),
+                     ink: .white, monochrome: false)
+    }
+
+    static func metric(_ id: String, appearance: WidgetAppearance) -> DeskMetricTheme {
+        let style: WidgetStyle = MetricDefinition.find(id).category == .training ? .sport : .calm
+        return applying(appearance, to: metric(id, style: style))
+    }
+    static func calendar(appearance: WidgetAppearance) -> DeskMetricTheme {
+        applying(appearance, to: calendar())
+    }
+    static func summary(appearance: WidgetAppearance) -> DeskMetricTheme {
+        applying(appearance, to: .init(top: color(0x184E53), bottom: color(0x182F45),
+            highlight: color(0xAFE3DA), ink: .white, monochrome: false))
+    }
+    private static func applying(_ appearance: WidgetAppearance, to semantic: DeskMetricTheme) -> DeskMetricTheme {
+        switch appearance {
+        case .colorful: return semantic
+        case .light:
+            return .init(top: color(0xFFFFFF), bottom: color(0xECF1F5), highlight: semantic.top,
+                         ink: color(0x172D3A), monochrome: false)
+        case .dark:
+            return .init(top: color(0x242D38), bottom: color(0x101720), highlight: semantic.highlight,
+                         ink: color(0xF3F6FB), monochrome: false)
+        }
     }
 
     var background: LinearGradient {

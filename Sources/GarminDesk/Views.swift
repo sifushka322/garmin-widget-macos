@@ -1,16 +1,6 @@
 import SwiftUI
 import WidgetKit
 
-private enum CardPalette {
-    static func accent(_ style: WidgetStyle) -> Color {
-        switch style {
-        case .calm: return Color(red: 0.13, green: 0.64, blue: 0.60)
-        case .sport: return Color(red: 0.95, green: 0.40, blue: 0.19)
-        case .monochrome: return .primary
-        }
-    }
-}
-
 private struct Surface: ViewModifier {
     func body(content: Content) -> some View {
         content.padding(16)
@@ -23,6 +13,7 @@ private struct DataStatusView: View {
     @ObservedObject var store: AppStore
     var compact = false
     var metricIDs: [String]? = nil
+    var connectionOnly = false
 
     private var statusSnapshot: GarminSnapshot {
         var snapshot = store.snapshot
@@ -42,6 +33,7 @@ private struct DataStatusView: View {
         if store.isSyncing { return store.hasSession ? "data.syncing" : "status.connecting" }
         if store.needsWebSignIn { return "status.signInRequired" }
         if ["error.network", "error.timeout", "error.protocol", "error.partial", "error.rate_limit"].contains(store.lastErrorKey ?? "") { return "data.checkFailed" }
+        if connectionOnly { return store.hasSession ? "status.connected" : "status.notConnected" }
         if store.hasSession && !statusSnapshot.hasMeasurements { return "data.waiting" }
         if store.hasSession && statusSnapshot.hasRetainedTimeSensitiveMetrics { return "data.waitingNew" }
         if isStale { return "widget.notice.waiting" }
@@ -52,6 +44,7 @@ private struct DataStatusView: View {
     private var statusSymbol: String {
         if store.needsWebSignIn { return "person.crop.circle.badge.exclamationmark" }
         if ["error.network", "error.timeout", "error.protocol", "error.partial", "error.rate_limit"].contains(store.lastErrorKey ?? "") { return "exclamationmark.triangle" }
+        if connectionOnly { return store.hasSession ? "link" : "link.badge.plus" }
         if !statusSnapshot.hasMeasurements { return "clock" }
         if !store.hasSession { return "link.badge.plus" }
         return isStale ? "clock.badge.exclamationmark" : "checkmark.circle.fill"
@@ -61,6 +54,7 @@ private struct DataStatusView: View {
         if store.isSyncing { return nil }
         if let error = store.lastErrorKey { return store.text(error) }
         if store.needsWebSignIn { return store.text("connection.reconnectDetail") }
+        if connectionOnly { return nil }
         guard store.hasSession else { return nil }
         if !statusSnapshot.warnings.isEmpty { return store.text("data.partial") }
         if !statusSnapshot.hasMeasurements { return store.text("data.waitingHint") }
@@ -79,7 +73,7 @@ private struct DataStatusView: View {
                   systemImage: store.needsWebSignIn ? "person.crop.circle.badge.exclamationmark" : "link")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-        } else if needsAttention || !statusSnapshot.hasMeasurements || statusSnapshot.hasRetainedTimeSensitiveMetrics || isStale || store.isSyncing || !statusSnapshot.warnings.isEmpty {
+        } else if needsAttention || store.isSyncing || (!connectionOnly && (!statusSnapshot.hasMeasurements || statusSnapshot.hasRetainedTimeSensitiveMetrics || isStale || !statusSnapshot.warnings.isEmpty)) {
             HStack(alignment: .top, spacing: 10) {
                 if store.isSyncing {
                     ProgressView().controlSize(.small)
@@ -234,20 +228,29 @@ private struct SmallMetricView: View {
 
 struct DashboardView: View {
     @ObservedObject var store: AppStore
-    @Binding var selectedProfileID: UUID?
+    @Binding var widgetSlot: WidgetSlot?
     var onSettings: () -> Void
     var onConnection: () -> Void
     @State private var showWidgetHelp = false
 
-    private var profile: WidgetProfile? {
-        selectedProfileID.flatMap { store.profile($0) } ?? store.preferences.profiles.first
+    private var slot: WidgetSlot { widgetSlot ?? .overview }
+    private var profile: WidgetProfile { slot.profile(in: store.preferences) }
+    private var selectedMetrics: [String] {
+        guard profile.contentMode.includesMetrics else { return [] }
+        let selection = slot == .overview
+            ? WidgetMetricPolicy.summarySelection(preferences: store.preferences, snapshot: store.snapshot)
+            : WidgetMetricPolicy.selection(for: profile, snapshot: store.snapshot)
+        return ([selection.primary] + selection.secondary).filter { store.numericValue($0) != nil }
+    }
+    private var slotSelection: Binding<WidgetSlot> {
+        Binding(get: { slot }, set: { widgetSlot = $0 })
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(profile.map { $0.name.isEmpty ? store.text("profile.default") : $0.name } ?? store.text("dashboard.title"))
+                    Text(store.text(slot.titleKey))
                         .font(.system(size: 27, weight: .bold, design: .rounded))
                     Text(store.snapshot.devices.count == 1 ? store.snapshot.devices[0] : "Garmin Connect")
                         .font(.callout).foregroundStyle(.secondary).lineLimit(1)
@@ -271,8 +274,15 @@ struct DashboardView: View {
             .padding(28)
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+                    Picker(store.text("widget.type"), selection: slotSelection) {
+                        ForEach(WidgetSlot.allCases) { type in
+                            Text(store.text(type.titleKey)).tag(type)
+                        }
+                    }
+                    .pickerStyle(.menu).frame(maxWidth: 400, alignment: .leading)
                     if store.hasSession || store.snapshot.hasMeasurements || store.isSyncing || store.lastErrorKey != nil || store.needsWebSignIn {
-                        DataStatusView(store: store, metricIDs: profile.flatMap { $0.contentMode.includesMetrics ? $0.metricIDs : nil })
+                        DataStatusView(store: store, metricIDs: profile.contentMode.includesMetrics ? selectedMetrics : nil,
+                                       connectionOnly: profile.contentMode.includesTraining)
                     }
                     if !store.hasSession && store.snapshot.hasMeasurements {
                         Button {
@@ -309,30 +319,23 @@ struct DashboardView: View {
                         .foregroundStyle(.white)
                         .background(DeskMetricTheme.metric("bodyBattery").background, in: RoundedRectangle(cornerRadius: 24))
                     }
-                    if let profile, store.hasSession || store.snapshot.hasMeasurements {
-                        if store.preferences.profiles.count > 1 {
-                            Picker(store.text("dashboard.profile"), selection: Binding(
-                                get: { self.profile?.id ?? profile.id },
-                                set: { selectedProfileID = $0 }
-                            )) {
-                                ForEach(store.preferences.profiles) { item in
-                                    Text(item.name.isEmpty ? store.text("profile.default") : item.name).tag(item.id)
+                    if store.hasSession || store.snapshot.hasMeasurements {
+                        if profile.contentMode.includesMetrics {
+                            if let primary = selectedMetrics.first {
+                                MainMetricView(store: store, metricID: primary, style: profile.style,
+                                               compact: profile.density == .compact)
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 175), spacing: 12, alignment: .leading)], spacing: 12) {
+                                    ForEach(Array(selectedMetrics.dropFirst()), id: \.self) { id in
+                                        SmallMetricView(store: store, metricID: id, style: profile.style,
+                                                        compact: profile.density == .compact)
+                                    }
                                 }
-                            }
-                            .pickerStyle(.menu).frame(maxWidth: 360, alignment: .leading)
-                        }
-                        if profile.contentMode.includesMetrics && store.snapshot.hasMeasurements {
-                            MainMetricView(store: store, metricID: profile.primaryMetric, style: profile.style,
-                                           compact: profile.density == .compact)
-                            let secondary = profile.metricIDs.filter { $0 != profile.primaryMetric }
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 175), spacing: 12, alignment: .leading)], spacing: 12) {
-                                ForEach(secondary, id: \.self) { id in
-                                    SmallMetricView(store: store, metricID: id, style: profile.style,
-                                                    compact: profile.density == .compact)
-                                }
+                            } else if store.hasSession && store.snapshot.hasMeasurements {
+                                Label(store.text("data.empty"), systemImage: "clock")
+                                    .font(.callout).foregroundStyle(.secondary)
                             }
                         }
-                        if profile.contentMode.includesTraining {
+                        if slot.includesTraining {
                             TrainingTimelineView(snapshot: store.trainingTimeline, language: store.preferences.language,
                                                  compact: profile.density == .compact)
                         }
@@ -386,36 +389,13 @@ private struct NativeWidgetGuide: View {
         VStack(alignment: .leading, spacing: 14) {
             Label(store.text("widget.setup"), systemImage: "rectangle.3.group").font(.headline)
             WidgetSharingNotice(store: store)
-            switch WidgetDataStore.configurationMode {
-            case .unavailable:
-                Text(store.text("widget.guide.unavailable")).font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
-            case .staticProfiles, .profileIntents:
+            if WidgetDataStore.configurationAvailable {
                 guideStep("1", key: "widget.guide.add")
-                guideStep("2", key: WidgetDataStore.configurationMode == .staticProfiles ? "widget.guide.staticProfile" : "widget.guide.profile")
-                if WidgetDataStore.configurationMode == .staticProfiles {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(WidgetSlot.allCases, id: \.rawValue) { slot in
-                            Picker(store.text("widget.slot." + slot.rawValue), selection: Binding(
-                                get: { store.preferences.widgetProfileIDs[slot.rawValue] ?? "" },
-                                set: { id in store.preferences.widgetProfileIDs[slot.rawValue] = id.isEmpty ? nil : id }
-                            )) {
-                                Text(store.text(slot == .overview ? "widget.slot.firstProfile" : "widget.slot.unassigned")).tag("")
-                                if let assigned = store.preferences.widgetProfileIDs[slot.rawValue],
-                                   !store.preferences.profiles.contains(where: { $0.id.uuidString == assigned }) {
-                                    Text(store.text("widget.profileMissing")).tag(assigned)
-                                }
-                                ForEach(store.preferences.profiles) { profile in
-                                    Text(profile.name.isEmpty ? store.text("profile.default") : profile.name).tag(profile.id.uuidString)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                        }
-                    }
-                    .padding(12)
-                    .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
-                }
+                guideStep("2", key: "widget.guide.fixedTypes")
                 Text(store.text("widget.guide.refresh")).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(store.text("widget.guide.unavailable")).font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -434,55 +414,30 @@ private struct NativeWidgetGuide: View {
 }
 
 enum MainWindowSection: String, CaseIterable, Identifiable {
-    case dashboard, profiles, connection, general
+    case dashboard, widgets, connection, general
     var id: String { rawValue }
     var key: String { self == .dashboard ? "dashboard.title" : "settings.\(rawValue)" }
     var symbol: String {
         switch self {
         case .dashboard: return "square.grid.2x2"
-        case .profiles: return "slider.horizontal.3"
+        case .widgets: return "rectangle.3.group"
         case .connection: return "person.crop.circle"
         case .general: return "gearshape"
         }
     }
     var shortcut: KeyEquivalent {
-        switch self { case .dashboard: return "1"; case .profiles: return "2"; case .connection: return "3"; case .general: return "4" }
+        switch self { case .dashboard: return "1"; case .widgets: return "2"; case .connection: return "3"; case .general: return "4" }
     }
 }
 
 @MainActor
 final class MainWindowNavigation: ObservableObject {
     @Published var section: MainWindowSection? = .dashboard
-    @Published var profileID: UUID?
+    @Published var widgetSlot: WidgetSlot? = .overview
+    @Published var summaryMeasurementsExpanded = false
 }
 
-private enum ProfileTemplate: String, CaseIterable {
-    case life, sport, sleep
-    var titleKey: String { "profile.template." + rawValue }
-    var symbol: String {
-        switch self { case .life: return "sun.max"; case .sport: return "figure.run"; case .sleep: return "moon.stars" }
-    }
-    func make(name: String) -> WidgetProfile {
-        var profile = WidgetProfile()
-        profile.name = name
-        switch self {
-        case .life:
-            profile.metricIDs = ["bodyBattery", "steps", "stress", "heartRate", "hydration", "intensityMinutes"]
-            profile.style = .calm
-        case .sport:
-            profile.metricIDs = ["trainingReadiness", "recoveryTime", "trainingLoad", "vo2Max", "hrv", "bodyBattery"]
-            profile.style = .sport
-            profile.contentMode = .mixed
-        case .sleep:
-            profile.metricIDs = ["sleepDuration", "sleepScore", "deepSleep", "remSleep", "lightSleep", "hrv", "restingHeartRate", "respiration"]
-            profile.style = .calm
-        }
-        profile.primaryMetric = profile.metricIDs[0]
-        return profile
-    }
-}
-
-private enum ProfilePreviewSize: String, CaseIterable, Identifiable {
+private enum WidgetPreviewSize: String, CaseIterable, Identifiable {
     case small, medium, large
     var id: String { rawValue }
     var titleKey: String { "profile.preview." + rawValue }
@@ -497,25 +452,25 @@ private enum ProfilePreviewSize: String, CaseIterable, Identifiable {
     var family: WidgetFamily {
         switch self { case .small: return .systemSmall; case .medium: return .systemMedium; case .large: return .systemLarge }
     }
-    func secondaryLimit(density: WidgetDensity) -> Int {
-        switch self {
-        case .small: return 0
-        case .medium: return density == .compact ? 3 : 2
-        case .large: return density == .compact ? 8 : 6
-        }
-    }
+
 }
 
-/// Uses the production widget content for metrics, training and mixed profiles.
-private struct ProfileWidgetPreview: View {
+/// Uses the same metric and calendar rendering as the desktop widget.
+private struct FixedWidgetPreview: View {
     @ObservedObject var store: AppStore
-    let profile: WidgetProfile
-    let size: ProfilePreviewSize
+    let slot: WidgetSlot
+    let size: WidgetPreviewSize
 
     var body: some View {
-        let widget = GarminWidgetView(entry: GarminEntry(date: Date(),
-            data: WidgetData(preferences: store.preferences, snapshot: store.snapshot, isConnected: store.hasSession),
-            profileID: profile.id.uuidString), previewFamily: size.family)
+        let date = Date()
+        let usesDemo = slot == .training
+            ? store.snapshot.trainingTimeline == nil
+            : !store.snapshot.hasMeasurements
+        let data = usesDemo
+            ? WidgetPreviewData.make(preferences: store.preferences, at: date)
+            : WidgetData(preferences: store.preferences, snapshot: store.snapshot, isConnected: store.hasSession)
+        let widget = GarminWidgetView(entry: GarminEntry(date: date, data: data,
+            profileID: nil, slot: slot, isGalleryPreview: usesDemo), previewFamily: size.family)
         widget.padding(16)
             .frame(width: size.dimensions.width, height: size.dimensions.height)
             .background(widget.background)
@@ -529,7 +484,6 @@ private struct ProfileWidgetPreview: View {
 struct MainWindowView: View {
     @ObservedObject var store: AppStore
     @ObservedObject var navigation: MainWindowNavigation
-    @State private var selectedProfileID: UUID?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -545,7 +499,10 @@ struct MainWindowView: View {
                 VStack(spacing: 6) {
                     ForEach(MainWindowSection.allCases) { item in
                         let selected = (navigation.section ?? .dashboard) == item
-                        Button { navigation.section = item } label: {
+                        Button {
+                            if item == .dashboard { navigation.widgetSlot = nil }
+                            navigation.section = item
+                        } label: {
                             Label(store.text(item.key), systemImage: item.symbol)
                                 .font(.system(size: 13, weight: selected ? .semibold : .medium))
                                 .foregroundStyle(selected ? Color.white : Color.primary.opacity(0.7))
@@ -567,10 +524,11 @@ struct MainWindowView: View {
             Group {
                 switch navigation.section ?? .dashboard {
                 case .dashboard:
-                    DashboardView(store: store, selectedProfileID: $navigation.profileID,
-                                  onSettings: { navigation.section = .profiles },
+                    DashboardView(store: store, widgetSlot: $navigation.widgetSlot,
+                                  onSettings: { navigation.section = .widgets },
                                   onConnection: { navigation.section = .connection })
-                case .profiles: profilesPane
+                case .widgets: WidgetsPane(store: store, selectedSlot: $navigation.widgetSlot,
+                                           summaryExpanded: $navigation.summaryMeasurementsExpanded)
                 case .connection: ConnectionPane(store: store)
                 case .general: GeneralPane(store: store)
                 }
@@ -582,202 +540,141 @@ struct MainWindowView: View {
         .environment(\.locale, store.preferences.language.locale)
     }
 
-    private var profilesPane: some View {
-        VStack(alignment: .leading, spacing: 0) {
+}
+
+private struct WidgetsPane: View {
+    @ObservedObject var store: AppStore
+    @Binding var selectedSlot: WidgetSlot?
+    @Binding var summaryExpanded: Bool
+    @State private var previewSize: WidgetPreviewSize = .medium
+    private var slot: WidgetSlot { selectedSlot ?? .overview }
+    private var slotSelection: Binding<WidgetSlot> {
+        Binding(get: { slot }, set: { selectedSlot = $0 })
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(store.text("settings.profiles")).font(.title2.bold())
-                Text(store.text("settings.profilesSubtitle")).font(.callout).foregroundStyle(.secondary)
-                HStack {
-                    Picker(store.text("dashboard.profile"), selection: Binding(
-                        get: { selectedProfileID.flatMap { store.profile($0)?.id } ?? store.preferences.profiles.first?.id },
-                        set: { selectedProfileID = $0 }
-                    )) {
-                        ForEach(store.preferences.profiles) { profile in
-                            Text(profile.name.isEmpty ? store.text("profile.default") : profile.name).tag(Optional(profile.id))
+                Text(store.text("settings.widgets")).font(.title2.bold())
+                Text(store.text("settings.widgetsSubtitle")).font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    controlLabel("widget.type")
+                    Picker(store.text("widget.type"), selection: slotSelection) {
+                        ForEach(WidgetSlot.allCases) { type in
+                            Label(store.text(type.titleKey), systemImage: type.symbol).tag(type)
                         }
-                    }
-                    .labelsHidden().frame(maxWidth: .infinity)
-                    Menu {
-                        Text(store.text("profile.templates"))
-                        ForEach(ProfileTemplate.allCases, id: \.self) { template in
-                            Button {
-                                let profile = template.make(name: store.text(template.titleKey))
-                                store.preferences.profiles.append(profile)
-                                selectedProfileID = profile.id
-                            } label: { Label(store.text(template.titleKey), systemImage: template.symbol) }
-                        }
-                        Divider()
-                        Button(store.text("profile.custom")) {
-                            store.addProfile()
-                            selectedProfileID = store.preferences.profiles.last?.id
-                        }
-                    } label: { Image(systemName: "plus") }
-                    .menuStyle(.borderlessButton).fixedSize()
-                    .help(store.text("action.add")).accessibilityLabel(store.text("action.add"))
+                    }.pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity)
                 }
-                .padding(.top, 10)
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    controlLabel("profile.previewSize")
+                    Picker(store.text("profile.previewSize"), selection: $previewSize) {
+                        ForEach(WidgetPreviewSize.allCases) { size in
+                            Text(store.text(size.titleKey)).tag(size)
+                        }
+                    }.pickerStyle(.segmented).labelsHidden().frame(maxWidth: .infinity)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    controlLabel("widget.appearance")
+                    Picker(store.text("widget.appearance"), selection: $store.preferences.widgetAppearance) {
+                        Text(store.text("widget.appearance.colorful")).tag(WidgetAppearance.colorful)
+                        Text(store.text("widget.appearance.light")).tag(WidgetAppearance.light)
+                        Text(store.text("widget.appearance.dark")).tag(WidgetAppearance.dark)
+                    }.pickerStyle(.segmented).labelsHidden().frame(maxWidth: .infinity)
+                }
+                Text(store.text("widget.appearanceHint")).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(24)
-            Divider()
-            if let profileID = selectedProfileID.flatMap({ store.profile($0)?.id }) ?? store.preferences.profiles.first?.id {
-                ProfileEditor(store: store, profileID: profileID)
-                    .id(profileID)
+            .modifier(Surface())
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    FixedWidgetPreview(store: store, slot: slot, size: previewSize)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                    if slot == .overview {
+                        DisclosureGroup(store.text("widget.summary.choose"), isExpanded: $summaryExpanded) {
+                            SummaryMeasurements(store: store).padding(.top, 12)
+                        }.modifier(Surface())
+                    }
+                    Text(store.text(slot.descriptionKey)).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if slot != .overview {
+                        Text(store.text("widget.automaticHint")).font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    DisclosureGroup(store.text("widget.setup")) {
+                        NativeWidgetGuide(store: store).padding(.top, 12)
+                    }.modifier(Surface())
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .padding(24)
+    }
+
+    private func controlLabel(_ key: String) -> some View {
+        Text(store.text(key)).font(.callout)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(width: 145, alignment: .leading)
     }
 }
 
-private struct ProfileEditor: View {
+private struct SummaryMeasurements: View {
     @ObservedObject var store: AppStore
-    var profileID: UUID
-    @State private var confirmDelete = false
-    @State private var previewSize: ProfilePreviewSize = .medium
-    private var profile: WidgetProfile { store.profile(profileID) ?? WidgetProfile() }
 
-    private func binding<Value>(_ path: WritableKeyPath<WidgetProfile, Value>) -> Binding<Value> {
-        Binding(get: { profile[keyPath: path] }, set: { value in
-            guard var updated = store.profile(profileID) else { return }
-            updated[keyPath: path] = value
-            store.updateProfile(updated)
+    private var metrics: [MetricDefinition] {
+        store.preferences.summaryMetrics.map(MetricDefinition.find)
+            + MetricDefinition.catalog.filter { !store.preferences.summaryMetrics.contains($0.id) }
+    }
+
+    private var primary: Binding<String> {
+        Binding(get: { store.preferences.summaryMetrics.first ?? "bodyBattery" }, set: { id in
+            guard store.preferences.summaryMetrics.contains(id) else { return }
+            store.preferences.summaryMetrics = [id] + store.preferences.summaryMetrics.filter { $0 != id }
         })
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                DisclosureGroup(store.text("widget.setup")) {
-                    NativeWidgetGuide(store: store).padding(.top, 12)
-                }.modifier(Surface())
-                VStack(alignment: .leading, spacing: 14) {
-                    LabeledContent(store.text("profile.name")) {
-                        TextField(store.text("profile.name"), text: binding(\.name)).labelsHidden().textFieldStyle(.roundedBorder).frame(maxWidth: 290)
-                    }
-                    Picker(store.text("profile.content"), selection: binding(\.contentMode)) {
-                        Text(store.text("content.metrics")).tag(WidgetContentMode.metrics)
-                        Text(store.text("content.training")).tag(WidgetContentMode.training)
-                        Text(store.text("content.mixed")).tag(WidgetContentMode.mixed)
-                    }.pickerStyle(.segmented)
-                    if profile.contentMode.includesMetrics {
-                        Picker(store.text("profile.primary"), selection: Binding(get: { profile.primaryMetric }, set: { id in
-                            var updated = profile
-                            updated.primaryMetric = id
-                            if !updated.metricIDs.contains(id) { updated.metricIDs.insert(id, at: 0) }
-                            store.updateProfile(updated)
-                        })) {
-                            ForEach(MetricDefinition.catalog, id: \.id) { metric in Text(store.text(metric.titleKey)).tag(metric.id) }
-                        }
+        VStack(alignment: .leading, spacing: 14) {
+            Text(store.text("widget.summary.hint")).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(store.text("widget.summary.primary")).font(.callout)
+                Picker(store.text("widget.summary.primary"), selection: primary) {
+                    ForEach(store.preferences.summaryMetrics, id: \.self) { id in
+                        Text(store.text(MetricDefinition.find(id).titleKey)).tag(id)
                     }
                 }
-                .modifier(Surface())
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(store.text("profile.appearance")).font(.headline)
-                    Picker(store.text("profile.style"), selection: binding(\.style)) {
-                        Text(store.text("style.calm")).tag(WidgetStyle.calm)
-                        Text(store.text("style.sport")).tag(WidgetStyle.sport)
-                        Text(store.text("style.monochrome")).tag(WidgetStyle.monochrome)
+                .pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+            }
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: 12) {
+                ForEach(metrics) { metric in
+                    Toggle(isOn: selection(metric.id)) {
+                        Text(store.text(metric.titleKey)).font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .pickerStyle(.segmented)
-                    Picker(store.text("profile.density"), selection: binding(\.density)) {
-                        Text(store.text("density.comfortable")).tag(WidgetDensity.comfortable)
-                        Text(store.text("density.compact")).tag(WidgetDensity.compact)
-                    }
-                    Group {
-                        Divider()
-                        Picker(store.text("profile.previewSize"), selection: $previewSize) {
-                            ForEach(ProfilePreviewSize.allCases) { size in
-                                Text(store.text(size.titleKey)).tag(size)
-                            }
-                        }.pickerStyle(.segmented)
-                        ProfileWidgetPreview(store: store, profile: profile, size: previewSize)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                        if profile.contentMode == .metrics {
-                            let visibleCount = 1 + min(profile.metricIDs.filter { $0 != profile.primaryMetric }.count,
-                                                       previewSize.secondaryLimit(density: profile.density))
-                            Text(String(format: store.text("profile.previewCount"), visibleCount, profile.metricIDs.count))
-                                .font(.caption).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
+                    .toggleStyle(.checkbox)
+                    .disabled(store.preferences.summaryMetrics.count == 1 && store.preferences.summaryMetrics.contains(metric.id))
                 }
-                .modifier(Surface())
-                if profile.contentMode.includesMetrics { metricsEditor }
-                HStack {
-                    Button { store.duplicateProfile(profileID) } label: {
-                        Label(store.text("action.duplicate"), systemImage: "plus.square.on.square")
-                    }
-                        .help(store.text("action.duplicate")).accessibilityLabel(store.text("action.duplicate"))
-                    Spacer(minLength: 0)
-                    Button(role: .destructive) { confirmDelete = true } label: { Image(systemName: "trash") }
-                        .disabled(store.preferences.profiles.count <= 1)
-                        .help(store.text(store.preferences.profiles.count <= 1 ? "profile.oneRequired" : "action.delete"))
-                        .accessibilityLabel(store.text("action.delete"))
-                }
-                Text(store.text("general.localNotice")).font(.caption).foregroundStyle(.secondary)
             }
-            .padding(24)
+            Text(store.text("widget.summary.minimum")).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .confirmationDialog(store.text("profile.deleteTitle"), isPresented: $confirmDelete) {
-            Button(store.text("action.delete"), role: .destructive) { store.deleteProfile(profileID) }
-            Button(store.text("action.cancel"), role: .cancel) {}
-        } message: { Text(store.text("profile.deleteMessage")) }
     }
 
-    private var metricsEditor: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(store.text("profile.metrics")).font(.headline)
-            Text(store.text("profile.metricsHint")).font(.caption).foregroundStyle(.secondary)
-            ForEach([profile.primaryMetric] + profile.metricIDs.filter { $0 != profile.primaryMetric }, id: \.self) { id in
-                metricRow(id, included: true)
+    private func selection(_ id: String) -> Binding<Bool> {
+        Binding(get: { store.preferences.summaryMetrics.contains(id) }, set: { selected in
+            var metrics = store.preferences.summaryMetrics
+            if selected {
+                if !metrics.contains(id) { metrics.insert(id, at: min(1, metrics.count)) }
+            } else if metrics.count > 1 {
+                metrics.removeAll { $0 == id }
             }
-            let available = MetricDefinition.catalog.filter { !profile.metricIDs.contains($0.id) }
-            if !available.isEmpty {
-                Divider().padding(.vertical, 4)
-                Text(store.text("profile.available")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                ForEach(available, id: \.id) { metric in metricRow(metric.id, included: false) }
-            }
-        }
-        .modifier(Surface())
-    }
-
-    private func metricRow(_ id: String, included: Bool) -> some View {
-        let metric = MetricDefinition.find(id)
-        return HStack(spacing: 9) {
-            Toggle(isOn: Binding(get: { profile.metricIDs.contains(id) }, set: { enabled in
-                var updated = profile
-                if enabled { if !updated.metricIDs.contains(id) { updated.metricIDs.append(id) } }
-                else { updated.metricIDs.removeAll { $0 == id } }
-                store.updateProfile(updated)
-            })) {
-                Label(store.text(metric.titleKey), systemImage: metric.symbol)
-                    .font(.callout)
-            }
-            .toggleStyle(.checkbox)
-            .disabled(id == profile.primaryMetric)
-            Spacer(minLength: 4)
-            if id == profile.primaryMetric {
-                Text(store.text("profile.mainBadge")).font(.caption2).foregroundStyle(.secondary)
-            }
-            if included && id != profile.primaryMetric {
-                Button { move(id, offset: -1) } label: { Image(systemName: "chevron.up") }
-                    .disabled(profile.metricIDs.filter { $0 != profile.primaryMetric }.first == id)
-                    .help(store.text("action.up")).accessibilityLabel("\(store.text("action.up")): \(store.text(metric.titleKey))")
-                Button { move(id, offset: 1) } label: { Image(systemName: "chevron.down") }
-                    .disabled(profile.metricIDs.filter { $0 != profile.primaryMetric }.last == id)
-                    .help(store.text("action.down")).accessibilityLabel("\(store.text("action.down")): \(store.text(metric.titleKey))")
-            }
-        }
-        .buttonStyle(.borderless)
-        .padding(.vertical, 2)
-    }
-
-    private func move(_ id: String, offset: Int) {
-        var updated = profile
-        var secondary = updated.metricIDs.filter { $0 != updated.primaryMetric }
-        guard let index = secondary.firstIndex(of: id), secondary.indices.contains(index + offset) else { return }
-        secondary.swapAt(index, index + offset)
-        updated.metricIDs = [updated.primaryMetric] + secondary
-        store.updateProfile(updated)
+            store.preferences.summaryMetrics = metrics
+        })
     }
 }
 
@@ -862,8 +759,9 @@ private struct GeneralPane: View {
                     Divider()
                     Picker(store.text("general.language"), selection: $store.preferences.language) {
                         Text(store.text("general.system")).tag(AppLanguage.system)
-                        Text("Русский").tag(AppLanguage.ru)
-                        Text("English").tag(AppLanguage.en)
+                        ForEach(AppLanguage.supported) { language in
+                            Text(language.nativeName).tag(language)
+                        }
                     }
                     Picker(store.text("general.appearance"), selection: $store.preferences.appearance) {
                         Text(store.text("general.system")).tag(AppAppearance.system)

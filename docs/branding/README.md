@@ -1,57 +1,67 @@
-# GarminDesk — оформление приложения
+# GarminDesk — app branding
 
-16 сентября 2026 выбран вариант **«Часы — активность»**: круглый корпус, стрелки и мятное кольцо активности. Цветной оригинал создан встроенным ImageGen; при упаковке его рисунок сохраняется, меняется только разрешение.
+The **Activity watch** concept was selected on September 16, 2026: a round case, watch hands, and a mint activity ring. The color original was created with the built-in ImageGen tool. Packaging preserves the selected artwork and tile geometry, normalizes its opacity, and generates the required resolutions. The original PNG remains unchanged.
 
-Для 0.3.0 сохраняется выбранная цветная иконка. Приложение переходит к обычному окну и Dock; описанные ниже ресурсы строки меню и проверки build 8 остаются историей оформления 0.2.0.
+The selected color icon remains in 0.3.0. The app moves to a regular window and Dock icon; the menu-bar assets and build 8 checks below remain historical documentation of the 0.2.0 design.
 
-## Готовые ресурсы
+## Ready-to-use assets
 
-- [Иконка приложения — ICNS](../../Resources/AppIcon.icns): 10 представлений для обычных и Retina-экранов.
-- [Иконка — PNG 1024×1024](../../Resources/Branding/AppIcon-1024.png): для страницы проекта и материалов.
-- [Исходный PNG](../../Resources/Branding/AppIcon-source.png): точная копия выбранного варианта, 1254×1254.
-- [Знак строки меню — PDF](../../Resources/Branding/MenuBarTemplate.pdf): векторный монохромный знак.
-- [Знак — PNG 18×18](../../Resources/Branding/MenuBarTemplate.png) и [36×36 для Retina](../../Resources/Branding/MenuBarTemplate@2x.png).
+- [App icon — ICNS](../../Resources/AppIcon.icns): 10 representations for standard and Retina displays.
+- [Icon — 1024×1024 PNG](../../Resources/Branding/AppIcon-1024.png): for the project page and related materials.
+- [Source PNG](../../Resources/Branding/AppIcon-source.png): an exact copy of the selected concept, 1254×1254.
+- [Menu-bar symbol — PDF](../../Resources/Branding/MenuBarTemplate.pdf): a monochrome vector symbol.
+- [Symbol — 18×18 PNG](../../Resources/Branding/MenuBarTemplate.png) and [36×36 Retina PNG](../../Resources/Branding/MenuBarTemplate@2x.png).
 
-Знак строки меню упрощён до корпуса круглых часов, коротких ремешков и стрелок. Декоративное кольцо активности и объём опущены для читаемости в малом размере. Общая геометрия находится в `Sources/Shared/GarminDeskBrandGeometry.swift`; она используется в строке меню, заголовках панели и виджетов, а также при экспорте PNG/PDF. Приложение рисует знак векторно через NSImage с `isTemplate = true`, поэтому macOS подбирает цвет для фона строки меню.
+The menu-bar symbol simplifies the design to a round watch case, short straps, and hands. The decorative activity ring and depth are omitted for legibility at small sizes. Shared geometry is in `Sources/Shared/GarminDeskBrandGeometry.swift`; it is used in the menu bar, panel and widget headings, and PNG/PDF export. The app draws the symbol as a vector NSImage with `isTemplate = true`, so macOS chooses a color suitable for the menu-bar background.
 
-Повторная генерация:
+To regenerate assets:
 
 ```bash
 bash scripts/generate-icon.sh
 ```
 
-При необходимости можно указать совместимый SDK через `GARMIN_SDK_PATH`. Генератор использует системные AppKit/CoreGraphics и iconutil, не обращается к сервису генерации изображений. `scripts/build-app.sh` запускает его перед сборкой. Все десять PNG сохраняются в `build/AppIcon.iconset`; готовый ICNS копируется в приложение. Генерация ресурсов сама по себе не устанавливает приложение.
+Set `GARMIN_SDK_PATH` if a specific compatible SDK is needed. The generator uses system AppKit/CoreGraphics and iconutil; it does not call an image generation service. `scripts/build-app.sh` runs it before building. All ten PNGs are saved in `build/AppIcon.iconset`; the finished ICNS is copied into the app. Generating assets does not install the app.
 
-## Проверка подключения
+## Integration validation
 
-Собрана версия **0.2.0, build 8, arm64** с SDK 26.5. Компиляция приложения и расширения, проверка структуры bundle и ad-hoc подписи прошли. ICNS внутри приложения побайтно совпадает с новым ресурсом. Исходный цветной PNG совпадает с выбранной концепцией; максимальный экспорт — 1024×1024, иконка и оба меню-PNG содержат alpha-канал. Монохромный знак проверен нативным рендерингом в размерах 13, 16, 18 и 24 pt. Установка и проверка живой галереи виджетов для этой сборки не выполнялись.
+**0.2.0, build 8, arm64** was built using SDK 26.5. App and extension compilation, bundle structure verification, and ad-hoc signature checks passed. The ICNS inside the app matches the new resource byte for byte. The color source PNG matches the selected concept; the largest export is 1024×1024, and the icon and both menu-bar PNGs contain an alpha channel. Native rendering checked the monochrome symbol at 13, 16, 18, and 24 pt. Installation and live widget-gallery checks were not performed for this build.
 
-## Варианты с часами
+## Icon opacity correction in the 0.5.0 candidate
 
-- [Часы — пульс](concepts/05-watch-pulse.png): прямоугольный корпус, линия пульса на экране.
-- [Часы — активность](concepts/06-watch-orbit.png): выбранный оригинал.
+A later macOS 26.6.2 check reproduced a small green watch tile inside an extra gray system plate. The gray plate was absent from the source artwork and ICNS. Inspection found that most pixels in the supposedly solid tile had alpha 252–253 rather than 255, and faint nearly transparent pixels extended outside the visible tile.
 
-## Первые направления
+The icon generator now normalizes alpha values of at least 248 to 255 and removes exterior noise at alpha 8 or below before creating the size variants. Premultiplied color channels are adjusted with alpha so the selected artwork retains its appearance. The original source, watch design, palette, tile bounds, and transparent rounded corners are preserved. No additional crop, enlargement, background plate, or new logo is introduced.
 
-- [Пульс](concepts/01-pulse.png)
-- [Орбита](concepts/02-orbit.png)
-- [Карточки](concepts/03-cards.png): ранний эскиз; наружный край нуждается в очистке перед применением.
+macOS icon-service renders of isolated local app fixtures reproduced the gray plate with the original ICNS at 32 and 256 pt and removed it with the normalized ICNS. The watch consequently appears larger at those same system icon sizes. The original already rendered without the plate at 48 and 64 pt; the corrected icon preserves that behavior. Comparisons were captured at all four sizes. Both fixtures used distinct diagnostic bundle identifiers, and neither was launched or installed. This verifies the local icon rendering change; it does not establish live widget-gallery refresh after an ordinary upgrade, which still requires the [upgrade validation](../widget-upgrade-validation.md).
 
-## Форматы
+Apple's [app icon guidance](https://developer.apple.com/design/human-interface-guidelines/app-icons/) requires opaque background artwork for the modern layered format. This change keeps the existing ICNS distribution and corrects its unintended translucency; it does not claim a layered Icon Composer asset or new appearance variants.
 
-1. Цветная иконка приложения в ICNS; текущая сборка использует 16, 32, 128, 256 и 512 pt, каждый в 1× и 2×. Крупнейшее представление — 1024×1024 px.
-2. Упрощённый монохромный знак без квадратного фона для строки меню, адаптированный к маленькому размеру. Система окрашивает template image в соответствии с оформлением.
-3. PNG выбранной иконки для README и страницы проекта.
+## Watch concepts
 
-Отдельный логотип для каждого размера системного виджета текущей реализации не требуется. Ранние концепции сохранены для истории; в сборке используются ресурсы раздела «Готовые ресурсы».
+- [Pulse watch](concepts/05-watch-pulse.png): a rectangular case with a pulse line on the dial.
+- [Activity watch](concepts/06-watch-orbit.png): the selected original.
 
-Источники технических требований: [Apple — Icon Set Type](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_ref-Asset_Catalog_Format/IconSetType.html), [Apple — NSImage.isTemplate](https://developer.apple.com/documentation/appkit/nsimage/istemplate).
+## Initial directions
 
-## Точные промпты
+- [Pulse](concepts/01-pulse.png)
+- [Orbit](concepts/02-orbit.png)
+- [Cards](concepts/03-cards.png): an early sketch; the outer edge needs cleanup before use.
 
-Режим: встроенный ImageGen, без CLI/API fallback. Каждый вариант создавался отдельным запросом. Размеры фактического результата могут отличаться от размера, указанного в промпте.
+## Formats
 
-### 01-pulse — Пульс
+1. A color app icon in ICNS. The current build uses 16, 32, 128, 256, and 512 pt, each at 1× and 2×. The largest representation is 1024×1024 px.
+2. A simplified monochrome menu-bar symbol without a square background, adapted for small sizes. The system colors the template image to match its appearance.
+3. A PNG of the selected icon for the README and project page.
+
+The current implementation does not require a separate logo for each system-widget size. Early concepts are retained as history; the build uses the files under “Ready-to-use assets.”
+
+Technical requirements: [Apple — Icon Set Type](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_ref-Asset_Catalog_Format/IconSetType.html), [Apple — NSImage.isTemplate](https://developer.apple.com/documentation/appkit/nsimage/istemplate).
+
+## Exact prompts
+
+Mode: built-in ImageGen, without a CLI/API fallback. Each concept was generated with a separate request. Actual output dimensions may differ from those requested in the prompt.
+
+### 01-pulse — Pulse
 
 ```text
 Use case: logo-brand.
@@ -62,7 +72,7 @@ Constraints: no written text, no letters used as captions, no words, no labels, 
 Concept: PULSE. Deep forest-green rounded-square tile. One warm ivory, substantial continuous waveform with round caps, a short flat lead-in, a clean high ascent followed by a low trough and recovery, then a short flat lead-out. The balanced waveform reads as energy and daily health in a single memorable gesture. Restrained shallow relief with no other symbol. Smooth considered geometry, calm elegant finish.
 ```
 
-### 02-orbit — Орбита
+### 02-orbit — Orbit
 
 ```text
 Use case: logo-brand.
@@ -73,7 +83,7 @@ Constraints: no written text, no letters used as captions, no words, no labels, 
 Concept: ORBIT. Deep forest-green rounded-square tile. One bold almost-circular mint arc with a precisely shaped opening on the right; its lower right endpoint turns inward into a short horizontal warm-ivory arm, subtly evoking an original geometric G and a daily progress gauge at the same time. A single integrated mark, visually centered. Bold sculpted band with subtle mint-to-ivory material shift, clean geometry, large empty center. No heart, waveform, arrows or extra rings. A distinctive restrained premium app icon.
 ```
 
-### 03-cards — Карточки
+### 03-cards — Cards
 
 ```text
 Use case: logo-brand.
@@ -84,7 +94,7 @@ Constraints: no written text, no letters used as captions, no words, no labels, 
 Concept: CARDS. Warm ivory rounded-square tile with a gentle porcelain surface. A bold centered abstract widget arrangement made of exactly three deep forest-green rounded shapes: one tall capsule-like rectangular card on the left and two short horizontal rounded rectangular cards stacked on the right, with generous even gaps. The upper right card is mint-green. The silhouette suggests a compact desktop health dashboard, but contains no chart, data, glyphs or interior details. Subtle shallow dimensional relief. Ultra simple, balanced and recognizable.
 ```
 
-### 05-watch-pulse — Часы — пульс
+### 05-watch-pulse — Pulse watch
 
 ```text
 Use case: logo-brand.
@@ -97,7 +107,7 @@ Constraints: one watch only, no hand, wrist or person, no physical-device photog
 Design A — PULSE WATCH: a compact upright rectangular sports wristwatch with very softly rounded rectangular case, substantial warm-ivory bezel and short broad mint-green strap sections extending vertically above and below, both fully visible. Dark forest dial inset within the bezel. On the dial, one single thick warm-ivory energy waveform with rounded ends: brief horizontal line, high peak, low trough, small recovery and horizontal end. Exactly one small simple ivory crown at right mid-case, integrated in the silhouette. No other controls or dial elements. Beautiful balanced geometric icon, not realistic hardware. The watch is centered and the pulse is uncluttered and fully inside its dark dial.
 ```
 
-### 06-watch-orbit — Часы — активность
+### 06-watch-orbit — Activity watch
 
 ```text
 Use case: logo-brand.

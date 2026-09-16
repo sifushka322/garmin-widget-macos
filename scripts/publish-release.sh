@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ "${GITHUB_ACTIONS:-false}" != true || "${GITHUB_REF:-}" != refs/heads/main ]]; then
-    printf 'Release publication runs only in GitHub Actions on main.\n' >&2; exit 1
+    printf 'Release draft preparation runs only in GitHub Actions on main.\n' >&2; exit 1
 fi
 : "${APP_VERSION:?}" "${APP_BUILD:?}" "${GITHUB_SHA:?}" "${GH_REPO:?}"
 if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$APP_BUILD" =~ ^[0-9]+$ || ! "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]; then
@@ -51,5 +51,8 @@ for name in expected:
     assert actual[name]["digest"] == "sha256:" + hashlib.sha256(data).hexdigest(), name
 print("PASS: all six uploaded assets match the verified packages")
 PY
-gh release edit "$tag" --draft=false --latest
-printf 'Published https://github.com/%s/releases/tag/%s from %s\n' "$GH_REPO" "$tag" "$GITHUB_SHA"
+# A fresh CI runner cannot validate replacing an installed app while WidgetKit
+# still hosts its old extension. Keep these exact assets private until the
+# upgrade checks in docs/widget-upgrade-validation.md pass on a GUI Mac.
+printf 'Verified draft %s from %s is ready for on-device upgrade testing.\n' "$tag" "$GITHUB_SHA"
+printf 'Not published or marked latest. Follow docs/widget-upgrade-validation.md before promotion.\n'

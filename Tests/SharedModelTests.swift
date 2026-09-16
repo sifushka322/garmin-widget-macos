@@ -94,32 +94,7 @@ struct SharedModelTests {
     }
 
     static func testProfileSelectionAndDisconnection() throws {
-        var preferences = AppPreferences()
-        let oldProfile = """
-        {"id":"00000000-0000-0000-0000-000000000001","name":"Legacy","metricIDs":["steps"],"primaryMetric":"steps","style":"calm","density":"compact"}
-        """
-        let migrated = try AppJSON.decoder.decode(WidgetProfile.self, from: Data(oldProfile.utf8))
-        try expect(migrated.contentMode == .metrics && migrated.name == "Legacy", "Legacy profiles remain metric-only without resetting custom settings.")
-        let oldPreferences = try AppJSON.decoder.decode(AppPreferences.self, from: Data(("{\"profiles\":[" + oldProfile + "]}").utf8))
-        try expect(oldPreferences.widgetProfileIDs.isEmpty && oldPreferences.profiles[0].id == migrated.id,
-                   "Older preferences gain empty widget slots while keeping stable profile IDs.")
-        preferences.profiles[0].contentMode = .mixed
-        preferences.widgetProfileIDs["sport"] = preferences.profiles[0].id.uuidString
-        let restoredPreferences = try AppJSON.decoder.decode(AppPreferences.self, from: AppJSON.encoder.encode(preferences))
-        try expect(restoredPreferences.widgetProfileIDs == preferences.widgetProfileIDs && restoredPreferences.profiles[0].contentMode == .mixed,
-                   "Content modes and explicit widget slot mappings survive persistence.")
-        var second = WidgetProfile()
-        second.name = "Sleep"
-        second.primaryMetric = "sleepDuration"
-        second.metricIDs = ["sleepDuration", "sleepScore", "hrv"]
-        preferences.profiles.append(second)
-        let disconnected = WidgetData(preferences: preferences, snapshot: snapshot(["steps": 125]), isConnected: false)
-        try expect(disconnected.profile(id: nil)?.id == preferences.profiles.first?.id,
-                   "An unconfigured widget should use the first profile.")
-        try expect(disconnected.profile(id: second.id.uuidString)?.name == "Sleep", "A configured widget must resolve its saved profile.")
-        try expect(disconnected.profile(id: UUID().uuidString) == nil, "A removed profile must not silently select unrelated metrics.")
-        try expect(disconnected.profile(id: "invalid-id") == nil, "An invalid profile identifier must be treated as unavailable.")
-
+        let disconnected = WidgetData(preferences: AppPreferences(), snapshot: snapshot(["steps": 125]), isConnected: false)
         let bytes = try AppJSON.encoder.encode(disconnected)
         let restored = try AppJSON.decoder.decode(WidgetData.self, from: bytes)
         try expect(!restored.isConnected, "Disconnected state must survive the widget handoff.")
@@ -286,7 +261,7 @@ struct SharedModelTests {
         for raw in [Int.min, Int.max] {
             let decoded = try AppJSON.decoder.decode(AppPreferences.self, from: Data("{\"refreshMinutes\":\(raw),\"profiles\":[]}".utf8))
             try expect((300...86400).contains(decoded.refreshInterval), "Untrusted cadence must be bounded before arithmetic")
-            try expect(decoded.profiles.count == 1, "Empty stored profiles recover to an editable profile")
+            try expect(decoded.widgetAppearance == .colorful, "Obsolete empty profile data cannot break fixed widgets")
             var direct = AppPreferences(); direct.refreshMinutes = raw
             try expect(direct.staleInterval.isFinite, "Programmatic cadence cannot overflow")
         }
@@ -295,9 +270,7 @@ struct SharedModelTests {
         profile.primaryMetric = "unknown"
         let repaired = try AppJSON.decoder.decode(WidgetProfile.self, from: AppJSON.encoder.encode(profile))
         try expect(repaired.metricIDs == ["steps"] && repaired.primaryMetric == "steps", "Stored invalid IDs and duplicates cannot reach ForEach or the API")
-        var prefs = AppPreferences(); prefs.profiles = [profile, profile]
-        let decoded = try AppJSON.decoder.decode(AppPreferences.self, from: AppJSON.encoder.encode(prefs))
-        try expect(decoded.profiles.count == 1, "Duplicate stored profile identities are repaired")
+
 
         let now = Date(timeIntervalSince1970: 1_789_473_600)
         let zone = TimeZone(secondsFromGMT: 0)!

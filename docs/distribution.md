@@ -1,65 +1,65 @@
-# Установка и распространение
+# Installation and distribution
 
-GarminDesk распространяется через [GitHub Releases](https://github.com/sifushka322/garmin-widget-macos/releases) как готовое приложение. Получателю не нужны Python, Homebrew, Xcode или установка библиотек.
+GarminDesk is distributed through [GitHub Releases](https://github.com/sifushka322/garmin-widget-macos/releases) as a ready-to-use app. Users do not need Python, Homebrew, Xcode, or additional libraries.
 
-## Версия 0.4.0
+## Version 0.4.0
 
-Пакеты для Apple Silicon (`arm64`); для Intel доступны такие же файлы с суффиксом `x86_64`:
+Apple Silicon (`arm64`) packages are listed below. Equivalent Intel packages use the `x86_64` suffix:
 
-- `GarminDesk-0.4.0-arm64.dmg` — приложение, ярлык Applications и инструкция установки.
-- `GarminDesk-0.4.0-arm64.zip` — альтернативный архив того же приложения.
-- `GarminDesk-0.4.0-arm64-SHA256.txt` — контрольные суммы архивов.
+- `GarminDesk-0.4.0-arm64.dmg` — the app, an Applications shortcut, and installation instructions.
+- `GarminDesk-0.4.0-arm64.zip` — an alternative archive of the same app.
+- `GarminDesk-0.4.0-arm64-SHA256.txt` — archive checksums.
 
-Целевая система — macOS 14+. Фактические проверки **0.4.0 build 10** записываются в [заметках к выпуску](releases/0.4.0.md). Сборка и офлайн-проверки выполняются на удалённых macOS 26 для Apple Silicon и Intel. Живой вход Garmin, системные виджеты на чистом Mac и macOS 14 отдельно не проверены.
+The target is macOS 14+. Actual validation of **0.4.0 build 10** is recorded in the [release notes](releases/0.4.0.md). Builds and offline checks run on hosted macOS 26 machines for Apple Silicon and Intel. Live Garmin sign-in, system widgets on a clean Mac, and macOS 14 have not been separately verified.
 
-## Установка без платной подписи
+## Installation without a paid signing certificate
 
-1. Откройте DMG, перетащите GarminDesk.app на Applications («Программы»), затем извлеките диск. Для ZIP распакуйте архив и перенесите приложение в «Программы».
-2. Запустите GarminDesk. Это обычное приложение с окном и значком в Dock.
-3. В **«Аккаунт Garmin»** войдите в Garmin Connect. В **«Профили виджетов»** настройте метрики, оформление и назначения четырёх видов виджетов.
-4. Правой кнопкой на рабочий стол → **«Изменить виджеты» → GarminDesk**. Добавьте нужный вид и размер.
+1. Open the DMG, drag GarminDesk.app onto Applications, then eject the disk. For a ZIP, extract the archive and move the app to Applications.
+2. Open GarminDesk. It is a regular app with a window and a Dock icon.
+3. Sign in to Garmin Connect under **Garmin account**. In the 0.5.0 source candidate, **Widgets** offers a shared Colorful/Light/Dark appearance and previews of five fixed types; no profile setup is needed. For published 0.4.0, follow its bundled installation guide.
+4. Right-click the desktop → **Edit Widgets → GarminDesk**. Add the kind and size you want.
 
-Нажатие виджета открывает окно приложения с его профилем. Закрытое окно не останавливает фоновую синхронизацию; **⌘Q** завершает приложение. Новые измерения требуют работающего приложения, интернета и синхронизированных с Garmin Connect часов.
+Clicking a widget opens its corresponding view in the app. Closing the window keeps background synchronization running; **⌘Q** quits the app. New readings require the app to be running, internet access, and a watch synced with Garmin Connect.
 
-Пакет использует техническую ad-hoc подпись без Apple Account, платного Developer ID и notarization. Она не даёт автоматического доверия Gatekeeper. Если macOS сообщает о неизвестном разработчике или отсутствии заверения, после попытки открытия доверенного приложения используйте **«Системные настройки» → «Конфиденциальность и безопасность» → «Всё равно открыть»**. Пароль Mac вводится только в системном диалоге. Это не инструкция для предупреждений о вредоносном или повреждённом приложении; на управляемом Mac подтверждение может быть недоступно. [Инструкция Apple](https://support.apple.com/102445).
+The package uses ad-hoc signing without an Apple Account, paid Developer ID certificate, or notarization. This does not grant automatic Gatekeeper trust. If macOS reports an unidentified developer or missing notarization, first try opening your trusted app, then use **System Settings → Privacy & Security → Open Anyway**. Enter your Mac password only in the system prompt. These instructions do not apply to malware or damaged-app warnings; managed Macs may not allow this confirmation. [Apple's instructions](https://support.apple.com/102445).
 
-## Состав и приватность
+## Package contents and privacy
 
-Обычный bundle содержит native Swift executable, `GarminDeskWidgets.appex`, выбранную иконку и локализованные ресурсы. Подключение работает через системный WebKit. Пользовательский кэш, сайт-сессия, пароль и cookies в bundle не копируются.
+The standard bundle contains a native Swift executable, `GarminDeskWidgets.appex`, the selected icon, and localized resources. The Garmin connection uses system WebKit. User caches, website sessions, passwords, and cookies are not copied into the bundle.
 
-Host хранит данные локально в Application Support. Sandboxed-расширение читает только выделенный `Widgets/widget-data.json` через узкое read-only разрешение. Пароли и cookies в этот снимок не включаются. App Group не нужен для выбранного локального варианта.
+The host stores data locally in Application Support. The sandboxed extension reads only the dedicated `Widgets/widget-data.json` snapshot through a narrowly scoped read-only permission. The snapshot contains no passwords or cookies. The selected local configuration does not require an App Group.
 
-Четыре StaticConfiguration-вида получают назначения профилей из приложения. Несколько экземпляров одного вида разделяют назначение. Вариант с App Intents и независимым выбором профиля в системном меню является отдельной конфигурацией сборки; его нельзя подразумевать по наличию WidgetKit в bundle.
+The source candidate always builds five StaticConfiguration kinds: Summary, Day, Sport, Sleep, and Training calendar. Existing four kind identifiers are preserved; Day is added. There are no user profiles or assignments. The former optional App Intents profile prototype is retired, and requesting its old build flags fails explicitly instead of changing the widget model based on the installed toolchain. Custom installations of that unreleased prototype require removing/re-adding widgets.
 
-## Для разработчиков
+App preferences store language, app appearance, widget appearance, Summary’s ordered measurement selection, and refresh interval. During the transition, the private widget snapshot includes a fixed compatibility projection for older running extensions; it is not an editable profile feature. See the [migration audit](widget-simplification-audit.md).
 
-Нужен Mac с совместимыми Swift compiler и macOS SDK. Скрипт собирает native-код напрямую через `xcrun swiftc`, без Swift Package Manager.
+## For developers
+
+A Mac with a compatible Swift compiler and macOS SDK is required. The script compiles native code directly using `xcrun swiftc`, without Swift Package Manager.
 
 ```bash
-APP_VERSION=0.4.0 APP_BUILD=10 CONFIGURATION=release bash scripts/build-app.sh
+APP_VERSION=0.5.0 APP_BUILD=11 CONFIGURATION=release bash scripts/build-app.sh
 bash scripts/verify-release.sh build/GarminDesk.app
 bash scripts/package-release.sh
 ```
 
-`build-app.sh` собирает приложение и расширение, создаёт иконку, подписывает ad-hoc и проверяет bundle. `package-release.sh` упаковывает готовое приложение в ZIP/DMG с SHA-256; он не устанавливает приложение и не публикует Release.
+`build-app.sh` builds the app and extension, generates the icon, applies ad-hoc signatures, and verifies the bundle. `package-release.sh` packages the built app into ZIP/DMG files with SHA-256 checksums; it does not install the app or publish a release.
 
-| Переменная | Назначение |
+| Variable | Purpose |
 | --- | --- |
-| `GARMIN_SDK_PATH` | Явный путь к SDK, совместимому с компилятором |
-| `CONFIGURATION` | `release` по умолчанию; `debug` для разработки |
-| `GARMIN_CREATE_DMG=0` | Создать только ZIP и его контрольную сумму |
-| `GARMIN_SIGNING_IDENTITY` | `-` по умолчанию: ad-hoc без платного сертификата |
-| `GARMIN_APP_GROUP` | Не используется выбранным выпуском; отдельная конфигурация с настоящей Apple Team |
-| `GARMIN_APPINTENTS_PROCESSOR` | Необязательный путь к Xcode metadata processor для варианта App Intents |
-| `GARMIN_REQUIRE_APPINTENTS_METADATA=1` | Требовать успешное извлечение metadata для App Intents |
-| `INCLUDE_LEGACY_CONNECTOR=1` | Явно собрать и вложить прежний Python-коннектор; по умолчанию выключен |
+| `GARMIN_SDK_PATH` | Explicit path to an SDK compatible with the compiler |
+| `CONFIGURATION` | `release` by default; `debug` for development |
+| `GARMIN_CREATE_DMG=0` | Create only a ZIP and its checksum |
+| `GARMIN_SIGNING_IDENTITY` | Defaults to `-`: ad-hoc signing without a paid certificate |
+| `GARMIN_APP_GROUP` | Unused by the selected release; a separate configuration with a real Apple Team |
+| `INCLUDE_LEGACY_CONNECTOR=1` | Explicitly build and embed the previous Python connector; disabled by default |
 
-Legacy-коннектор требует Python только на машине сборщика. При его включении в приложение переносятся автономный runtime и обязательные лицензии зависимостей. Обычный пакет его не собирает и не включает.
+The legacy connector requires Python only on the build machine. When enabled, its standalone runtime and required dependency licenses are included in the app. The standard package neither builds nor includes it.
 
-Workflow в `.github/workflows/build.yml` читает версию из `Resources/Info.plist` и проверяет её совпадение с расширением. Обычный push запускает проверки и сборку. Commit с точным сообщением `release: vX.Y.Z` в `main` дополнительно публикует эту версию после успеха всех задач; ручной workflow имеет отдельный флаг `publish_release`. Сборка с legacy-коннектором не публикуется. Существующий релиз не перезаписывается.
+The workflow in `.github/workflows/build.yml` reads the version from `Resources/Info.plist` and checks that it matches the extension. A normal push runs checks and builds. A commit in `main` with the exact message `release: vX.Y.Z` also prepares a **draft release** after all jobs succeed; the manual workflow has a separate `publish_release` flag with the same result. Neither a public release nor `latest` is assigned automatically. Builds with the legacy connector are excluded from releases. Existing releases are not overwritten.
 
-## Перед публикацией
+## Before publication
 
-Проверить именно выпускаемое приложение и архивы: версии, вложенные подписи, архитектуру, системные зависимости, контрольные суммы и отсутствие личных runtime-файлов. Публиковать пакеты из того же успешного CI-прогона и проверить контрольные суммы загруженных файлов. Установленное приложение на Mac владельца для этого не требуется менять. Подробности: [чек-лист](publication-checklist.md), [список исходников](source-publication-files.txt).
+Verify the exact app and archives being released: versions, nested signatures, architecture, system dependencies, checksums, and absence of private runtime files. Then download the packages from the draft and complete the [upgrade validation from the previous release](widget-upgrade-validation.md) on a Mac with a graphical session, including existing widgets and the gallery. A separate test machine can be used; the owner's Mac does not need to be changed. Only after validation succeeds should the same draft be published and marked `latest`; a rebuild requires another validation run. Details: [publication checklist](publication-checklist.md), [source file list](source-publication-files.txt).
 
-Лицензия собственных исходников пока не выбрана. Публикация исходников без файла LICENSE разрешена владельцем; документация не объявляет проект распространяемым на какой-либо выбранной лицензии. Уведомления о лицензиях реально включённых сторонних зависимостей сохраняются.
+The current source is available for noncommercial use under the [PolyForm Noncommercial License 1.0.0](../LICENSE.md), with [required notices](../NOTICE.md). Commercial use requires separate permission. Retain license notices for third-party dependencies actually included in the package. These terms are documented for the current source; this statement does not retrospectively describe the contents of previously published packages.

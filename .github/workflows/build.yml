@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_release:
-        description: Publish the checked version to GitHub Releases after all checks pass
+        description: Prepare a verified release draft for on-device upgrade testing
         type: boolean
         default: false
       include_legacy_connector:
@@ -42,6 +42,8 @@ jobs:
           for script in scripts/build-app.sh scripts/build-widgets.sh scripts/package-release.sh scripts/publish-release.sh; do
             bash -n "$script"
           done
+      - name: Verify release preparation stays in draft
+        run: python3 Tests/ReleaseDraftTests.py
 
   protocol:
     name: Offline JavaScript and Python contracts
@@ -67,8 +69,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
-      # Use the same static four-kind widget variant as the tested local app.
-      # Full Xcode discovers App Intents metadata tools and selects a different variant.
+      # Both architectures build the same five fixed StaticConfiguration widgets.
+      # The installed metadata tooling no longer changes the product model.
       DEVELOPER_DIR: /Library/Developer/CommandLineTools
       CONFIGURATION: release
       APP_VERSION: ${{ needs.version.outputs.version }}
@@ -99,10 +101,6 @@ jobs:
           xcrun swiftc --version
           xcrun --sdk macosx --show-sdk-path
           xcrun --sdk macosx --show-sdk-version
-          if xcrun --find appintentsmetadataprocessor >/dev/null 2>&1; then
-            printf '::error::Selected tools would produce profile-intents widgets instead of the tested static variant.\n' >&2
-            exit 1
-          fi
       - name: Run all native offline contracts and synthetic visual fixtures
         run: bash scripts/test-offline.sh
       - name: Upload synthetic visual review fixtures
@@ -113,6 +111,7 @@ jobs:
           path: |
             build/audit/app/*.png
             build/audit/widgets/*.png
+            build/audit/calendar/*.png
           if-no-files-found: warn
           retention-days: 14
       - name: Verify read-only widget sharing in an ad-hoc sandbox
@@ -153,7 +152,7 @@ jobs:
           compression-level: 0
 
   release:
-    name: Publish verified release
+    name: Prepare verified release draft
     needs: [version, protocol, build]
     if: >-
       github.ref == 'refs/heads/main' &&
@@ -179,5 +178,5 @@ jobs:
               --name "GarminDesk-$APP_VERSION-build$APP_BUILD-$arch-development" \
               --dir release-assets
           done
-      - name: Verify assets and publish the exact tested commit
+      - name: Verify assets and prepare a draft of the exact tested commit
         run: bash scripts/publish-release.sh release-assets

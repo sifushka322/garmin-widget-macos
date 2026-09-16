@@ -95,11 +95,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first(where: { $0.scheme == "garmindesk" }) else { return }
         guard store != nil else { pendingURL = url; return }
-        if url.host == "profile", let identifier = UUID(uuidString: url.lastPathComponent), store.profile(identifier) != nil {
-            navigation.profileID = identifier
+        if let link = WidgetLink(url: url) {
+            navigation.widgetSlot = link.slot
             navigation.section = .dashboard
         } else {
-            navigation.section = store.hasSession ? .profiles : .connection
+            navigation.widgetSlot = nil
+            navigation.section = store.hasSession ? .widgets : .connection
         }
         showMainWindow()
     }

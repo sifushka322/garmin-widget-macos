@@ -2,64 +2,57 @@
 
 # GarminDesk
 
-Ваши показатели Garmin Connect в приложении для Mac и системных виджетах рабочего стола. Нативный интерфейс на русском и английском, гибкие профили, история занятий и опубликованный календарь тренировок.
+Your Garmin Connect data in a native Mac app and desktop widgets. Five widget types for your day, sport, sleep, and training calendar, including a customizable Summary.
 
-[Скачать приложение](https://github.com/sifushka322/garmin-widget-macos/releases) · [Установка](docs/distribution.md) · [Версия 0.4.0](docs/releases/0.4.0.md) · [English](#english)
+[Download](https://github.com/sifushka322/garmin-widget-macos/releases) · [Installation](docs/distribution.md) · [Version 0.4.0](docs/releases/0.4.0.md)
 
-Текущий пульс не выводится: задержки Garmin Connect не позволяют достоверно показывать его «прямо сейчас». Сон, ночная ВСР, дыхание во сне и другие завершённые записи показываются с датой и не считаются устаревшими только из-за задержки синхронизации. Шаги и Body Battery — последние полученные значения, а не трансляция с часов.
+GarminDesk shows the latest available readings, not a live stream from your watch. Instantaneous heart rate is excluded because Garmin Connect delays make a reliable live reading impossible. Sleep, overnight HRV, sleep respiration, and other completed records retain their dates and are not marked stale solely because synchronization is delayed.
 
-## Установка
+## Installation
 
-1. Скачайте **GarminDesk-0.4.0-arm64.dmg** для Apple Silicon или **GarminDesk-0.4.0-x86_64.dmg** для Intel Mac.
-2. Откройте DMG, перенесите **GarminDesk.app** в **Applications («Программы»)** и запустите приложение оттуда.
-3. В разделе **«Аккаунт Garmin»** выполните обычный вход Garmin Connect.
-4. Откройте **«Профили виджетов»**, выберите показатели, оформление и назначения четырёх видов виджетов.
-5. Нажмите правой кнопкой на рабочий стол → **«Изменить виджеты» → GarminDesk** и добавьте нужный виджет.
+1. Download **GarminDesk-0.4.0-arm64.dmg** for Apple Silicon or **GarminDesk-0.4.0-x86_64.dmg** for an Intel Mac.
+2. Open the DMG, drag **GarminDesk.app** into **Applications**, and launch it from there.
+3. Sign in to Garmin Connect under **Garmin account**.
+4. Follow the setup instructions included with your downloaded version. The current source candidate replaces the older profile setup with five fixed widget types.
+5. Right-click the desktop → **Edit Widgets → GarminDesk**, then add a widget.
 
-ZIP — альтернативный формат того же приложения. **Python, Homebrew, дополнительные библиотеки и терминал для установки не нужны.** Целевая система — macOS 14+, доступны отдельные пакеты для Apple Silicon и Intel. Границы проверки конкретной версии указаны в [заметках к выпуску](docs/releases/0.4.0.md).
+A ZIP containing the same app is also available. **No Python, Homebrew, additional libraries, or terminal setup is required.** Separate Apple Silicon and Intel packages target macOS 14+. See the [release notes](docs/releases/0.4.0.md) for the version's actual validation coverage.
 
-Приложение распространяется без платной подписи Developer ID и заверения Apple. Если macOS сообщает о неизвестном разработчике, после попытки открытия доверенной копии используйте **«Системные настройки» → «Конфиденциальность и безопасность» → «Всё равно открыть»**. [Инструкция Apple](https://support.apple.com/102445).
+The app is distributed without a paid Developer ID certificate or Apple notarization. If macOS reports an unidentified developer, first try opening your trusted download, then use **System Settings → Privacy & Security → Open Anyway**. [Apple's instructions](https://support.apple.com/102445).
 
-## Возможности
+## Features
 
-- **Одно окно и значок в Dock.** Обзор данных, профили, подключение Garmin и общие настройки находятся в одном приложении.
-- **Четыре вида системных виджетов:** обзор, спорт, сон и тренировки; маленький, средний и большой размеры.
-- **Гибкие профили:** состав и порядок показателей, главный показатель, плотность и оформление. Назначение каждого вида меняется в приложении; экземпляры одного вида используют одно назначение.
-- **Тренировки:** последние завершённые занятия и предстоящие записи опубликованного календаря с явным указанием покрытия.
-- **Автоматическое обновление** и сохранение сессии. Если новых измерений нет, остаются последние реальные значения с их датами. До подключения вымышленные показатели не показываются.
-- **Русский и английский.** По умолчанию язык следует системе, вручную меняется в разделе «Основные».
+The **0.5.0 source candidate** has a simpler widget model. Published 0.4.0 downloads retain their previous interface.
 
-Нажатие виджета открывает окно GarminDesk с его профилем. Закрытие окна оставляет синхронизацию работающей; **⌘Q** завершает приложение. Новые измерения требуют интернета и синхронизации часов с Garmin Connect. Расписание обновления системных виджетов контролирует macOS.
+- **Five widget types:** Summary, Day, Sport, Sleep, and Training calendar. Each supports small, medium, and large sizes.
+- **One large Summary** combines the main daily, sport, and sleep measurements in a single layout. Choose its measurements directly; the calendar stays in Training. Add another widget for detail, such as sleep stages.
+- **No profiles or assignments.** Choose a widget directly in the macOS gallery. Summary has one shared ordered measurement selection; the other types use purpose-specific defaults. Missing readings are skipped automatically.
+- **Three distinct appearances:** Colorful, Light, and Dark. One setting applies to every desktop widget, with an immediate preview in the app.
+- **Twelve languages:** English, Russian, German, French, Spanish, Italian, Brazilian Portuguese, Dutch, Polish, Japanese, Korean, and Simplified Chinese. Follow the system language or choose one under General. Public 0.4.0 packages support English and Russian only.
+- **Useful gallery previews.** Clearly marked demo readings and a sample calendar show each type before you add it. App previews also use demo values until real measurements are available.
+- **Automatic refresh and a saved session.** Desktop timelines show actual data or a connection/waiting state. Demo previews never replace real readings; retained readings keep their dates.
 
-## Данные остаются у вас
+Clicking a widget opens its view in GarminDesk. Closing the window keeps synchronization running; **⌘Q** quits. New readings require internet access and a watch synced with Garmin Connect. macOS controls widget refresh timing.
 
-Собственного сервера нет. Приложение подключается напрямую к Garmin через системный WebKit; сессия сайта и кэш хранятся локально. Расширение виджетов читает отдельный снимок без пароля и cookies. Учётные данные и измерения не входят в исходники или готовый пакет.
+[Candidate notes](docs/releases/0.5.0.md) · [Widget simplification audit](docs/widget-simplification-audit.md)
 
-GarminDesk — неофициальное приложение, не связанное с Garmin. Доступность метрик зависит от устройства и аккаунта; изменения Garmin Connect могут потребовать обновления интеграции. Не прикладывайте к публичным Issues пароли, cookies, токены или личные экспорты.
+## Your data stays with you
 
-## Сборка для разработчиков
+There is no developer-operated server. GarminDesk connects directly to Garmin using system WebKit; website session data and cached readings stay on your Mac. The widget extension reads a separate snapshot without passwords or cookies. Credentials and personal readings are not included in the source or release packages.
 
-Нужен Mac с совместимыми инструментами Swift и macOS SDK. Обычный пакет использует системные frameworks; Swift Package Manager и Python не требуются.
+GarminDesk is an unofficial project and is not affiliated with Garmin. Metric availability depends on your device and account; Garmin Connect changes may require an integration update. Do not attach passwords, cookies, tokens, or personal exports to public issues.
+
+## Build from source
+
+A Mac with compatible Swift tools and a macOS SDK is required. The standard app uses system frameworks; Swift Package Manager and Python are not required.
 
 ```bash
-APP_VERSION=0.4.0 APP_BUILD=10 CONFIGURATION=release bash scripts/build-app.sh
+APP_VERSION=0.5.0 APP_BUILD=11 CONFIGURATION=release bash scripts/build-app.sh
 bash scripts/package-release.sh
 ```
 
-Приложение и архивы появятся в `build/`. Дополнительные параметры, вариант App Intents и необязательный legacy-коннектор описаны в [документации сборки](docs/distribution.md#для-разработчиков).
+The app and archives are created in `build/`. See the [build documentation](docs/distribution.md#for-developers) for additional options and the optional legacy connector.
 
-[История проверок 0.2.0](docs/validation.md) · [Аудит публикуемых файлов](docs/source-publication-audit-2026-09-16.md)
+[0.2.0 validation history](docs/validation.md) · [Source publication audit](docs/source-publication-audit-2026-09-16.md)
 
-Лицензия исходников пока не выбрана.
-
-## English
-
-GarminDesk brings Garmin Connect data to a native Mac app and desktop widgets. Version 0.4.0 adds a colorful, value-first dashboard and quieter desktop widgets. It uses one regular window and a Dock icon, with **Overview**, **Widget profiles**, **Garmin account** and **General** sections.
-
-Download **GarminDesk-0.4.0-arm64.dmg** (Apple Silicon) or **GarminDesk-0.4.0-x86_64.dmg** (Intel) from [Releases](https://github.com/sifushka322/garmin-widget-macos/releases), drag the app into Applications, then sign in under **Garmin account**. Configure profiles and assign the four widget kinds under **Widget profiles**. Right-click the desktop → **Edit Widgets → GarminDesk** to add a widget. Clicking it opens the app with its assigned profile.
-
-No Python, Homebrew, additional libraries or terminal setup is required. Separate packages support Apple Silicon and Intel, targeting macOS 14+. See the [release notes](docs/releases/0.4.0.md) for this version's validation status. The app uses ad-hoc signing without Developer ID or notarization; a trusted download may require the standard macOS **Open Anyway** confirmation.
-
-Health summaries, sleep, activity, recent workouts and published upcoming calendar entries are configurable. The interface follows the system language or your English/Russian selection. Closing the window keeps synchronization running; **⌘Q** quits the app.
-
-GarminDesk connects directly to Garmin using system WebKit. Website session data and cached readings stay on your Mac; no developer-operated backend is involved. It is an unofficial project, not affiliated with Garmin. Source licensing has not yet been specified.
+The source is available for noncommercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE.md), with [required notices](NOTICE.md). Commercial use requires separate permission.

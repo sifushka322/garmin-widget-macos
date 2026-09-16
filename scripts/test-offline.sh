@@ -10,9 +10,13 @@ fi
 mkdir -p build/audit build/module-cache
 options=(-parse-as-library -swift-version 5 -target "$(uname -m)-apple-macos14.0"
     -module-cache-path build/module-cache)
+if [[ -n "${GARMIN_SDK_PATH:-}" ]]; then options+=(-sdk "$GARMIN_SDK_PATH"); fi
+xcrun swiftc "${options[@]}" -module-name BrandIconTests Tests/BrandIconTests.swift \
+    -framework CoreGraphics -framework ImageIO -o build/audit/BrandIconTests
+build/audit/BrandIconTests
 shared=(Sources/Shared/*.swift Sources/GarminDesk/Localization.swift)
 frameworks=(-framework SwiftUI -framework AppKit -framework WidgetKit -framework WebKit -framework Security -framework ServiceManagement)
-for suite in SharedModelTests TrainingPresentationTests SyncPolicyTests GarminPayloadNormalizerTests TrainingModelsTests; do
+for suite in SharedModelTests WidgetConfigurationTests WidgetMetricPolicyTests TrainingCalendarTests TrainingPresentationTests LocalizationTests SyncPolicyTests GarminPayloadNormalizerTests TrainingModelsTests; do
     xcrun swiftc "${options[@]}" -module-name "$suite" "${shared[@]}" "Tests/$suite.swift" "${frameworks[@]}" -o "build/audit/$suite"
     "build/audit/$suite"
 done
@@ -28,3 +32,6 @@ xcrun swiftc "${options[@]}" -module-name RenderApp "${shared[@]}" "${host[@]}" 
     Sources/GarminDesk/Views.swift Sources/GarminDesk/TrainingTimelineView.swift Tests/RenderApp.swift \
     "${frameworks[@]}" -o build/audit/render-app
 build/audit/render-app build/audit/app
+xcrun swiftc "${options[@]}" -module-name RenderTrainingCalendar "${shared[@]}" Tests/RenderTrainingCalendar.swift \
+    "${frameworks[@]}" -o build/audit/render-training-calendar
+build/audit/render-training-calendar build/audit/calendar

@@ -32,7 +32,7 @@ The new day contained no measurements yet, and the UI correctly showed the empty
 
 Wider platform checks expand support; they are not blockers to the tested personal installation.
 
-- No public release has been published. For public source, review the exact staged files; publication without a selected license is authorized; no license is chosen by this work.
+- At this historical checkpoint, no public release had been published and source publication without a selected license was authorized. Current revisions now include [PolyForm Noncommercial 1.0.0](../LICENSE.md), added at the owner's later request; see [NOTICE.md](../NOTICE.md).
 - The GitHub workflow is prepared but has not run. Intel, other macOS releases, the macOS 14 minimum target and a separate clean Mac are not yet verified.
 - The local release uses four static widget kinds whose profiles are assigned in the app. The optional Xcode/App Intents variant has not been validated as an independent system profile picker.
 - Two medium desktop instances do not establish every widget size, Notification Center, reboot or session-expiry scenario. Several hours of live sync do not establish indefinite Garmin session validity.
