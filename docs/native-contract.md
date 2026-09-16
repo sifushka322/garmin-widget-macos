@@ -1,6 +1,6 @@
 # Native app and WidgetKit architecture — historical prototype
 
-> This document describes an early menu-bar/Python/App Group prototype. It is retained as design history, not the current runtime contract. The 0.5.0 source candidate uses a regular window, system WebKit, five fixed widget types without user profiles, and a dedicated read-only snapshot directory. See [distribution](distribution.md), [the WebKit session contract](web-session-data-contract.md), and [current localization](localization.md).
+> This document describes an early menu-bar/Python/App Group prototype. It is retained as design history, not the current runtime contract. GarminDesk 0.5.0 uses a regular window, system WebKit, five fixed widget types without user profiles, and a dedicated read-only snapshot directory. See [distribution](distribution.md), [the WebKit session contract](web-session-data-contract.md), and [current localization](localization.md).
 
 GarminDesk targets macOS 14+. The host is an AppKit menu-bar application with SwiftUI views; the embedded WidgetKit extension uses App Intents for per-widget profile selection.
 

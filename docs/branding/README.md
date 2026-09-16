@@ -26,7 +26,7 @@ Set `GARMIN_SDK_PATH` if a specific compatible SDK is needed. The generator uses
 
 **0.2.0, build 8, arm64** was built using SDK 26.5. App and extension compilation, bundle structure verification, and ad-hoc signature checks passed. The ICNS inside the app matches the new resource byte for byte. The color source PNG matches the selected concept; the largest export is 1024×1024, and the icon and both menu-bar PNGs contain an alpha channel. Native rendering checked the monochrome symbol at 13, 16, 18, and 24 pt. Installation and live widget-gallery checks were not performed for this build.
 
-## Icon opacity correction in the 0.5.0 candidate
+## Icon opacity correction in 0.5.0
 
 A later macOS 26.6.2 check reproduced a small green watch tile inside an extra gray system plate. The gray plate was absent from the source artwork and ICNS. Inspection found that most pixels in the supposedly solid tile had alpha 252–253 rather than 255, and faint nearly transparent pixels extended outside the visible tile.
 

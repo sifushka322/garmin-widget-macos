@@ -4,37 +4,37 @@
 
 Your Garmin Connect data in a native Mac app and desktop widgets. Five widget types for your day, sport, sleep, and training calendar, including a customizable Summary.
 
-[Download](https://github.com/sifushka322/garmin-widget-macos/releases) · [Installation](docs/distribution.md) · [Version 0.4.0](docs/releases/0.4.0.md)
+[Download](https://github.com/sifushka322/garmin-widget-macos/releases/tag/v0.5.0) · [Installation](docs/distribution.md) · [Version 0.5.0](docs/releases/0.5.0.md)
 
 GarminDesk shows the latest available readings, not a live stream from your watch. Instantaneous heart rate is excluded because Garmin Connect delays make a reliable live reading impossible. Sleep, overnight HRV, sleep respiration, and other completed records retain their dates and are not marked stale solely because synchronization is delayed.
 
 ## Installation
 
-1. Download **GarminDesk-0.4.0-arm64.dmg** for Apple Silicon or **GarminDesk-0.4.0-x86_64.dmg** for an Intel Mac.
+1. Download **GarminDesk-0.5.0-arm64.dmg** for Apple Silicon or **GarminDesk-0.5.0-x86_64.dmg** for an Intel Mac.
 2. Open the DMG, drag **GarminDesk.app** into **Applications**, and launch it from there.
 3. Sign in to Garmin Connect under **Garmin account**.
-4. Follow the setup instructions included with your downloaded version. The current source candidate replaces the older profile setup with five fixed widget types.
+4. Under **Widgets**, choose an appearance and preview the five widget types. Customize Summary through **Choose measurements**.
 5. Right-click the desktop → **Edit Widgets → GarminDesk**, then add a widget.
 
-A ZIP containing the same app is also available. **No Python, Homebrew, additional libraries, or terminal setup is required.** Separate Apple Silicon and Intel packages target macOS 14+. See the [release notes](docs/releases/0.4.0.md) for the version's actual validation coverage.
+A ZIP containing the same app is also available. **No Python, Homebrew, additional libraries, or terminal setup is required.** Separate Apple Silicon and Intel packages target macOS 14+. See the [release notes](docs/releases/0.5.0.md) for the version's actual validation coverage.
 
 The app is distributed without a paid Developer ID certificate or Apple notarization. If macOS reports an unidentified developer, first try opening your trusted download, then use **System Settings → Privacy & Security → Open Anyway**. [Apple's instructions](https://support.apple.com/102445).
 
 ## Features
 
-The **0.5.0 source candidate** has a simpler widget model. Published 0.4.0 downloads retain their previous interface.
+**Version 0.5.0** simplifies widget setup with five types and no profiles or assignments. [Normal system-widget upgrade validation remains NOT RUN](docs/releases/0.5.0.md#validation-and-release-limits).
 
 - **Five widget types:** Summary, Day, Sport, Sleep, and Training calendar. Each supports small, medium, and large sizes.
 - **One large Summary** combines the main daily, sport, and sleep measurements in a single layout. Choose its measurements directly; the calendar stays in Training. Add another widget for detail, such as sleep stages.
 - **No profiles or assignments.** Choose a widget directly in the macOS gallery. Summary has one shared ordered measurement selection; the other types use purpose-specific defaults. Missing readings are skipped automatically.
 - **Three distinct appearances:** Colorful, Light, and Dark. One setting applies to every desktop widget, with an immediate preview in the app.
-- **Twelve languages:** English, Russian, German, French, Spanish, Italian, Brazilian Portuguese, Dutch, Polish, Japanese, Korean, and Simplified Chinese. Follow the system language or choose one under General. Public 0.4.0 packages support English and Russian only.
-- **Useful gallery previews.** Clearly marked demo readings and a sample calendar show each type before you add it. App previews also use demo values until real measurements are available.
+- **Twelve languages:** English, Russian, German, French, Spanish, Italian, Brazilian Portuguese, Dutch, Polish, Japanese, Korean, and Simplified Chinese. Follow the system language or choose one under General.
+- **Useful gallery previews.** Clearly marked demo readings and a sample calendar show each type before you add it. App previews also use demo values until relevant real data is available.
 - **Automatic refresh and a saved session.** Desktop timelines show actual data or a connection/waiting state. Demo previews never replace real readings; retained readings keep their dates.
 
 Clicking a widget opens its view in GarminDesk. Closing the window keeps synchronization running; **⌘Q** quits. New readings require internet access and a watch synced with Garmin Connect. macOS controls widget refresh timing.
 
-[Candidate notes](docs/releases/0.5.0.md) · [Widget simplification audit](docs/widget-simplification-audit.md)
+[Release notes](docs/releases/0.5.0.md) · [Widget simplification audit](docs/widget-simplification-audit.md)
 
 ## Your data stays with you
 

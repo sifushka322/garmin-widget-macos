@@ -2,6 +2,14 @@
 
 The owner has authorized publishing the repository and ready-to-use app on GitHub. This checklist verifies the content and exact release; it does not introduce another approval requirement.
 
+## 0.5.0 publication record
+
+Normal upgrade validation: NOT RUN
+
+Published at the owner’s explicit request after disclosure that normal system-widget upgrade validation remains unverified; desktop/gallery automation was unavailable.
+
+The [publication record](releases/validation/0.5.0-publication.md) documents the approved exception and exact tested build. This exception does not constitute a passing upgrade report. The steps below remain the standard validation process.
+
 ## Source files
 
 - Use the [verified file list](source-publication-files.txt) and [audit report](source-publication-audit-2026-09-16.md). Compare staged files with the list before committing: `.gitignore` does not exclude files that are already tracked.
@@ -25,4 +33,4 @@ The owner has authorized publishing the repository and ready-to-use app on GitHu
 9. Any old logo, old snapshot, or broken existing widget blocks publishing the draft. Recovery using service commands does not turn a failed upgrade into a passing acceptance result. After changing the candidate, repeat validation with the new package.
 10. Only after upgrade validation passes, publish **the same verified draft** and mark it latest. Release notes must state actual results and remaining validation limits. Synthetic tests do not verify live Garmin sign-in, system-widget upgrades, or compatibility with every macOS version.
 
-Packages remain ad-hoc signed without Developer ID/notarization. The previous 0.4.0 workflow published immediately after CI; the upgrade failure discovered on September 16, 2026 showed that this was insufficient. The new process retains CI output as a draft until validation on a real Mac. The published release descriptions were later translated to English; their downloadable assets remain unchanged. Validation of [0.3.0](releases/0.3.0.md) and [0.2.0](validation.md) remains historical evidence.
+Packages remain ad-hoc signed without Developer ID/notarization. The previous 0.4.0 workflow published immediately after CI; the upgrade failure discovered on September 16, 2026 showed that this was insufficient. By default, the new process retains CI output as a draft until validation on a real Mac. The published release descriptions were later translated to English; their downloadable assets remain unchanged. Validation of [0.3.0](releases/0.3.0.md) and [0.2.0](validation.md) remains historical evidence.

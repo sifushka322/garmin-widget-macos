@@ -2,21 +2,21 @@
 
 GarminDesk is distributed through [GitHub Releases](https://github.com/sifushka322/garmin-widget-macos/releases) as a ready-to-use app. Users do not need Python, Homebrew, Xcode, or additional libraries.
 
-## Version 0.4.0
+## Version 0.5.0
 
 Apple Silicon (`arm64`) packages are listed below. Equivalent Intel packages use the `x86_64` suffix:
 
-- `GarminDesk-0.4.0-arm64.dmg` — the app, an Applications shortcut, and installation instructions.
-- `GarminDesk-0.4.0-arm64.zip` — an alternative archive of the same app.
-- `GarminDesk-0.4.0-arm64-SHA256.txt` — archive checksums.
+- `GarminDesk-0.5.0-arm64.dmg` — the app, an Applications shortcut, and installation instructions.
+- `GarminDesk-0.5.0-arm64.zip` — an alternative archive of the same app.
+- `GarminDesk-0.5.0-arm64-SHA256.txt` — archive checksums.
 
-The target is macOS 14+. Actual validation of **0.4.0 build 10** is recorded in the [release notes](releases/0.4.0.md). Builds and offline checks run on hosted macOS 26 machines for Apple Silicon and Intel. Live Garmin sign-in, system widgets on a clean Mac, and macOS 14 have not been separately verified.
+The target is macOS 14+. Validation of **0.5.0 build 11** is recorded in the [release notes](releases/0.5.0.md). Normal upgrades with existing desktop widgets and live Garmin sign-in remain unverified. Validation does not cover every macOS version and architecture combination.
 
 ## Installation without a paid signing certificate
 
 1. Open the DMG, drag GarminDesk.app onto Applications, then eject the disk. For a ZIP, extract the archive and move the app to Applications.
 2. Open GarminDesk. It is a regular app with a window and a Dock icon.
-3. Sign in to Garmin Connect under **Garmin account**. In the 0.5.0 source candidate, **Widgets** offers a shared Colorful/Light/Dark appearance and previews of five fixed types; no profile setup is needed. For published 0.4.0, follow its bundled installation guide.
+3. Sign in to Garmin Connect under **Garmin account**. Under **Widgets**, choose Colorful, Light, or Dark and preview the five widget types. No profile setup is needed.
 4. Right-click the desktop → **Edit Widgets → GarminDesk**. Add the kind and size you want.
 
 Clicking a widget opens its corresponding view in the app. Closing the window keeps background synchronization running; **⌘Q** quits the app. New readings require the app to be running, internet access, and a watch synced with Garmin Connect.
@@ -29,7 +29,7 @@ The standard bundle contains a native Swift executable, `GarminDeskWidgets.appex
 
 The host stores data locally in Application Support. The sandboxed extension reads only the dedicated `Widgets/widget-data.json` snapshot through a narrowly scoped read-only permission. The snapshot contains no passwords or cookies. The selected local configuration does not require an App Group.
 
-The source candidate always builds five StaticConfiguration kinds: Summary, Day, Sport, Sleep, and Training calendar. Existing four kind identifiers are preserved; Day is added. There are no user profiles or assignments. The former optional App Intents profile prototype is retired, and requesting its old build flags fails explicitly instead of changing the widget model based on the installed toolchain. Custom installations of that unreleased prototype require removing/re-adding widgets.
+The standard build uses five StaticConfiguration kinds: Summary, Day, Sport, Sleep, and Training calendar. Existing four kind identifiers are preserved; Day is added. There are no user profiles or assignments. The former optional App Intents profile prototype is retired, and requesting its old build flags fails explicitly instead of changing the widget model based on the installed toolchain. Custom installations of that unreleased prototype require removing/re-adding widgets.
 
 App preferences store language, app appearance, widget appearance, Summary’s ordered measurement selection, and refresh interval. During the transition, the private widget snapshot includes a fixed compatibility projection for older running extensions; it is not an editable profile feature. See the [migration audit](widget-simplification-audit.md).
 
@@ -59,6 +59,8 @@ The legacy connector requires Python only on the build machine. When enabled, it
 The workflow in `.github/workflows/build.yml` reads the version from `Resources/Info.plist` and checks that it matches the extension. A normal push runs checks and builds. A commit in `main` with the exact message `release: vX.Y.Z` also prepares a **draft release** after all jobs succeed; the manual workflow has a separate `publish_release` flag with the same result. Neither a public release nor `latest` is assigned automatically. Builds with the legacy connector are excluded from releases. Existing releases are not overwritten.
 
 ## Before publication
+
+Version 0.5.0 was published with the [documented validation exception](releases/0.5.0.md#validation-and-release-limits). The following remains the standard validation process.
 
 Verify the exact app and archives being released: versions, nested signatures, architecture, system dependencies, checksums, and absence of private runtime files. Then download the packages from the draft and complete the [upgrade validation from the previous release](widget-upgrade-validation.md) on a Mac with a graphical session, including existing widgets and the gallery. A separate test machine can be used; the owner's Mac does not need to be changed. Only after validation succeeds should the same draft be published and marked `latest`; a rebuild requires another validation run. Details: [publication checklist](publication-checklist.md), [source file list](source-publication-files.txt).
 
