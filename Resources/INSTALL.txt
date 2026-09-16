@@ -1,4 +1,4 @@
-GarminDesk 0.3.0 — установка / installation
+GarminDesk 0.4.0 — установка / installation
 
 РУССКИЙ
 1. Перетащите GarminDesk.app на значок Applications («Программы»).
@@ -25,7 +25,8 @@ Python, Homebrew, библиотеки и терминал для установ
 повреждённом приложении; на управляемом Mac оно может быть недоступно.
 Справка Apple: https://support.apple.com/102445
 
-Этот пакет предназначен для Apple Silicon (arm64), целевая система macOS 14+.
+Выберите пакет arm64 для Apple Silicon или x86_64 для Intel Mac.
+Целевая система — macOS 14+.
 Проверенные версии macOS перечислены в описании выпуска:
 https://github.com/sifushka322/garmin-widget-macos/releases
 
@@ -52,6 +53,6 @@ notarized, first try opening it, then use System Settings → Privacy & Security
 This is not for malware or damaged-app warnings; managed Macs may disallow it.
 Apple instructions: https://support.apple.com/102445
 
-This package is for Apple Silicon (arm64), targeting macOS 14+.
+Choose arm64 for Apple Silicon or x86_64 for Intel Mac. Target: macOS 14+.
 See the release notes for verified macOS versions:
 https://github.com/sifushka322/garmin-widget-macos/releases

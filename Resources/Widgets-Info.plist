@@ -9,8 +9,8 @@
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>GarminDeskWidgets</string>
     <key>CFBundlePackageType</key><string>XPC!</string>
-    <key>CFBundleShortVersionString</key><string>0.1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>0.4.0</string>
+    <key>CFBundleVersion</key><string>10</string>
     <key>CFBundleLocalizations</key>
     <array><string>en</string><string>ru</string></array>
     <key>LSMinimumSystemVersion</key><string>14.0</string>

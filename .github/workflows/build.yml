@@ -3,6 +3,10 @@ name: Build macOS app
 on:
   workflow_dispatch:
     inputs:
+      publish_release:
+        description: Publish the checked version to GitHub Releases after all checks pass
+        type: boolean
+        default: false
       include_legacy_connector:
         description: Include the optional legacy Python connector for diagnostics
         type: boolean
@@ -21,6 +25,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  version:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      build: ${{ steps.version.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - id: version
+        run: python3 scripts/release-version.py >> "$GITHUB_OUTPUT"
+      - name: Check packaging and publishing script syntax
+        run: |
+          for script in scripts/build-app.sh scripts/build-widgets.sh scripts/package-release.sh scripts/publish-release.sh; do
+            bash -n "$script"
+          done
+
   protocol:
     name: Offline JavaScript and Python contracts
     runs-on: ubuntu-latest
@@ -41,6 +63,7 @@ jobs:
 
   build:
     name: macOS ${{ matrix.arch }}
+    needs: version
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
@@ -48,8 +71,8 @@ jobs:
       # Full Xcode discovers App Intents metadata tools and selects a different variant.
       DEVELOPER_DIR: /Library/Developer/CommandLineTools
       CONFIGURATION: release
-      APP_VERSION: '0.3.0'
-      APP_BUILD: '9'
+      APP_VERSION: ${{ needs.version.outputs.version }}
+      APP_BUILD: ${{ needs.version.outputs.build }}
       GARMIN_REQUIRE_APPINTENTS_METADATA: '0'
       INCLUDE_LEGACY_CONNECTOR: ${{ github.event_name == 'workflow_dispatch' && inputs.include_legacy_connector && '1' || '0' }}
     strategy:
@@ -128,3 +151,33 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+  release:
+    name: Publish verified release
+    needs: [version, protocol, build]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'push' && github.event.head_commit.message == format('release: v{0}', needs.version.outputs.version)) ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish_release && !inputs.include_legacy_connector))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    env:
+      APP_VERSION: ${{ needs.version.outputs.version }}
+      APP_BUILD: ${{ needs.version.outputs.build }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download this run's verified packages
+        run: |
+          for arch in arm64 x86_64; do
+            gh run download "$GITHUB_RUN_ID" \
+              --name "GarminDesk-$APP_VERSION-build$APP_BUILD-$arch-development" \
+              --dir release-assets
+          done
+      - name: Verify assets and publish the exact tested commit
+        run: bash scripts/publish-release.sh release-assets

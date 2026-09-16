@@ -96,3 +96,6 @@ scripts/verify-release.sh
 
 Sources/Shared/DeskVisualStyle.swift
 Sources/Shared/WidgetPresentation.swift
+docs/releases/0.4.0.md
+scripts/release-version.py
+scripts/publish-release.sh
