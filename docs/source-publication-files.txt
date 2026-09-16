@@ -1,4 +1,5 @@
 .github/workflows/build.yml
+.github/workflows/promote-release.yml
 .gitignore
 Connector/bridge.py
 Connector/collect_notices.py
@@ -49,8 +50,8 @@ Sources/Shared/LocalizationsZHHans.swift
 Sources/Shared/MetricFormatter.swift
 Sources/Shared/MetricFreshness.swift
 Sources/Shared/Models.swift
-Sources/Shared/SyncPolicy.swift
 Sources/Shared/SummaryWidgetView.swift
+Sources/Shared/SyncPolicy.swift
 Sources/Shared/TrainingCalendarPresentation.swift
 Sources/Shared/TrainingCalendarWidgetView.swift
 Sources/Shared/TrainingModels.swift
@@ -67,6 +68,7 @@ Tests/GarminPayloadNormalizerTests.swift
 Tests/GarminWebBoundaryTests.swift
 Tests/LocalizationTests.swift
 Tests/ReleaseDraftTests.py
+Tests/ReleasePromotionTests.py
 Tests/RenderApp.swift
 Tests/RenderTrainingCalendar.swift
 Tests/RenderWidgets.swift
@@ -105,6 +107,9 @@ docs/publication-checklist.md
 docs/releases/0.3.0.md
 docs/releases/0.4.0.md
 docs/releases/0.5.0.md
+docs/releases/approvals/v0.5.0.json
+docs/releases/public-notes/v0.5.0.md
+docs/releases/validation/0.5.0-publication.md
 docs/source-publication-audit-2026-09-16.md
 docs/source-publication-files.txt
 docs/validation.md
@@ -119,6 +124,7 @@ scripts/build-widgets.sh
 scripts/generate-icon.sh
 scripts/generate-icon.swift
 scripts/package-release.sh
+scripts/promote-release.py
 scripts/publish-release.sh
 scripts/release-version.py
 scripts/sign-release.sh

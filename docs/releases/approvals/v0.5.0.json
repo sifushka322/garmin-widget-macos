@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "version": "0.5.0",
+  "build": "11",
+  "commit": "cf6bd8d433c4f586468520bcd544866781120bb5",
+  "build_run_id": 35105278274,
+  "upgrade_result": "not_run",
+  "owner_override": true,
+  "override_reason": "Published at the owner’s explicit request after disclosure that normal system-widget upgrade validation remains unverified; desktop/gallery automation was unavailable.",
+  "report": "docs/releases/validation/0.5.0-publication.md",
+  "report_sha256": "0f6564ee438f6b9971668f60e9a5c47251779f5959753ffe8c355cd59480efe7",
+  "release_notes_path": "docs/releases/public-notes/v0.5.0.md",
+  "release_notes_sha256": "971c883a6cfb7906d1dc1c914282a4f7a4bbbe7e611efd85aa3b2dbb5bfaa07b",
+  "asset_sha256": {
+    "GarminDesk-0.5.0-arm64-SHA256.txt": "4ddbd147d00d78b199e094262f874c7d04809d758a29669a5f8d54a467ef80a4",
+    "GarminDesk-0.5.0-arm64.dmg": "18048783bd5f1e4b44bf8f4d92bbb1104f83f465f83469af6e3af307c36e0d1b",
+    "GarminDesk-0.5.0-arm64.zip": "1bc0b5e0c57a66d0bd667c35e2f5283f7a155336794867980e9142d4b36ffde5",
+    "GarminDesk-0.5.0-x86_64-SHA256.txt": "39ce9e0feeb336d8de5fd567472e800f3e88c32c7fde668611e63b955b9728fe",
+    "GarminDesk-0.5.0-x86_64.dmg": "36ef5e09d6f5c8129f59ff0f641272366ecba8304419a69854f68d5058ccabab",
+    "GarminDesk-0.5.0-x86_64.zip": "24a872edbf3ff1be0a899fc40419ac10abd2ceeef40ecd218c1a2d9a76b553d9"
+  }
+}
