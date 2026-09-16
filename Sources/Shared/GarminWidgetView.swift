@@ -85,14 +85,19 @@ struct GarminWidgetView: View {
             if family == .systemSmall {
                 primary(profile.primaryMetric, compact: true)
             } else if family == .systemMedium {
-                HStack(alignment: .top, spacing: 16) {
-                    primary(profile.primaryMetric, compact: false).frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(alignment: .leading, spacing: profile.density == .compact ? 9 : 12) {
-                        ForEach(Array(secondary(profile).prefix(profile.density == .compact ? 3 : 2)), id: \.self) { metric in
-                            if profile.density == .compact { compactMetricRow(metric) }
-                            else { metricRow(metric) }
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
+                GeometryReader { geometry in
+                    let columnWidth = max(0, (geometry.size.width - 16) / 2)
+                    HStack(alignment: .top, spacing: 16) {
+                        primary(profile.primaryMetric, compact: false)
+                            .frame(width: columnWidth, alignment: .leading)
+                        VStack(alignment: .leading, spacing: profile.density == .compact ? 9 : 12) {
+                            ForEach(Array(secondary(profile).prefix(profile.density == .compact ? 3 : 2)), id: \.self) { metric in
+                                if profile.density == .compact { compactMetricRow(metric) }
+                                else { metricRow(metric) }
+                            }
+                        }.frame(width: columnWidth, alignment: .leading)
+                    }
+                    .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 12) {
@@ -219,7 +224,7 @@ struct GarminWidgetView: View {
             }
             .font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
             MetricValueLabel(value: formatter.display(id), size: compact ? 46 : (family == .systemLarge ? 48 : 38))
-                .foregroundStyle(theme.ink).fixedSize(horizontal: false, vertical: true).layoutPriority(1)
+                .foregroundStyle(theme.ink).layoutPriority(1)
             if let period = presentation.period(id) {
                 Text(period).font(.system(size: 10, weight: .medium)).foregroundStyle(theme.secondaryInk)
             }
@@ -240,7 +245,7 @@ struct GarminWidgetView: View {
             Label(text(MetricDefinition.find(id).widgetTitleKey), systemImage: MetricDefinition.find(id).symbol)
                 .font(.system(size: 10)).foregroundStyle(theme.secondaryInk).lineLimit(1).minimumScaleFactor(0.8)
             MetricValueLabel(value: formatter.display(id), size: family == .systemLarge ? 23 : 22)
-                .foregroundStyle(theme.ink).fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(theme.ink)
             if let period = presentation.period(id) {
                 Text(period).font(.system(size: 8)).foregroundStyle(theme.secondaryInk)
             }
