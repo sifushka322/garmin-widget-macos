@@ -16,6 +16,7 @@ import SwiftUI
 }
 
 @main struct RenderApp {
+    @MainActor private static var renderedFrames = 0
     @MainActor static func main() throws {
         guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true"
             || ProcessInfo.processInfo.environment["GARMIN_ALLOW_LOCAL_TESTS"] == "1" else {
@@ -128,31 +129,42 @@ import SwiftUI
     @MainActor private static func render(_ store: AppStore, navigation: MainWindowNavigation,
                                           dark: Bool, size: CGSize, name: String, output: URL,
                                           scrollOffset: CGFloat = 0) throws {
-        let view = MainWindowView(store: store, navigation: navigation)
-            .environment(\.colorScheme, dark ? .dark : .light)
-        let host = NSHostingView(rootView: view)
-        let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)!
-        window.contentView = host
-        host.frame = CGRect(origin: .zero, size: size)
-        window.displayIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        host.layoutSubtreeIfNeeded()
-        if scrollOffset > 0 {
-            let candidates = descendants(of: host).compactMap { $0 as? NSScrollView }
-            guard let scroll = candidates.max(by: { ($0.documentView?.bounds.height ?? 0) < ($1.documentView?.bounds.height ?? 0) }),
-                  let document = scroll.documentView else { fatalError("Expanded editor must contain a scroll view") }
-            let maximum = max(0, document.bounds.height - scroll.contentView.bounds.height)
-            scroll.contentView.scroll(to: NSPoint(x: 0, y: min(scrollOffset, maximum)))
-            scroll.reflectScrolledClipView(scroll.contentView)
+        // This command-line renderer has no NSApplication event-cycle pool.
+        try autoreleasepool {
+            let view = MainWindowView(store: store, navigation: navigation)
+                .environment(\.colorScheme, dark ? .dark : .light)
+            let host = NSHostingView(rootView: view)
+            let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            defer {
+                window.contentView = nil
+                window.close()
+            }
+            window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)!
+            window.contentView = host
+            host.frame = CGRect(origin: .zero, size: size)
+            window.displayIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
             host.layoutSubtreeIfNeeded()
+            if scrollOffset > 0 {
+                let candidates = descendants(of: host).compactMap { $0 as? NSScrollView }
+                guard let scroll = candidates.max(by: { ($0.documentView?.bounds.height ?? 0) < ($1.documentView?.bounds.height ?? 0) }),
+                      let document = scroll.documentView else { fatalError("Expanded editor must contain a scroll view") }
+                let maximum = max(0, document.bounds.height - scroll.contentView.bounds.height)
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: min(scrollOffset, maximum)))
+                scroll.reflectScrolledClipView(scroll.contentView)
+                host.layoutSubtreeIfNeeded()
+            }
+            guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { fatalError("No bitmap") }
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            guard let bytes = bitmap.representation(using: .png, properties: [:]) else { fatalError("No PNG") }
+            try bytes.write(to: output.appendingPathComponent(name + ".png"))
         }
-        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { fatalError("No bitmap") }
-        host.cacheDisplay(in: host.bounds, to: bitmap)
-        guard let bytes = bitmap.representation(using: .png, properties: [:]) else { fatalError("No PNG") }
-        try bytes.write(to: output.appendingPathComponent(name + ".png"))
-        window.close()
+        renderedFrames += 1
+        if renderedFrames.isMultiple(of: 12) {
+            let progress = "Rendered \(renderedFrames) app frames (latest: \(name))\n"
+            FileHandle.standardOutput.write(Data(progress.utf8))
+        }
     }
 
     @MainActor private static func descendants(of view: NSView) -> [NSView] {
