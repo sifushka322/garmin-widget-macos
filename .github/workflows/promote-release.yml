@@ -1,0 +1,35 @@
+name: Promote validated release
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/releases/approvals/*.json']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Verify approval and publish exact tested draft
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test promotion guards without network or publishing
+        run: python3 Tests/ReleasePromotionTests.py
+      - name: Verify the recorded upgrade and exact draft assets, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python3 scripts/promote-release.py
