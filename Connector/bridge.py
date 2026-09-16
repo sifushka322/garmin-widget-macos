@@ -155,7 +155,11 @@ def utc_now() -> str:
 def number(value: Any, *, positive: bool = False) -> float | int | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    if not math.isfinite(value) or value < 0 or (positive and value == 0):
+    try:
+        finite = math.isfinite(value)
+    except OverflowError:
+        return None
+    if not finite or value < 0 or (positive and value == 0):
         return None
     return value
 
@@ -195,7 +199,10 @@ def put(metrics: dict, key: str, value: Any, *, scale: float = 1,
     value = number(value, positive=positive)
     if value is None or (maximum is not None and value > maximum):
         return
-    metric = {"value": round(value * scale, 4)}
+    converted = value * scale
+    if not math.isfinite(converted):
+        return
+    metric = {"value": round(converted, 4)}
     if measured_at:
         metric["measuredAt"] = measured_at
     metrics[key] = metric

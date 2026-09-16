@@ -230,6 +230,11 @@ struct AppStoreSyncTests {
         rig.web.payloads["stats"] = NSNull(); rig.web.payloads["sleep"] = NSNull()
         rig.store.sync(trigger: .automatic); try await settled(rig.store)
         try expect(rig.store.snapshot.metrics.isEmpty && !rig.store.snapshot.isDemo, "A new day with no data must clear yesterday's values")
+        try expect(rig.store.snapshot.retainedMetrics["steps"]?.reading.value == 456,
+                   "An empty new day keeps the last real step count separately from today's measurements")
+        try expect(rig.store.displayValue("steps") != "—", "The user still sees the last known real reading")
+        try expect(rig.store.snapshot.retainedMetrics["steps"]?.sourceDate != rig.store.snapshot.sourceDate,
+                   "Retained readings must not inherit the new day's date")
         try expect(rig.store.snapshot.sourceDate == SyncPolicy.sourceDay(for: rig.clock.moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!),
                    "Empty day must carry the requested source date")
     }
@@ -255,7 +260,7 @@ struct AppStoreSyncTests {
         for group in [SyncPolicy.Group.profile, .stats, .devices] {
             checkpoint.successfulGroups[group] = .init(moment: time, sourceDay: day)
         }
-        let rig = try Rig(checkpoint: checkpoint); defer { rig.clean() }
+        let rig = try Rig(checkpoint: checkpoint, groups: GarminWebCache(accountDisplayName: "fixture-user")); defer { rig.clean() }
         rig.store.sync(trigger: .automatic); try await settled(rig.store)
         try expect(rig.web.calls == ["profile", "stats"], "Missing group cache must invalidate freshness without re-fetching valid metadata")
         let freshWeb = MockWeb()
@@ -286,7 +291,7 @@ struct AppStoreSyncTests {
         try expect(try rig.checkpoint().sessionState == .unavailable, "Disconnect must persist the unavailable session")
         rig.web.release()
         for _ in 0..<100 { await Task.yield() }
-        try expect(rig.store.snapshot.isDemo && !rig.store.hasSession, "Late response from the disconnected account must not restore its values")
+        try expect(!rig.store.snapshot.isDemo && !rig.store.snapshot.hasMeasurements && !rig.store.hasSession, "Late response from the disconnected account must not restore its values")
         rig.web.finishDisconnect()
         for _ in 0..<100 { await Task.yield() }
         rig.store.connectGarmin()
@@ -298,6 +303,7 @@ struct AppStoreSyncTests {
         let yesterday = GarminSnapshot(fetchedAt: date, sourceDate: "2026-09-14", devices: [], metrics: ["steps": .init(value: 999)])
         let empty = GarminWebCache().snapshot(sourceDay: "2026-09-15", fallback: yesterday, warnings: ["network.stats"])
         try expect(empty.metrics.isEmpty && empty.sourceDate == "2026-09-15", "Cache must not attach yesterday's metrics to today's request")
+        try expect(empty.retainedMetrics["steps"]?.sourceDate == "2026-09-14", "Keep the old reading's original day for the UI")
         var cache = GarminWebCache()
         cache.groups["stats"] = .init(sourceDay: "2026-09-15", retrievedAt: date, metrics: [:])
         var earlier = yesterday; earlier.sourceDate = "2026-09-15"
@@ -383,6 +389,8 @@ struct AppStoreSyncTests {
 
     static func main() async {
         do {
+            try await testEmptyUnchangedAndRecovery()
+            try await testAccountOwnershipAcrossRestart()
             try await testPolicyBeforeWebsite()
             try await testBootstrapExpiration()
             try await testFreshCadenceAndProfileReads()
@@ -399,5 +407,69 @@ struct AppStoreSyncTests {
             try await testTrainingFirstPageRateLimitStops()
             print("PASS: \(checks) host lifecycle and cache checks")
         } catch { fputs("FAIL: \(error)\n", stderr); exit(1) }
+    }
+
+    static func testAccountOwnershipAcrossRestart() async throws {
+        let now = TestClock().moment.wallTime
+        let day = SyncPolicy.sourceDay(for: now, timeZone: TimeZone(secondsFromGMT: 0)!)
+        for owner in [nil, "previous-account", "fixture-user"] as [String?] {
+            var cache = GarminWebCache(accountDisplayName: owner)
+            cache.groups["sleep"] = .init(sourceDay: day, retrievedAt: now.addingTimeInterval(-7200), metrics: ["sleepDuration": .init(value: 999)])
+            let previous = cache.snapshot(sourceDay: day, warnings: [])
+            let rig = try Rig(previous: previous, groups: cache, metrics: ["steps", "sleepDuration"])
+            defer { rig.clean() }
+            rig.web.payloads["sleep"] = ["unexpected": true]
+            rig.store.sync(trigger: .automatic); try await settled(rig.store)
+            try expect(rig.store.snapshot.metrics["steps"]?.value == 123, "New account's valid data is committed")
+            try expect((rig.store.snapshot.metrics["sleepDuration"] != nil) == (owner == "fixture-user"), "Partial sync must retain cached measurements only for the verified owner")
+            try expect((rig.store.snapshot.visibleReading("sleepDuration") != nil) == (owner == "fixture-user"), "Last-known fallback must also be isolated by account")
+            let persisted = try AppJSON.decoder.decode(GarminWebCache.self, from: Data(contentsOf: rig.directory.appendingPathComponent("metric-groups.json")))
+            try expect(persisted.accountDisplayName == "fixture-user", "Cache ownership survives process restart")
+        }
+        let rig = try Rig(); defer { rig.clean() }
+        try expect(!rig.store.snapshot.isDemo && rig.store.snapshot.metrics.isEmpty, "A connected installation with missing cache cannot show invented demo measurements")
+    }
+
+    static func testEmptyUnchangedAndRecovery() async throws {
+        let firstInstall = try Rig(connected: false); defer { firstInstall.clean() }
+        try expect(!firstInstall.store.snapshot.isDemo && !firstInstall.store.snapshot.hasMeasurements,
+                   "First launch has no invented values")
+        let rig = try Rig(); defer { rig.clean() }
+        rig.store.sync(); try await settled(rig.store)
+        let original = rig.store.snapshot
+        try expect(!original.hasUnchangedMeasurements, "First real response introduces data")
+        rig.clock.advance(60)
+        rig.store.sync(); try await settled(rig.store)
+        try expect(rig.store.snapshot.hasUnchangedMeasurements, "A successful fetch of identical readings is a check, not a new measurement")
+        try expect(rig.store.snapshot.metricChangedAt["steps"] == original.metricChangedAt["steps"], "Checking cannot advance the last changed time")
+        rig.clock.advance(60)
+        rig.web.payloads["stats"] = NSNull()
+        rig.store.sync(); try await settled(rig.store)
+        try expect(rig.store.snapshot.metrics["steps"] == nil && rig.store.snapshot.visibleReading("steps")?.value == 123,
+                   "A valid absence keeps the last known value without manufacturing current data")
+        try expect(rig.store.snapshot.retainedMetrics["steps"]?.retrievedAt == original.fetchedAt.addingTimeInterval(60),
+                   "A retained value keeps the last successful retrieval, not the empty response timestamp")
+        let restored = AppStore(supportDirectory: rig.directory, webSession: MockWeb(), defaults: rig.defaults,
+                                clock: { rig.clock.moment }, automaticScheduling: false, writesWidgetData: false)
+        try expect(restored.snapshot.visibleReading("steps")?.value == 123 && restored.snapshot.metrics["steps"] == nil,
+                   "Last-known provenance survives a restart")
+        restored.cancelLogin(resumeAutomatic: false)
+        rig.clock.advance(60)
+        rig.web.payloads["stats"] = ["totalSteps": 0]
+        rig.store.sync(); try await settled(rig.store)
+        try expect(rig.store.snapshot.metrics["steps"]?.value == 0 && rig.store.snapshot.retainedMetrics["steps"] == nil,
+                   "A real zero replaces the saved value and clears its stale marker")
+        try expect(!rig.store.snapshot.hasUnchangedMeasurements, "Changed measurements clear the unchanged state")
+        rig.store.snapshot = .empty
+        rig.store.snapshot.retainedMetrics["steps"] = .init(reading: .init(value: 123), sourceDate: "2026-09-14", retrievedAt: original.fetchedAt, changedAt: original.fetchedAt)
+        try expect(rig.store.isStale, "Retained progress remains dated even when no current-day fetch has completed")
+        rig.store.snapshot.retainedMetrics = ["sleepDuration": .init(reading: .init(value: 480), sourceDate: "2026-09-14", retrievedAt: original.fetchedAt, changedAt: original.fetchedAt)]
+        try expect(!rig.store.isStale, "A completed sleep record alone cannot mark the host as a stale live feed")
+        rig.store.disconnect()
+        try expect(!rig.store.snapshot.hasMeasurements && !rig.store.snapshot.isDemo, "Disconnect clears current and retained values without entering demo")
+        for slot in WidgetSlot.allCases {
+            try expect(!slot.previewData.snapshot.hasMeasurements && slot.previewData.snapshot.trainingTimeline == nil,
+                       "Widget gallery must not invent readings or workouts")
+        }
     }
 }

@@ -5,6 +5,10 @@ import WidgetKit
 @main
 struct RenderWidgets {
     @MainActor static func main() throws {
+        guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true"
+            || ProcessInfo.processInfo.environment["GARMIN_ALLOW_LOCAL_TESTS"] == "1" else {
+            fatalError("Run visual fixtures in CI; local rendering requires explicit opt-in")
+        }
         let output = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let families: [(String, WidgetFamily, CGSize)] = [
@@ -22,6 +26,10 @@ struct RenderWidgets {
             }
         }
         let now = Date(timeIntervalSince1970: 1_789_473_600)
+        // An extension can read the previous version's demo cache before the host
+        // app has launched and replaced it. Render this exact upgrade state.
+        try render(WidgetData.preview, name: "states-legacy-demo-cache", family: .systemMedium,
+                   size: families[1].2, now: now, output: output, preserveDemo: true)
         // Medium rows must keep a complete numeric line in both densities;
         // long units and sleep duration exercise different horizontal proposals.
         for language in [AppLanguage.ru, .en] {
@@ -42,6 +50,33 @@ struct RenderWidgets {
             detailed.preferences.profiles[0].metricIDs = MetricDefinition.catalog.map(\.id)
             try render(detailed, name: "metrics-\(language.rawValue)-large-detailed",
                        family: .systemLarge, size: families[2].2, now: now, output: output)
+        }
+        for language in [AppLanguage.ru, .en] {
+            var completed = WidgetData.preview
+            completed.isConnected = true; completed.snapshot.isDemo = false
+            completed.preferences.language = language
+            completed.preferences.profiles[0].primaryMetric = "sleepDuration"
+            completed.preferences.profiles[0].metricIDs = ["sleepDuration", "sleepScore", "hrv"]
+            completed.snapshot.retainedMetrics = completed.snapshot.metrics.filter { completed.preferences.profiles[0].metricIDs.contains($0.key) }.mapValues {
+                .init(reading: $0, sourceDate: "2026-09-14", retrievedAt: now.addingTimeInterval(-86400), changedAt: now.addingTimeInterval(-86400))
+            }
+            completed.snapshot.metrics = [:]
+            for (name, family, size) in families {
+                try render(completed, name: "records-\(language.rawValue)-\(name)", family: family, size: size, now: now, output: output)
+            }
+        }
+        for id in ["bodyBattery", "steps", "sleepDuration"] {
+            var focused = WidgetData.preview
+            focused.preferences.profiles[0].primaryMetric = id
+            focused.preferences.profiles[0].metricIDs = [id]
+            focused.snapshot.sourceDate = SyncPolicy.sourceDay(for: now, timeZone: .current)
+            focused.snapshot.fetchedAt = now
+            focused.snapshot.groupUpdatedAt = ["stats": now, "sleep": now, "body_battery": now]
+            for style in [WidgetStyle.calm, .sport, .monochrome] {
+                focused.preferences.profiles[0].style = style
+                try render(focused, name: "focus-\(id)-\(style.rawValue)", family: .systemSmall,
+                           size: families[0].2, now: now, output: output)
+            }
         }
         for slot in WidgetSlot.allCases {
             try render(slot.previewData(language: .ru, at: now), name: "gallery-" + slot.rawValue,
@@ -89,19 +124,50 @@ struct RenderWidgets {
         sample.snapshot.trainingTimeline?.futureUpdatedAt = nil
         try render(sample, name: "training-en-last", family: .systemSmall, size: families[0].2, now: now, output: output)
 
+        for language in [AppLanguage.ru, .en] {
+            var data = WidgetData.preview
+            data.preferences.language = language
+            data.preferences.profiles[0].name = language == .ru ? "Очень длинное название профиля здоровья" : "A very long health profile name"
+            data.isConnected = true
+            data.snapshot.isDemo = false
+            data.snapshot.fetchedAt = now
+            data.snapshot.sourceDate = SyncPolicy.sourceDay(for: now, timeZone: .current)
+            data.snapshot.metrics = ["steps": .init(value: 0), "bodyBattery": .init(value: 76)]
+            data.snapshot.groupUpdatedAt = ["stats": now, "body_battery": now.addingTimeInterval(-7200)]
+            for (name, family, size) in families {
+                try render(data, name: "states-\(language.rawValue)-\(name)-partial-stale", family: family, size: size, now: now, output: output)
+            }
+            data.isConnected = false
+            try render(data, name: "states-\(language.rawValue)-disconnected", family: .systemMedium, size: families[1].2, now: now, output: output)
+            data.snapshot = .empty
+            data.isConnected = true
+            try render(data, name: "states-\(language.rawValue)-empty", family: .systemMedium, size: families[1].2, now: now, output: output)
+            data.snapshot.retainedMetrics = ["bodyBattery": .init(reading: .init(value: 76), sourceDate: "2026-09-14",
+                retrievedAt: now.addingTimeInterval(-86400), changedAt: now.addingTimeInterval(-86400))]
+            for (name, family, size) in families {
+                try render(data, name: "states-\(language.rawValue)-\(name)-retained", family: family, size: size, now: now, output: output)
+            }
+        }
+
     }
     @MainActor private static func render(_ data: WidgetData, name: String, family: WidgetFamily, size: CGSize,
-                                          now: Date, output: URL) throws {
-        let view = GarminWidgetView(entry: GarminEntry(date: now, data: data, profileID: data.preferences.profiles.first?.id.uuidString), previewFamily: family)
-            .environment(\.colorScheme, .light)
-            .padding(16).frame(width: size.width, height: size.height)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 24))
-        let renderer = ImageRenderer(content: view); renderer.scale = 2
-        guard let image = renderer.cgImage else { fatalError("Unable to render widget") }
-        let bitmap = NSBitmapImageRep(cgImage: image)
-        guard let bytes = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else { fatalError("Unable to encode PNG") }
-        try bytes.write(to: output.appendingPathComponent(name + ".png"))
+                                          now: Date, output: URL, preserveDemo: Bool = false) throws {
+        var data = data
+        if data.snapshot.isDemo && !preserveDemo { data.snapshot.isDemo = false; data.isConnected = true }
+        for dark in [false, true] {
+            let widget = GarminWidgetView(entry: GarminEntry(date: now, data: data, profileID: data.preferences.profiles.first?.id.uuidString), previewFamily: family)
+            let view = widget
+                .environment(\.colorScheme, dark ? .dark : .light)
+                .padding(16).frame(width: size.width, height: size.height)
+                .background(widget.background)
+                .environment(\.colorScheme, dark ? .dark : .light)
+                .clipShape(RoundedRectangle(cornerRadius: 24))
+            let renderer = ImageRenderer(content: view); renderer.scale = 2
+            guard let image = renderer.cgImage else { fatalError("Unable to render widget") }
+            let bitmap = NSBitmapImageRep(cgImage: image)
+            guard let bytes = bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else { fatalError("Unable to encode PNG") }
+            try bytes.write(to: output.appendingPathComponent(name + (dark ? "-dark" : "-light") + ".png"))
+        }
     }
 
 }

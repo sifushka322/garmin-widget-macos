@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 private enum CardPalette {
     static func accent(_ style: WidgetStyle) -> Color {
@@ -21,69 +22,83 @@ private struct Surface: ViewModifier {
 private struct DataStatusView: View {
     @ObservedObject var store: AppStore
     var compact = false
+    var metricIDs: [String]? = nil
+
+    private var statusSnapshot: GarminSnapshot {
+        var snapshot = store.snapshot
+        if let metricIDs {
+            let ids = Set(metricIDs)
+            snapshot.metrics = snapshot.metrics.filter { ids.contains($0.key) }
+            snapshot.retainedMetrics = snapshot.retainedMetrics.filter { ids.contains($0.key) }
+            snapshot.metricChangedAt = snapshot.metricChangedAt.filter { ids.contains($0.key) }
+        }
+        return snapshot
+    }
+    private var isStale: Bool {
+        Set(statusSnapshot.metrics.keys).union(statusSnapshot.retainedMetrics.keys).contains { store.metricIsStale($0) }
+    }
 
     private var statusKey: String {
         if store.isSyncing { return store.hasSession ? "data.syncing" : "status.connecting" }
         if store.needsWebSignIn { return "status.signInRequired" }
-        if store.snapshot.isDemo { return "data.demo" }
-        return store.hasSession ? "status.connected" : "status.notConnected"
+        if ["error.network", "error.timeout", "error.protocol", "error.partial", "error.rate_limit"].contains(store.lastErrorKey ?? "") { return "data.checkFailed" }
+        if store.hasSession && !statusSnapshot.hasMeasurements { return "data.waiting" }
+        if store.hasSession && statusSnapshot.hasRetainedTimeSensitiveMetrics { return "data.waitingNew" }
+        if isStale { return "widget.notice.waiting" }
+        if store.hasSession && statusSnapshot.hasUnchangedMeasurements { return "data.unchanged" }
+        return store.hasSession ? "data.available" : "status.notConnected"
     }
 
     private var statusSymbol: String {
         if store.needsWebSignIn { return "person.crop.circle.badge.exclamationmark" }
-        if store.snapshot.isDemo { return "sparkles" }
+        if ["error.network", "error.timeout", "error.protocol", "error.partial", "error.rate_limit"].contains(store.lastErrorKey ?? "") { return "exclamationmark.triangle" }
+        if !statusSnapshot.hasMeasurements { return "clock" }
         if !store.hasSession { return "link.badge.plus" }
-        return store.isStale ? "clock.badge.exclamationmark" : "checkmark.circle.fill"
+        return isStale ? "clock.badge.exclamationmark" : "checkmark.circle.fill"
     }
 
-    private var sourceDate: String? {
-        let parser = DateFormatter()
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.timeZone = TimeZone(secondsFromGMT: 0)
-        parser.dateFormat = "yyyy-MM-dd"
-        guard let date = parser.date(from: store.snapshot.sourceDate) else { return nil }
-        parser.locale = store.preferences.language.locale
-        parser.dateStyle = .medium
-        parser.timeStyle = .none
-        return parser.string(from: date)
+    private var hint: String? {
+        if store.isSyncing { return nil }
+        if let error = store.lastErrorKey { return store.text(error) }
+        if store.needsWebSignIn { return store.text("connection.reconnectDetail") }
+        guard store.hasSession else { return nil }
+        if !statusSnapshot.warnings.isEmpty { return store.text("data.partial") }
+        if !statusSnapshot.hasMeasurements { return store.text("data.waitingHint") }
+        if statusSnapshot.hasRetainedTimeSensitiveMetrics {
+            return store.text(statusSnapshot.metrics.isEmpty ? "data.retainedAllHint" : "data.retainedHint")
+        }
+        if statusSnapshot.hasUnchangedMeasurements { return store.text("data.unchangedHint") }
+        return isStale ? store.text("data.stale") : nil
     }
+
+    private var needsAttention: Bool { store.lastErrorKey != nil || store.needsWebSignIn }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: statusSymbol)
-                Text(store.text(statusKey))
+        if compact {
+            Label(store.text(store.needsWebSignIn ? "status.signInRequired" : (store.hasSession ? "status.connected" : "status.notConnected")),
+                  systemImage: store.needsWebSignIn ? "person.crop.circle.badge.exclamationmark" : "link")
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if needsAttention || !statusSnapshot.hasMeasurements || statusSnapshot.hasRetainedTimeSensitiveMetrics || isStale || store.isSyncing || !statusSnapshot.warnings.isEmpty {
+            HStack(alignment: .top, spacing: 10) {
                 if store.isSyncing {
-                    Spacer(minLength: 4)
-                    ProgressView().controlSize(.small).accessibilityLabel(store.text("data.syncing"))
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: statusSymbol).font(.system(size: 13))
+                        .foregroundStyle(needsAttention ? Color.orange : .secondary)
                 }
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(store.text(statusKey)).font(.system(size: 12, weight: .semibold))
+                    if needsAttention || !statusSnapshot.hasMeasurements, let hint {
+                        Text(hint).font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading)
             }
-            .font(.caption.weight(.medium))
-            .foregroundStyle(store.snapshot.isDemo || store.needsWebSignIn ? Color.orange : .secondary)
-            if !store.snapshot.isDemo && store.snapshot.fetchedAt != .distantPast {
-                Text(store.updatedText)
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !compact, let sourceDate {
-                Text("\(store.text("data.day")) \(sourceDate)")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if !compact, store.hasSession, !store.isSyncing, !store.snapshot.isDemo,
-               store.snapshot.metrics.isEmpty, store.snapshot.warnings.isEmpty {
-                Text(store.text("data.emptyDay"))
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !store.snapshot.warnings.isEmpty {
-                Label(store.text("data.partial"), systemImage: "exclamationmark.circle")
-                    .font(.caption).foregroundStyle(.orange)
-            }
-            if store.isStale && !store.snapshot.isDemo {
-                Text(store.text("data.stale")).font(.caption).foregroundStyle(.orange)
-            }
+            .padding(12)
+            .background(needsAttention ? Color.orange.opacity(0.07) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
+            .accessibilityElement(children: .combine)
         }
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -142,29 +157,42 @@ private struct MainMetricView: View {
     var style: WidgetStyle
     var compact = false
     private var definition: MetricDefinition { MetricDefinition.find(metricID) }
-    private var accent: Color { CardPalette.accent(style) }
+    private var theme: DeskMetricTheme { .metric(metricID, style: style) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 10 : 14) {
-            Label(store.text(definition.titleKey), systemImage: definition.symbol)
-                .font(.subheadline.weight(.medium)).foregroundStyle(accent)
-                .lineLimit(2)
-            Text(store.displayValue(metricID))
-                .font(.system(size: compact ? 34 : 44, weight: .semibold, design: .rounded))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.55)
-                .contentTransition(.numericText())
-            if let progress = store.progress(metricID) {
-                ProgressView(value: progress)
-                    .tint(accent)
-                    .accessibilityLabel(store.text(definition.titleKey))
+        HStack(alignment: .center, spacing: 20) {
+            VStack(alignment: .leading, spacing: 14) {
+                Label(store.text(definition.titleKey), systemImage: definition.symbol)
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(theme.secondaryInk)
+                    .lineLimit(2)
+                MetricValueLabel(value: store.displayValue(metricID), size: compact ? 50 : 60)
+                    .foregroundStyle(theme.ink)
+                    .contentTransition(.numericText())
+                if let context = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language).context(metricID) {
+                    Text(context).font(.system(size: 11, weight: .medium)).foregroundStyle(theme.secondaryInk)
+                } else if store.numericValue(metricID) == nil {
+                    Text(store.text("data.empty")).font(.caption).foregroundStyle(theme.secondaryInk)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            ZStack {
+                if let progress = store.progress(metricID) {
+                    Circle().strokeBorder(theme.ink.opacity(0.13), lineWidth: 7)
+                    Circle().trim(from: 0, to: progress)
+                        .stroke(theme.highlight, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                        .rotationEffect(.degrees(-90)).padding(3.5)
+                    Image(systemName: definition.symbol).font(.system(size: 26, weight: .light)).foregroundStyle(theme.highlight)
+                } else {
+                    Circle().fill(theme.ink.opacity(0.07))
+                    Image(systemName: definition.symbol).font(.system(size: 36, weight: .light)).foregroundStyle(theme.highlight)
+                }
             }
-            if store.numericValue(metricID) == nil {
-                Text(store.text("data.empty")).font(.caption).foregroundStyle(.secondary)
-            }
+            .frame(width: compact ? 76 : 88, height: compact ? 76 : 88)
+            .accessibilityHidden(true)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(compact ? 14 : 18)
-        .background(accent.opacity(style == .monochrome ? 0.045 : 0.09), in: RoundedRectangle(cornerRadius: 16))
+        .padding(compact ? 22 : 28)
+        .frame(maxWidth: .infinity, minHeight: compact ? 154 : 176, alignment: .leading)
+        .background(theme.background, in: RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(theme.ink.opacity(0.10)))
         .accessibilityElement(children: .combine)
     }
 }
@@ -174,24 +202,32 @@ private struct SmallMetricView: View {
     var metricID: String
     var style: WidgetStyle
     var compact = false
+    @Environment(\.colorScheme) private var colorScheme
     private var definition: MetricDefinition { MetricDefinition.find(metricID) }
+    private var theme: DeskMetricTheme { .metric(metricID, style: style) }
+    private var accent: Color { colorScheme == .dark ? theme.highlight : theme.top }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 6 : 9) {
-            HStack(alignment: .top, spacing: 7) {
-                Image(systemName: definition.symbol).foregroundStyle(CardPalette.accent(style))
-                    .frame(width: 16)
-                Text(store.text(definition.titleKey)).foregroundStyle(.secondary)
-                    .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: definition.symbol).font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(accent).frame(width: 28, height: 28)
+                    .background(accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+                    .accessibilityHidden(true)
+                Text(store.text(definition.titleKey)).font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
             }
-            .font(.caption)
-            Text(store.displayValue(metricID))
-                .font(.system(size: compact ? 20 : 24, weight: .semibold, design: .rounded))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.55)
+            MetricValueLabel(value: store.displayValue(metricID), size: compact ? 28 : 32)
+                .foregroundStyle(.primary)
+            if let context = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language).context(metricID) {
+                Text(context).font(.system(size: 10)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: compact ? 52 : 65, alignment: .leading)
-        .padding(compact ? 10 : 12)
-        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxWidth: .infinity, minHeight: compact ? 82 : 100, alignment: .leading)
+        .padding(compact ? 16 : 18)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(accent.opacity(0.10)))
         .accessibilityElement(children: .combine)
     }
 }
@@ -211,31 +247,34 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(store.text("dashboard.title")).font(.title2.bold())
+                    Text(profile.map { $0.name.isEmpty ? store.text("profile.default") : $0.name } ?? store.text("dashboard.title"))
+                        .font(.system(size: 27, weight: .bold, design: .rounded))
                     Text(store.snapshot.devices.count == 1 ? store.snapshot.devices[0] : "Garmin Connect")
                         .font(.callout).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 12)
-                Button(action: onSettings) {
-                    Label(store.text("dashboard.configure"), systemImage: "slider.horizontal.3")
+                if store.hasSession || store.snapshot.hasMeasurements {
+                    Button(action: onSettings) {
+                        Image(systemName: "slider.horizontal.3")
+                    }
+                    .buttonStyle(DeskButtonStyle()).help(store.text("dashboard.configure"))
+                    .accessibilityLabel(store.text("dashboard.configure"))
+                    Button { store.sync() } label: {
+                        Label(store.text("action.sync"), systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(DeskButtonStyle(prominent: true))
+                    .help(store.snapshot.hasMeasurements ? store.updatedText : store.text("action.sync"))
+                    .disabled(store.isSyncing || !store.hasSession)
+                    .keyboardShortcut("r", modifiers: .command)
                 }
-                .help(store.text("dashboard.configure"))
-                Button { store.sync() } label: {
-                    Label(store.text("action.sync"), systemImage: "arrow.clockwise")
-                }
-                .disabled(store.isSyncing || !store.hasSession)
-                .keyboardShortcut("r", modifiers: .command)
             }
             .padding(28)
-            Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        DataStatusView(store: store)
-                        NextSyncView(store: store)
+                    if store.hasSession || store.snapshot.hasMeasurements || store.isSyncing || store.lastErrorKey != nil || store.needsWebSignIn {
+                        DataStatusView(store: store, metricIDs: profile.flatMap { $0.contentMode.includesMetrics ? $0.metricIDs : nil })
                     }
-                    ErrorNotice(store: store)
-                    if !store.hasSession {
+                    if !store.hasSession && store.snapshot.hasMeasurements {
                         Button {
                             if store.needsWebSignIn { store.connectGarmin() }
                             else { onConnection() }
@@ -244,17 +283,45 @@ struct DashboardView: View {
                         }
                         .buttonStyle(.borderedProminent).disabled(store.isSyncing)
                     }
-                    if let profile {
-                        Picker(store.text("dashboard.profile"), selection: Binding(
-                            get: { self.profile?.id ?? profile.id },
-                            set: { selectedProfileID = $0 }
-                        )) {
-                            ForEach(store.preferences.profiles) { item in
-                                Text(item.name.isEmpty ? store.text("profile.default") : item.name).tag(item.id)
+                    if !store.hasSession && !store.snapshot.hasMeasurements {
+                        VStack(alignment: .leading, spacing: 22) {
+                            Image(systemName: "applewatch")
+                                .font(.system(size: 30, weight: .light))
+                                .foregroundStyle(DeskMetricTheme.metric("bodyBattery").highlight)
+                                .frame(width: 64, height: 64)
+                                .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 20))
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(store.text("onboarding.title"))
+                                    .font(.system(size: 25, weight: .semibold, design: .rounded))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text(store.text("onboarding.detail")).font(.system(size: 14))
+                                    .foregroundStyle(Color.white.opacity(0.76)).lineSpacing(4)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
+                            Button { store.connectGarmin() } label: {
+                                Label(store.text("dashboard.connect"), systemImage: "link")
+                                    .padding(.horizontal, 8)
+                            }.buttonStyle(DeskButtonStyle(onDark: true)).disabled(store.isSyncing)
+
                         }
-                        .pickerStyle(.menu).frame(maxWidth: 360, alignment: .leading)
-                        if profile.contentMode.includesMetrics {
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(28)
+                        .foregroundStyle(.white)
+                        .background(DeskMetricTheme.metric("bodyBattery").background, in: RoundedRectangle(cornerRadius: 24))
+                    }
+                    if let profile, store.hasSession || store.snapshot.hasMeasurements {
+                        if store.preferences.profiles.count > 1 {
+                            Picker(store.text("dashboard.profile"), selection: Binding(
+                                get: { self.profile?.id ?? profile.id },
+                                set: { selectedProfileID = $0 }
+                            )) {
+                                ForEach(store.preferences.profiles) { item in
+                                    Text(item.name.isEmpty ? store.text("profile.default") : item.name).tag(item.id)
+                                }
+                            }
+                            .pickerStyle(.menu).frame(maxWidth: 360, alignment: .leading)
+                        }
+                        if profile.contentMode.includesMetrics && store.snapshot.hasMeasurements {
                             MainMetricView(store: store, metricID: profile.primaryMetric, style: profile.style,
                                            compact: profile.density == .compact)
                             let secondary = profile.metricIDs.filter { $0 != profile.primaryMetric }
@@ -272,12 +339,12 @@ struct DashboardView: View {
                         Button { showWidgetHelp = true } label: {
                             Label(store.text("widget.setup"), systemImage: "rectangle.3.group")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderless).font(.callout).foregroundStyle(.secondary)
                     }
                     WidgetSharingNotice(store: store)
                 }
                 .frame(maxWidth: 1060, alignment: .leading)
-                .padding(28)
+                .padding(.horizontal, 28).padding(.bottom, 28)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -304,7 +371,7 @@ private struct WidgetSharingNotice: View {
     @ObservedObject var store: AppStore
 
     var body: some View {
-        if !store.widgetSharingAvailable {
+        if !store.widgetSharingAvailable && (store.hasSession || store.snapshot.hasMeasurements) {
             Label(store.text(WidgetDataStore.configurationAvailable ? "widget.sharingDataUnavailable" : "widget.sharingUnavailable"), systemImage: "exclamationmark.triangle")
                 .font(.caption).foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
@@ -427,6 +494,9 @@ private enum ProfilePreviewSize: String, CaseIterable, Identifiable {
         case .large: return CGSize(width: 360, height: 376)
         }
     }
+    var family: WidgetFamily {
+        switch self { case .small: return .systemSmall; case .medium: return .systemMedium; case .large: return .systemLarge }
+    }
     func secondaryLimit(density: WidgetDensity) -> Int {
         switch self {
         case .small: return 0
@@ -436,101 +506,23 @@ private enum ProfilePreviewSize: String, CaseIterable, Identifiable {
     }
 }
 
-/// Fixed-size layout preview uses the same visible counts and typography as the
-/// metrics widget. It responds immediately to profile order, style and density.
+/// Uses the production widget content for metrics, training and mixed profiles.
 private struct ProfileWidgetPreview: View {
     @ObservedObject var store: AppStore
     let profile: WidgetProfile
     let size: ProfilePreviewSize
-    private var accent: Color { CardPalette.accent(profile.style) }
-    private var secondary: [String] {
-        Array(profile.metricIDs.filter { $0 != profile.primaryMetric }.prefix(size.secondaryLimit(density: profile.density)))
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: size == .small ? 8 : 12) {
-            HStack(spacing: 5) {
-                GarminDeskBrandMark().frame(width: 13, height: 13)
-                    .foregroundStyle(accent).accessibilityHidden(true)
-                Text(profile.name.isEmpty ? store.text("profile.default") : profile.name).lineLimit(1)
-                Spacer(minLength: 0)
-                if store.snapshot.isDemo {
-                    Text(store.text("widget.demo")).font(.system(size: 9, weight: .semibold))
-                        .padding(.horizontal, 5).padding(.vertical, 3).background(.quaternary, in: Capsule())
-                }
-            }.font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
-            switch size {
-            case .small: primary
-            case .medium:
-                HStack(alignment: .top, spacing: 16) {
-                    primary.frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(alignment: .leading, spacing: profile.density == .compact ? 5 : 8) {
-                        ForEach(secondary, id: \.self) { id in metric(id, inline: profile.density == .compact) }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                }
-            case .large:
-                primary
-                Divider().opacity(0.5)
-                LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
-                          alignment: .leading, spacing: profile.density == .compact ? 10 : 16) {
-                    ForEach(secondary, id: \.self) { id in metric(id) }
-                }
-            }
-            Spacer(minLength: 0)
-            HStack(spacing: 4) {
-                if store.snapshot.isDemo { Text(store.text("widget.connect")) }
-                else if !store.hasSession { Text(store.text("status.notConnected")) }
-                else if store.snapshot.fetchedAt != .distantPast {
-                    Text(store.text("data.updated"))
-                    Text(store.snapshot.fetchedAt, style: .time)
-                }
-            }.font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
-        }
-        .padding(16)
-        .frame(width: size.dimensions.width, height: size.dimensions.height)
-        .background(LinearGradient(colors: [Color(nsColor: .windowBackgroundColor), accent.opacity(0.08)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing))
-        .clipShape(RoundedRectangle(cornerRadius: 24))
-        .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(.primary.opacity(0.08)))
-        .environment(\.locale, store.preferences.language.locale)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(store.text("profile.preview") + ": " + store.text(size.titleKey))
-    }
-
-    private var primary: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            let definition = MetricDefinition.find(profile.primaryMetric)
-            Label(store.text(definition.widgetTitleKey), systemImage: definition.symbol)
-                .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
-            Text(store.displayValue(profile.primaryMetric))
-                .font(.system(size: size == .small ? 31 : 30, weight: .semibold, design: .rounded))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5)
-                .fixedSize(horizontal: false, vertical: true).layoutPriority(1)
-            if let progress = store.progress(profile.primaryMetric) {
-                GeometryReader { geometry in
-                    Capsule().fill(accent.opacity(0.14))
-                    Capsule().fill(accent).frame(width: geometry.size.width * progress)
-                }.frame(height: 4).accessibilityHidden(true)
-            }
-        }
-    }
-
-    @ViewBuilder private func metric(_ id: String, inline: Bool = false) -> some View {
-        let definition = MetricDefinition.find(id)
-        if inline {
-            HStack(spacing: 5) {
-                Text(store.text(definition.widgetTitleKey)).font(.system(size: 10)).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text(store.displayValue(id)).font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
-            }.lineLimit(1).minimumScaleFactor(0.75).frame(minHeight: 21)
-        } else {
-            VStack(alignment: .leading, spacing: 3) {
-                Label(store.text(definition.widgetTitleKey), systemImage: definition.symbol)
-                    .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
-                Text(store.displayValue(id)).font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .monospacedDigit().lineLimit(1).minimumScaleFactor(0.65)
-            }
-        }
+        let widget = GarminWidgetView(entry: GarminEntry(date: Date(),
+            data: WidgetData(preferences: store.preferences, snapshot: store.snapshot, isConnected: store.hasSession),
+            profileID: profile.id.uuidString), previewFamily: size.family)
+        widget.padding(16)
+            .frame(width: size.dimensions.width, height: size.dimensions.height)
+            .background(widget.background)
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+            .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(.primary.opacity(0.08)))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(store.text("profile.preview") + ": " + store.text(size.titleKey))
     }
 }
 
@@ -538,6 +530,7 @@ struct MainWindowView: View {
     @ObservedObject var store: AppStore
     @ObservedObject var navigation: MainWindowNavigation
     @State private var selectedProfileID: UUID?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 0) {
@@ -545,22 +538,27 @@ struct MainWindowView: View {
                 Label {
                     Text("Garmin Desk")
                 } icon: {
-                    GarminDeskBrandMark().frame(width: 16, height: 16)
+                    GarminDeskBrandMark().foregroundStyle(DeskMetricTheme.color(0x168575)).frame(width: 22, height: 22)
                         .accessibilityHidden(true)
                 }
                     .font(.headline).padding(20)
-                List(selection: $navigation.section) {
+                VStack(spacing: 6) {
                     ForEach(MainWindowSection.allCases) { item in
+                        let selected = (navigation.section ?? .dashboard) == item
                         Button { navigation.section = item } label: {
                             Label(store.text(item.key), systemImage: item.symbol)
+                                .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                                .foregroundStyle(selected ? Color.white : Color.primary.opacity(0.7))
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 4).contentShape(Rectangle())
+                                .padding(.horizontal, 12).padding(.vertical, 11)
+                                .background(selected ? DeskMetricTheme.color(0x11665C) : Color.clear, in: RoundedRectangle(cornerRadius: 12))
+                                .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain).tag(item)
+                        .buttonStyle(.plain)
                         .keyboardShortcut(item.shortcut, modifiers: .command)
+                        .accessibilityAddTraits(selected ? .isSelected : [])
                     }
-                }
-                .listStyle(.sidebar)
+                }.padding(.horizontal, 12).padding(.top, 12)
                 Spacer(minLength: 0)
                 DataStatusView(store: store, compact: true).padding(18)
             }
@@ -580,6 +578,7 @@ struct MainWindowView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 780, minHeight: 620)
+        .background(colorScheme == .dark ? DeskMetricTheme.color(0x13191F) : DeskMetricTheme.color(0xF3F5F4))
         .environment(\.locale, store.preferences.language.locale)
     }
 
@@ -682,7 +681,7 @@ private struct ProfileEditor: View {
                         Text(store.text("density.comfortable")).tag(WidgetDensity.comfortable)
                         Text(store.text("density.compact")).tag(WidgetDensity.compact)
                     }
-                    if profile.contentMode.includesMetrics {
+                    Group {
                         Divider()
                         Picker(store.text("profile.previewSize"), selection: $previewSize) {
                             ForEach(ProfilePreviewSize.allCases) { size in
@@ -692,13 +691,11 @@ private struct ProfileEditor: View {
                         ProfileWidgetPreview(store: store, profile: profile, size: previewSize)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 6)
-                        let visibleCount = 1 + min(profile.metricIDs.filter { $0 != profile.primaryMetric }.count,
-                                                   previewSize.secondaryLimit(density: profile.density))
-                        Text(String(format: store.text("profile.previewCount"), visibleCount, profile.metricIDs.count))
-                            .font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if profile.contentMode.includesTraining {
-                            Text(store.text("profile.previewMetricsOnly")).font(.caption).foregroundStyle(.secondary)
+                        if profile.contentMode == .metrics {
+                            let visibleCount = 1 + min(profile.metricIDs.filter { $0 != profile.primaryMetric }.count,
+                                                       previewSize.secondaryLimit(density: profile.density))
+                            Text(String(format: store.text("profile.previewCount"), visibleCount, profile.metricIDs.count))
+                                .font(.caption).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -798,7 +795,7 @@ private struct ConnectionPane: View {
                 ErrorNotice(store: store)
                 VStack(alignment: .leading, spacing: 16) {
                     if store.hasSession || store.needsWebSignIn {
-                        DataStatusView(store: store)
+                        DataStatusView(store: store, compact: true)
                     }
                     if store.needsWebSignIn {
                         Text(store.text("connection.reconnectDetail")).font(.callout).foregroundStyle(.secondary)
@@ -832,9 +829,6 @@ private struct ConnectionPane: View {
                         Button(store.text("connection.disconnect"), role: .destructive) { confirmDisconnect = true }
                     }
                 }.modifier(Surface())
-                if !store.hasSession {
-                    Button(store.text("connection.demo")) { store.showDemo() }.disabled(store.isSyncing)
-                }
                 VStack(alignment: .leading, spacing: 10) {
                     Label(store.text("connection.localTitle"), systemImage: "lock.shield").font(.headline)
                     Text(store.text("connection.webPrivacy")).font(.callout).foregroundStyle(.secondary)
@@ -881,8 +875,8 @@ private struct GeneralPane: View {
                 ErrorNotice(store: store)
                 VStack(alignment: .leading, spacing: 12) {
                     Picker(store.text("general.refresh"), selection: $store.preferences.refreshMinutes) {
-                        ForEach([5, 15, 30, 60], id: \.self) { minutes in
-                            Text(store.text("general.minutes\(minutes)")).tag(minutes)
+                        ForEach(Array(Set([5, 15, 30, 60, store.preferences.refreshMinutes])).sorted(), id: \.self) { minutes in
+                            Text("\(minutes) \(store.text("unit.minutes"))").tag(minutes)
                         }
                     }
                     Text(store.text("general.refreshHint")).font(.caption).foregroundStyle(.secondary)

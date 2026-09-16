@@ -53,6 +53,16 @@ struct WidgetProfile: Identifiable, Codable, Equatable {
         style = try c.decode(WidgetStyle.self, forKey: .style)
         density = try c.decode(WidgetDensity.self, forKey: .density)
         contentMode = try c.decodeIfPresent(WidgetContentMode.self, forKey: .contentMode) ?? .metrics
+        sanitize()
+    }
+
+    mutating func sanitize() {
+        let known = Set(MetricDefinition.catalog.map(\.id))
+        var seen = Set<String>()
+        metricIDs = metricIDs.filter { known.contains($0) && seen.insert($0).inserted }
+        if !known.contains(primaryMetric) { primaryMetric = metricIDs.first ?? "bodyBattery" }
+        if metricIDs.isEmpty { metricIDs = [primaryMetric] }
+        if !metricIDs.contains(primaryMetric) { primaryMetric = metricIDs[0] }
     }
 }
 
@@ -64,15 +74,22 @@ struct AppPreferences: Codable {
     var profiles = [WidgetProfile()]
     var widgetProfileIDs: [String: String] = [:]
 
+    // Bound before arithmetic, including for programmatically changed preferences.
+    var refreshInterval: TimeInterval { Double(min(1440, max(5, refreshMinutes))) * 60 }
+    var staleInterval: TimeInterval { max(refreshInterval * 3, 3600) }
+
     init() {}
     enum CodingKeys: String, CodingKey { case language, appearance, refreshMinutes, menuMetric, profiles, widgetProfileIDs }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         language = try c.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .system
         appearance = try c.decodeIfPresent(AppAppearance.self, forKey: .appearance) ?? .system
-        refreshMinutes = try c.decodeIfPresent(Int.self, forKey: .refreshMinutes) ?? 15
+        refreshMinutes = min(1440, max(5, try c.decodeIfPresent(Int.self, forKey: .refreshMinutes) ?? 15))
         menuMetric = try c.decodeIfPresent(String.self, forKey: .menuMetric) ?? "bodyBattery"
         profiles = try c.decodeIfPresent([WidgetProfile].self, forKey: .profiles) ?? [WidgetProfile()]
+        var seen = Set<UUID>()
+        profiles = profiles.filter { seen.insert($0.id).inserted }
+        if profiles.isEmpty { profiles = [WidgetProfile()] }
         widgetProfileIDs = try c.decodeIfPresent([String: String].self, forKey: .widgetProfileIDs) ?? [:]
     }
 }
@@ -85,16 +102,27 @@ enum MetricCategory: String, CaseIterable, Identifiable {
 
 enum MetricUnit: Equatable { case number, score, percent, minutes, km, kg, ml, bpm, kcal, ms, breaths, vo2 }
 
+/// Records remain meaningful with their date; progress values depend on recent sync.
+enum MetricTimeScope { case progress, nightlyRecord, dailyRecord, measurement }
+
 struct MetricDefinition: Identifiable {
     let id: String
     let symbol: String
     let unit: MetricUnit
     let category: MetricCategory
+    var timeScope: MetricTimeScope {
+        if category == .sleep || ["hrv", "respiration"].contains(id) { return .nightlyRecord }
+        if ["restingHeartRate", "spo2", "trainingLoad", "stepGoal"].contains(id) { return .dailyRecord }
+        if ["weight", "vo2Max"].contains(id) { return .measurement }
+        return .progress
+    }
+    var isTimeSensitive: Bool { timeScope == .progress }
+    static func isSupported(_ id: String) -> Bool { catalog.contains { $0.id == id } }
     var titleKey: String { "metric." + id }
     var widgetTitleKey: String {
         switch id {
         case "sleepDuration", "stress", "restingHeartRate", "trainingReadiness", "hrv", "respiration",
-             "intensityMinutes", "activeCalories", "recoveryTime", "trainingLoad", "vo2Max", "calories":
+             "intensityMinutes", "activeCalories", "recoveryTime", "trainingLoad", "vo2Max", "calories", "spo2":
             return "metric.short." + id
         default: return titleKey
         }
@@ -104,7 +132,6 @@ struct MetricDefinition: Identifiable {
         .init(id: "bodyBattery", symbol: "battery.75percent", unit: .score, category: .health),
         .init(id: "stress", symbol: "waveform.path.ecg", unit: .score, category: .health),
         .init(id: "restingHeartRate", symbol: "heart", unit: .bpm, category: .health),
-        .init(id: "heartRate", symbol: "heart.fill", unit: .bpm, category: .health),
         .init(id: "hrv", symbol: "waveform.path", unit: .ms, category: .health),
         .init(id: "spo2", symbol: "drop", unit: .percent, category: .health),
         .init(id: "respiration", symbol: "lungs", unit: .breaths, category: .health),
@@ -132,9 +159,17 @@ struct MetricDefinition: Identifiable {
     static func find(_ id: String) -> MetricDefinition { catalog.first { $0.id == id } ?? catalog[0] }
 }
 
-struct MetricReading: Codable {
+struct MetricReading: Codable, Equatable {
     var value: Double
     var measuredAt: Date?
+}
+
+/// A last known real reading, kept separately from the requested day's values.
+struct RetainedMetricReading: Codable {
+    var reading: MetricReading
+    var sourceDate: String
+    var retrievedAt: Date
+    var changedAt: Date
 }
 
 struct GarminSnapshot: Codable {
@@ -146,6 +181,8 @@ struct GarminSnapshot: Codable {
     var isDemo: Bool
     var groupUpdatedAt: [String: Date]
     var trainingTimeline: TrainingTimelineSnapshot?
+    var retainedMetrics: [String: RetainedMetricReading] = [:]
+    var metricChangedAt: [String: Date] = [:]
 
     init(fetchedAt: Date, sourceDate: String, devices: [String], metrics: [String: MetricReading], warnings: [String] = [], isDemo: Bool = false, groupUpdatedAt: [String: Date] = [:], trainingTimeline: TrainingTimelineSnapshot? = nil) {
         self.fetchedAt = fetchedAt; self.sourceDate = sourceDate; self.devices = devices
@@ -154,7 +191,7 @@ struct GarminSnapshot: Codable {
         self.trainingTimeline = trainingTimeline
     }
 
-    enum CodingKeys: String, CodingKey { case fetchedAt, sourceDate, devices, metrics, warnings, isDemo, groupUpdatedAt, trainingTimeline }
+    enum CodingKeys: String, CodingKey { case fetchedAt, sourceDate, devices, metrics, warnings, isDemo, groupUpdatedAt, trainingTimeline, retainedMetrics, metricChangedAt }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         fetchedAt = try c.decode(Date.self, forKey: .fetchedAt)
@@ -165,6 +202,8 @@ struct GarminSnapshot: Codable {
         isDemo = try c.decodeIfPresent(Bool.self, forKey: .isDemo) ?? false
         groupUpdatedAt = try c.decodeIfPresent([String: Date].self, forKey: .groupUpdatedAt) ?? [:]
         trainingTimeline = try c.decodeIfPresent(TrainingTimelineSnapshot.self, forKey: .trainingTimeline)
+        retainedMetrics = try c.decodeIfPresent([String: RetainedMetricReading].self, forKey: .retainedMetrics) ?? [:]
+        metricChangedAt = try c.decodeIfPresent([String: Date].self, forKey: .metricChangedAt) ?? [:]
     }
 
     static var demo: GarminSnapshot {

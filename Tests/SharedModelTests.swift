@@ -194,6 +194,9 @@ struct SharedModelTests {
 
     static func main() {
         do {
+            try testQuietWidgetPresentation()
+            try testTimeScopesAndRemovedLiveMetrics()
+            try testUntrustedPreferencesAndFreshness()
             try testMissingMeasurementsAndUnits()
             try testInvalidValuesAndGoals()
             try testSnapshotCompatibility()
@@ -205,5 +208,113 @@ struct SharedModelTests {
             fputs("FAIL: \(error)\n", stderr)
             exit(1)
         }
+    }
+
+    static func testQuietWidgetPresentation() throws {
+        let now = ISO8601DateFormatter().date(from: "2026-09-16T12:00:00Z")!
+        let zone = TimeZone(secondsFromGMT: 0)!
+        var data = snapshot(["steps": 4200, "sleepDuration": 462])
+        data.sourceDate = "2026-09-16"; data.fetchedAt = now
+        data.groupUpdatedAt = ["stats": now, "sleep": now]
+        var view = WidgetPresentation(snapshot: data, language: .en, now: now, timeZone: zone)
+        try expect(view.noticeKey(metricIDs: ["steps"], connected: true, staleInterval: 3600, hasWarnings: false) == nil,
+                   "A healthy widget must not display a routine sync timestamp or success status")
+        try expect(view.period("sleepDuration") == nil, "The latest completed night needs no desktop date label")
+        data.sourceDate = "2026-09-15"
+        view = .init(snapshot: data, language: .en, now: now, timeZone: zone)
+        try expect(view.period("sleepDuration") == nil, "Yesterday's night remains a quiet completed record")
+        try expect(view.noticeKey(metricIDs: ["sleepDuration"], connected: true, staleInterval: 3600, hasWarnings: false) == nil,
+                   "A completed sleep record cannot produce a freshness warning")
+        try expect(view.noticeKey(metricIDs: ["steps"], connected: true, staleInterval: 3600, hasWarnings: false) == "widget.notice.waiting",
+                   "Previous-day steps must keep one clear exception notice")
+        data.sourceDate = "2026-09-12"
+        view = .init(snapshot: data, language: .en, now: now, timeZone: zone)
+        try expect(view.period("sleepDuration") != nil, "An older night needs one short period label")
+        try expect(view.noticeKey(metricIDs: ["steps"], connected: false, staleInterval: 3600, hasWarnings: true) == "widget.notice.connection",
+                   "Connection recovery takes priority instead of stacking multiple notices")
+        try expect(view.noticeKey(metricIDs: ["steps"], connected: true, staleInterval: 3600, hasWarnings: true) == "widget.notice.unavailable",
+                   "A failed check is distinct from successfully checking for new data")
+        for language in [AppLanguage.ru, .en] {
+            for key in ["widget.notice.connection", "widget.notice.unavailable", "widget.notice.waiting"] {
+                try expect(Localizer.text(key, language: language) != key, "Every exception needs a localized user-facing label")
+            }
+        }
+    }
+
+    static func testTimeScopesAndRemovedLiveMetrics() throws {
+        try expect(!MetricDefinition.isSupported("heartRate"), "Instant pulse is not a supported display metric")
+        try expect(MetricFormatter(snapshot: snapshot(["heartRate": 72]), language: .en).value("heartRate") == nil,
+                   "A legacy cached pulse cannot reach the display formatter")
+        try expect(!snapshot(["heartRate": 72]).hasMeasurements, "A legacy pulse alone cannot create a populated dashboard")
+        var profile = WidgetProfile(); profile.metricIDs = ["heartRate", "sleepDuration"]; profile.primaryMetric = "heartRate"
+        let migrated = try AppJSON.decoder.decode(WidgetProfile.self, from: AppJSON.encoder.encode(profile))
+        try expect(migrated.metricIDs == ["sleepDuration"] && migrated.primaryMetric == "sleepDuration",
+                   "Existing mixed profiles keep their supported measurements and replace instant pulse as primary")
+        profile.metricIDs = ["heartRate"]
+        let recovered = try AppJSON.decoder.decode(WidgetProfile.self, from: AppJSON.encoder.encode(profile))
+        try expect(recovered.metricIDs == ["bodyBattery"] && recovered.primaryMetric == "bodyBattery",
+                   "A pulse-only legacy profile recovers to an editable supported profile")
+        let now = Date(timeIntervalSince1970: 1_789_473_600)
+        let old = now.addingTimeInterval(-172800)
+        for id in ["sleepDuration", "sleepScore", "hrv", "respiration", "restingHeartRate", "spo2", "weight", "vo2Max"] {
+            var record = GarminSnapshot.empty
+            record.retainedMetrics[id] = .init(reading: .init(value: 60), sourceDate: "2026-09-13", retrievedAt: old, changedAt: old)
+            record.groupUpdatedAt = ["sleep": now, "stats": now]
+            try expect(!record.metricIsStale(id, at: now, staleInterval: 3600), "A dated record is not a delayed live sensor: \(id)")
+            try expect(!record.hasRetainedTimeSensitiveMetrics && !record.hasUnchangedMeasurements,
+                       "Unchanged records cannot produce an instruction to sync the phone: \(id)")
+            for language in [AppLanguage.en, .ru] {
+                try expect(MetricFormatter(snapshot: record, language: language).context(id)?.contains("2026") == true,
+                           "Stable records always carry their original date: \(id)")
+            }
+        }
+        var progress = snapshot(["steps": 123, "bodyBattery": 76])
+        progress.sourceDate = SyncPolicy.sourceDay(for: now, timeZone: .current)
+        progress.groupUpdatedAt = ["stats": old, "body_battery": old]
+        try expect(progress.metricIsStale("steps", at: now, staleInterval: 3600), "Steps depend on recent sync")
+        try expect(progress.metricIsStale("bodyBattery", at: now, staleInterval: 3600), "Body Battery depends on recent sync")
+        var weight = snapshot(["weight": 70])
+        weight.metrics["weight"]?.measuredAt = old
+        try expect(MetricFormatter(snapshot: weight, language: .en).context("weight")?.hasPrefix("Measured ") == true,
+                   "Known measurement time is distinguished from retrieval time")
+        weight.metrics["weight"]?.measuredAt = nil
+        try expect(MetricFormatter(snapshot: weight, language: .en).context("weight")?.hasPrefix("Received ") == true,
+                   "An unknown measurement time is never invented")
+    }
+
+    static func testUntrustedPreferencesAndFreshness() throws {
+        for raw in [Int.min, Int.max] {
+            let decoded = try AppJSON.decoder.decode(AppPreferences.self, from: Data("{\"refreshMinutes\":\(raw),\"profiles\":[]}".utf8))
+            try expect((300...86400).contains(decoded.refreshInterval), "Untrusted cadence must be bounded before arithmetic")
+            try expect(decoded.profiles.count == 1, "Empty stored profiles recover to an editable profile")
+            var direct = AppPreferences(); direct.refreshMinutes = raw
+            try expect(direct.staleInterval.isFinite, "Programmatic cadence cannot overflow")
+        }
+        var profile = WidgetProfile()
+        profile.metricIDs = ["unknown", "steps", "steps"]
+        profile.primaryMetric = "unknown"
+        let repaired = try AppJSON.decoder.decode(WidgetProfile.self, from: AppJSON.encoder.encode(profile))
+        try expect(repaired.metricIDs == ["steps"] && repaired.primaryMetric == "steps", "Stored invalid IDs and duplicates cannot reach ForEach or the API")
+        var prefs = AppPreferences(); prefs.profiles = [profile, profile]
+        let decoded = try AppJSON.decoder.decode(AppPreferences.self, from: AppJSON.encoder.encode(prefs))
+        try expect(decoded.profiles.count == 1, "Duplicate stored profile identities are repaired")
+
+        let now = Date(timeIntervalSince1970: 1_789_473_600)
+        let zone = TimeZone(secondsFromGMT: 0)!
+        var cached = snapshot(["steps": 100, "sleepDuration": 480])
+        cached.sourceDate = SyncPolicy.sourceDay(for: now, timeZone: zone)
+        cached.fetchedAt = now
+        cached.groupUpdatedAt = ["stats": now, "sleep": now.addingTimeInterval(-7200)]
+        try expect(!cached.metricIsStale("sleepDuration", at: now, timeZone: zone, staleInterval: 3600), "A completed sleep record does not expire when polling is delayed")
+        try expect(!cached.metricIsStale("steps", at: now, timeZone: zone, staleInterval: 3600), "Fresh values remain fresh")
+        cached.sourceDate = "2026-01-01"
+        try expect(cached.metricIsStale("steps", at: now, timeZone: zone, staleInterval: 3600), "Yesterday's data is stale even during server backoff")
+        cached.isDemo = true
+        try expect(!cached.metricIsStale("steps", at: now, timeZone: zone, staleInterval: 3600), "Demo remains explicitly demo")
+        var historical = GarminSnapshot.empty
+        historical.retainedMetrics["steps"] = .init(reading: .init(value: 8000), sourceDate: "2026-09-14", retrievedAt: now, changedAt: now)
+        historical.metrics["stepGoal"] = .init(value: 10000)
+        try expect(MetricFormatter(snapshot: historical, language: .en).progress("steps") == nil,
+                   "Yesterday's steps must not appear as progress toward today's goal")
     }
 }
