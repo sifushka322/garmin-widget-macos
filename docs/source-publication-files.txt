@@ -93,3 +93,6 @@ scripts/sign-release.sh
 scripts/test-offline.sh
 scripts/test-widget-sandbox.sh
 scripts/verify-release.sh
+
+Sources/Shared/DeskVisualStyle.swift
+Sources/Shared/WidgetPresentation.swift

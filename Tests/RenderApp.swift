@@ -86,12 +86,16 @@ import SwiftUI
                     store.snapshot = snapshot
                     try render(store, navigation: navigation, dark: dark, size: CGSize(width: 780, height: 760),
                                name: "state-\(state)-\(language.rawValue)-\(dark ? "dark" : "light")", output: output)
+                    if state == "fresh" || state == "stable-records" {
+                        try render(store, navigation: navigation, dark: dark, size: CGSize(width: 1100, height: 800),
+                                   name: "wide-\(state)-\(language.rawValue)-\(dark ? "dark" : "light")", output: output)
+                    }
                 }
             }
         }
         store.isSyncing = false
         store.cancelLogin(resumeAutomatic: false)
-        print("PASS: 60 synthetic app renders; no website or system-widget access")
+        print("PASS: 68 synthetic app renders; no website or system-widget access")
     }
     @MainActor private static func render(_ store: AppStore, navigation: MainWindowNavigation,
                                           dark: Bool, size: CGSize, name: String, output: URL) throws {

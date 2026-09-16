@@ -65,6 +65,19 @@ struct RenderWidgets {
                 try render(completed, name: "records-\(language.rawValue)-\(name)", family: family, size: size, now: now, output: output)
             }
         }
+        for id in ["bodyBattery", "steps", "sleepDuration"] {
+            var focused = WidgetData.preview
+            focused.preferences.profiles[0].primaryMetric = id
+            focused.preferences.profiles[0].metricIDs = [id]
+            focused.snapshot.sourceDate = SyncPolicy.sourceDay(for: now, timeZone: .current)
+            focused.snapshot.fetchedAt = now
+            focused.snapshot.groupUpdatedAt = ["stats": now, "sleep": now, "body_battery": now]
+            for style in [WidgetStyle.calm, .sport, .monochrome] {
+                focused.preferences.profiles[0].style = style
+                try render(focused, name: "focus-\(id)-\(style.rawValue)", family: .systemSmall,
+                           size: families[0].2, now: now, output: output)
+            }
+        }
         for slot in WidgetSlot.allCases {
             try render(slot.previewData(language: .ru, at: now), name: "gallery-" + slot.rawValue,
                        family: .systemMedium, size: families[1].2, now: now, output: output)

@@ -44,6 +44,7 @@ private struct DataStatusView: View {
         if ["error.network", "error.timeout", "error.protocol", "error.partial", "error.rate_limit"].contains(store.lastErrorKey ?? "") { return "data.checkFailed" }
         if store.hasSession && !statusSnapshot.hasMeasurements { return "data.waiting" }
         if store.hasSession && statusSnapshot.hasRetainedTimeSensitiveMetrics { return "data.waitingNew" }
+        if isStale { return "widget.notice.waiting" }
         if store.hasSession && statusSnapshot.hasUnchangedMeasurements { return "data.unchanged" }
         return store.hasSession ? "data.available" : "status.notConnected"
     }
@@ -78,38 +79,24 @@ private struct DataStatusView: View {
                   systemImage: store.needsWebSignIn ? "person.crop.circle.badge.exclamationmark" : "link")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-        } else {
-            HStack(alignment: .top, spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12).fill(needsAttention ? Color.orange.opacity(0.1) : Color.primary.opacity(0.045))
-                    if store.isSyncing {
-                        ProgressView().controlSize(.small).accessibilityLabel(store.text("data.syncing"))
-                    } else {
-                        Image(systemName: statusSymbol).font(.system(size: 18, weight: .medium))
-                            .foregroundStyle(needsAttention ? Color.orange : .secondary)
-                    }
-                }.frame(width: 42, height: 42).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(store.text(statusKey)).font(.system(size: 14, weight: .semibold)).foregroundStyle(.primary)
-                    if let hint {
-                        Text(hint).font(.system(size: 13)).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true).lineSpacing(3)
-                    }
-                    if !statusSnapshot.isDemo && statusSnapshot.fetchedAt != .distantPast {
-                        Text(store.updatedText).font(.caption).foregroundStyle(.secondary)
-                    }
-                    if !statusSnapshot.metrics.isEmpty,
-                       statusSnapshot.sourceDate != SyncPolicy.sourceDay(for: Date(), timeZone: .autoupdatingCurrent),
-                       let day = TrainingPresentation(language: store.preferences.language).dayText(statusSnapshot.sourceDate) {
-                        Text(store.text("data.day") + " " + day).font(.caption).foregroundStyle(.secondary)
-                    }
-                    NextSyncView(store: store)
+        } else if needsAttention || !statusSnapshot.hasMeasurements || statusSnapshot.hasRetainedTimeSensitiveMetrics || isStale || store.isSyncing || !statusSnapshot.warnings.isEmpty {
+            HStack(alignment: .top, spacing: 10) {
+                if store.isSyncing {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: statusSymbol).font(.system(size: 13))
+                        .foregroundStyle(needsAttention ? Color.orange : .secondary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(store.text(statusKey)).font(.system(size: 12, weight: .semibold))
+                    if needsAttention || !statusSnapshot.hasMeasurements, let hint {
+                        Text(hint).font(.system(size: 12)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(16)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.primary.opacity(0.07)))
+            .padding(12)
+            .background(needsAttention ? Color.orange.opacity(0.07) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
             .accessibilityElement(children: .combine)
         }
     }
@@ -170,36 +157,42 @@ private struct MainMetricView: View {
     var style: WidgetStyle
     var compact = false
     private var definition: MetricDefinition { MetricDefinition.find(metricID) }
-    private var accent: Color { CardPalette.accent(style) }
+    private var theme: DeskMetricTheme { .metric(metricID, style: style) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 10 : 14) {
-            Label(store.text(definition.titleKey), systemImage: definition.symbol)
-                .font(.system(size: 13, weight: .medium)).foregroundStyle(.primary)
-                .lineLimit(2)
-            Text(store.displayValue(metricID))
-                .font(.system(size: compact ? 34 : 44, weight: .semibold, design: .rounded))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.55)
-                .contentTransition(.numericText())
-            if let progress = store.progress(metricID) {
-                ProgressView(value: progress)
-                    .tint(accent)
-                    .accessibilityLabel(store.text(definition.titleKey))
+        HStack(alignment: .center, spacing: 20) {
+            VStack(alignment: .leading, spacing: 14) {
+                Label(store.text(definition.titleKey), systemImage: definition.symbol)
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(theme.secondaryInk)
+                    .lineLimit(2)
+                MetricValueLabel(value: store.displayValue(metricID), size: compact ? 50 : 60)
+                    .foregroundStyle(theme.ink)
+                    .contentTransition(.numericText())
+                if let context = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language).context(metricID) {
+                    Text(context).font(.system(size: 11, weight: .medium)).foregroundStyle(theme.secondaryInk)
+                } else if store.numericValue(metricID) == nil {
+                    Text(store.text("data.empty")).font(.caption).foregroundStyle(theme.secondaryInk)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            ZStack {
+                if let progress = store.progress(metricID) {
+                    Circle().strokeBorder(theme.ink.opacity(0.13), lineWidth: 7)
+                    Circle().trim(from: 0, to: progress)
+                        .stroke(theme.highlight, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                        .rotationEffect(.degrees(-90)).padding(3.5)
+                    Image(systemName: definition.symbol).font(.system(size: 26, weight: .light)).foregroundStyle(theme.highlight)
+                } else {
+                    Circle().fill(theme.ink.opacity(0.07))
+                    Image(systemName: definition.symbol).font(.system(size: 36, weight: .light)).foregroundStyle(theme.highlight)
+                }
             }
-            if let context = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language).context(metricID) {
-                Label(context, systemImage: "clock")
-                    .font(.caption).foregroundStyle(.secondary)
-            } else if store.metricIsStale(metricID) {
-                Label(store.text("data.stale"), systemImage: "clock.badge.exclamationmark")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if store.numericValue(metricID) == nil {
-                Text(store.text("data.empty")).font(.caption).foregroundStyle(.secondary)
-            }
+            .frame(width: compact ? 76 : 88, height: compact ? 76 : 88)
+            .accessibilityHidden(true)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(compact ? 14 : 18)
-        .background(accent.opacity(style == .monochrome ? 0.045 : 0.09), in: RoundedRectangle(cornerRadius: 16))
+        .padding(compact ? 22 : 28)
+        .frame(maxWidth: .infinity, minHeight: compact ? 154 : 176, alignment: .leading)
+        .background(theme.background, in: RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(theme.ink.opacity(0.10)))
         .accessibilityElement(children: .combine)
     }
 }
@@ -209,31 +202,32 @@ private struct SmallMetricView: View {
     var metricID: String
     var style: WidgetStyle
     var compact = false
+    @Environment(\.colorScheme) private var colorScheme
     private var definition: MetricDefinition { MetricDefinition.find(metricID) }
+    private var theme: DeskMetricTheme { .metric(metricID, style: style) }
+    private var accent: Color { colorScheme == .dark ? theme.highlight : theme.top }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 6 : 9) {
-            HStack(alignment: .top, spacing: 7) {
-                Image(systemName: store.metricIsStale(metricID) ? "clock.badge.exclamationmark" : definition.symbol)
-                    .help(store.metricIsStale(metricID) ? store.text("data.stale") : store.text(definition.titleKey))
-                    .accessibilityLabel(store.metricIsStale(metricID) ? store.text("data.stale") : store.text(definition.titleKey))
-                    .foregroundStyle(CardPalette.accent(style))
-                    .frame(width: 16)
-                Text(store.text(definition.titleKey)).foregroundStyle(.secondary)
-                    .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: definition.symbol).font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(accent).frame(width: 28, height: 28)
+                    .background(accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
+                    .accessibilityHidden(true)
+                Text(store.text(definition.titleKey)).font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
             }
-            .font(.caption)
-            Text(store.displayValue(metricID))
-                .font(.system(size: compact ? 20 : 24, weight: .semibold, design: .rounded))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.55)
+            MetricValueLabel(value: store.displayValue(metricID), size: compact ? 28 : 32)
+                .foregroundStyle(.primary)
             if let context = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language).context(metricID) {
-                Text(context)
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(context).font(.system(size: 10)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: compact ? 52 : 65, alignment: .leading)
-        .padding(compact ? 10 : 12)
-        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxWidth: .infinity, minHeight: compact ? 82 : 100, alignment: .leading)
+        .padding(compact ? 16 : 18)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(accent.opacity(0.10)))
         .accessibilityElement(children: .combine)
     }
 }
@@ -253,25 +247,28 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(store.text("dashboard.title")).font(.title2.bold())
+                    Text(profile.map { $0.name.isEmpty ? store.text("profile.default") : $0.name } ?? store.text("dashboard.title"))
+                        .font(.system(size: 27, weight: .bold, design: .rounded))
                     Text(store.snapshot.devices.count == 1 ? store.snapshot.devices[0] : "Garmin Connect")
                         .font(.callout).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 12)
                 if store.hasSession || store.snapshot.hasMeasurements {
                     Button(action: onSettings) {
-                        Label(store.text("dashboard.configure"), systemImage: "slider.horizontal.3")
+                        Image(systemName: "slider.horizontal.3")
                     }
-                    .help(store.text("dashboard.configure"))
+                    .buttonStyle(DeskButtonStyle()).help(store.text("dashboard.configure"))
+                    .accessibilityLabel(store.text("dashboard.configure"))
                     Button { store.sync() } label: {
                         Label(store.text("action.sync"), systemImage: "arrow.clockwise")
                     }
+                    .buttonStyle(DeskButtonStyle(prominent: true))
+                    .help(store.updatedText)
                     .disabled(store.isSyncing || !store.hasSession)
                     .keyboardShortcut("r", modifiers: .command)
                 }
             }
             .padding(28)
-            Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if store.hasSession || store.snapshot.hasMeasurements || store.isSyncing || store.lastErrorKey != nil || store.needsWebSignIn {
@@ -290,28 +287,27 @@ struct DashboardView: View {
                         VStack(alignment: .leading, spacing: 22) {
                             Image(systemName: "applewatch")
                                 .font(.system(size: 30, weight: .light))
-                                .foregroundStyle(CardPalette.accent(.calm))
+                                .foregroundStyle(DeskMetricTheme.metric("bodyBattery").highlight)
                                 .frame(width: 64, height: 64)
-                                .background(CardPalette.accent(.calm).opacity(0.09), in: RoundedRectangle(cornerRadius: 20))
+                                .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 20))
                                 .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 10) {
                                 Text(store.text("onboarding.title"))
                                     .font(.system(size: 25, weight: .semibold, design: .rounded))
                                     .fixedSize(horizontal: false, vertical: true)
                                 Text(store.text("onboarding.detail")).font(.system(size: 14))
-                                    .foregroundStyle(.secondary).lineSpacing(4)
+                                    .foregroundStyle(Color.white.opacity(0.76)).lineSpacing(4)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                             Button { store.connectGarmin() } label: {
                                 Label(store.text("dashboard.connect"), systemImage: "link")
                                     .padding(.horizontal, 8)
-                            }.buttonStyle(.borderedProminent).controlSize(.large).disabled(store.isSyncing)
-                            Label(store.text("onboarding.privacy"), systemImage: "lock")
-                                .font(.caption).foregroundStyle(.secondary)
+                            }.buttonStyle(DeskButtonStyle(onDark: true)).disabled(store.isSyncing)
+
                         }
                         .frame(maxWidth: .infinity, alignment: .leading).padding(28)
-                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 22))
-                        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(.primary.opacity(0.06)))
+                        .foregroundStyle(.white)
+                        .background(DeskMetricTheme.metric("bodyBattery").background, in: RoundedRectangle(cornerRadius: 24))
                     }
                     if let profile, store.hasSession || store.snapshot.hasMeasurements {
                         if store.preferences.profiles.count > 1 {
@@ -324,9 +320,6 @@ struct DashboardView: View {
                                 }
                             }
                             .pickerStyle(.menu).frame(maxWidth: 360, alignment: .leading)
-                        } else if store.snapshot.hasMeasurements || profile.contentMode.includesTraining {
-                            Text(profile.name.isEmpty ? store.text("profile.default") : profile.name)
-                                .font(.title3.weight(.semibold))
                         }
                         if profile.contentMode.includesMetrics && store.snapshot.hasMeasurements {
                             MainMetricView(store: store, metricID: profile.primaryMetric, style: profile.style,
@@ -351,7 +344,7 @@ struct DashboardView: View {
                     WidgetSharingNotice(store: store)
                 }
                 .frame(maxWidth: 1060, alignment: .leading)
-                .padding(28)
+                .padding(.horizontal, 28).padding(.bottom, 28)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -537,6 +530,7 @@ struct MainWindowView: View {
     @ObservedObject var store: AppStore
     @ObservedObject var navigation: MainWindowNavigation
     @State private var selectedProfileID: UUID?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 0) {
@@ -544,22 +538,27 @@ struct MainWindowView: View {
                 Label {
                     Text("Garmin Desk")
                 } icon: {
-                    GarminDeskBrandMark().frame(width: 16, height: 16)
+                    GarminDeskBrandMark().foregroundStyle(DeskMetricTheme.color(0x168575)).frame(width: 22, height: 22)
                         .accessibilityHidden(true)
                 }
                     .font(.headline).padding(20)
-                List(selection: $navigation.section) {
+                VStack(spacing: 6) {
                     ForEach(MainWindowSection.allCases) { item in
+                        let selected = (navigation.section ?? .dashboard) == item
                         Button { navigation.section = item } label: {
                             Label(store.text(item.key), systemImage: item.symbol)
+                                .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                                .foregroundStyle(selected ? Color.white : Color.primary.opacity(0.7))
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 4).contentShape(Rectangle())
+                                .padding(.horizontal, 12).padding(.vertical, 11)
+                                .background(selected ? DeskMetricTheme.color(0x11665C) : Color.clear, in: RoundedRectangle(cornerRadius: 12))
+                                .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain).tag(item)
+                        .buttonStyle(.plain)
                         .keyboardShortcut(item.shortcut, modifiers: .command)
+                        .accessibilityAddTraits(selected ? .isSelected : [])
                     }
-                }
-                .listStyle(.sidebar)
+                }.padding(.horizontal, 12).padding(.top, 12)
                 Spacer(minLength: 0)
                 DataStatusView(store: store, compact: true).padding(18)
             }
@@ -579,7 +578,7 @@ struct MainWindowView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 780, minHeight: 620)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(colorScheme == .dark ? DeskMetricTheme.color(0x13191F) : DeskMetricTheme.color(0xF3F5F4))
         .environment(\.locale, store.preferences.language.locale)
     }
 

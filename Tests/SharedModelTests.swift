@@ -194,6 +194,7 @@ struct SharedModelTests {
 
     static func main() {
         do {
+            try testQuietWidgetPresentation()
             try testTimeScopesAndRemovedLiveMetrics()
             try testUntrustedPreferencesAndFreshness()
             try testMissingMeasurementsAndUnits()
@@ -206,6 +207,37 @@ struct SharedModelTests {
         } catch {
             fputs("FAIL: \(error)\n", stderr)
             exit(1)
+        }
+    }
+
+    static func testQuietWidgetPresentation() throws {
+        let now = ISO8601DateFormatter().date(from: "2026-09-16T12:00:00Z")!
+        let zone = TimeZone(secondsFromGMT: 0)!
+        var data = snapshot(["steps": 4200, "sleepDuration": 462])
+        data.sourceDate = "2026-09-16"; data.fetchedAt = now
+        data.groupUpdatedAt = ["stats": now, "sleep": now]
+        var view = WidgetPresentation(snapshot: data, language: .en, now: now, timeZone: zone)
+        try expect(view.noticeKey(metricIDs: ["steps"], connected: true, staleInterval: 3600, hasWarnings: false) == nil,
+                   "A healthy widget must not display a routine sync timestamp or success status")
+        try expect(view.period("sleepDuration") == nil, "The latest completed night needs no desktop date label")
+        data.sourceDate = "2026-09-15"
+        view = .init(snapshot: data, language: .en, now: now, timeZone: zone)
+        try expect(view.period("sleepDuration") == nil, "Yesterday's night remains a quiet completed record")
+        try expect(view.noticeKey(metricIDs: ["sleepDuration"], connected: true, staleInterval: 3600, hasWarnings: false) == nil,
+                   "A completed sleep record cannot produce a freshness warning")
+        try expect(view.noticeKey(metricIDs: ["steps"], connected: true, staleInterval: 3600, hasWarnings: false) == "widget.notice.waiting",
+                   "Previous-day steps must keep one clear exception notice")
+        data.sourceDate = "2026-09-12"
+        view = .init(snapshot: data, language: .en, now: now, timeZone: zone)
+        try expect(view.period("sleepDuration") != nil, "An older night needs one short period label")
+        try expect(view.noticeKey(metricIDs: ["steps"], connected: false, staleInterval: 3600, hasWarnings: true) == "widget.notice.connection",
+                   "Connection recovery takes priority instead of stacking multiple notices")
+        try expect(view.noticeKey(metricIDs: ["steps"], connected: true, staleInterval: 3600, hasWarnings: true) == "widget.notice.unavailable",
+                   "A failed check is distinct from successfully checking for new data")
+        for language in [AppLanguage.ru, .en] {
+            for key in ["widget.notice.connection", "widget.notice.unavailable", "widget.notice.waiting"] {
+                try expect(Localizer.text(key, language: language) != key, "Every exception needs a localized user-facing label")
+            }
         }
     }
 

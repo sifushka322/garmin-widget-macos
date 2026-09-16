@@ -25,12 +25,12 @@ struct GarminWidgetView: View {
         if let profile, data.isConnected { return URL(string: "garmindesk://profile/" + profile.id.uuidString) }
         return URL(string: "garmindesk://settings")
     }
-    private var accent: Color {
-        switch profile?.style ?? .calm {
-        case .calm: return Color(red: 0.13, green: 0.64, blue: 0.60)
-        case .sport: return Color(red: 0.95, green: 0.40, blue: 0.19)
-        case .monochrome: return .primary
-        }
+    private var theme: DeskMetricTheme { .metric(profile?.primaryMetric ?? "bodyBattery", style: profile?.style ?? .calm) }
+    private var accent: Color { theme.highlight }
+    private var presentation: WidgetPresentation { .init(snapshot: data.snapshot, language: language, now: entry.date) }
+    private var noticeKey: String? {
+        presentation.noticeKey(metricIDs: visibleMetricIDs, connected: data.isConnected,
+                               staleInterval: data.preferences.staleInterval, hasWarnings: hasWarnings)
     }
     private func text(_ key: String) -> String { Localizer.text(key, language: language) }
 
@@ -43,11 +43,7 @@ struct GarminWidgetView: View {
         .environment(\.locale, language.locale)
     }
 
-    var background: some View {
-        Color(nsColor: .windowBackgroundColor)
-            .overlay(LinearGradient(colors: [.clear, accent.opacity(0.08)],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing))
-    }
+    var background: some View { theme.background }
 
     private var widgetContent: some View {
         Group {
@@ -65,35 +61,34 @@ struct GarminWidgetView: View {
                            message: text(unconfigured || WidgetDataStore.configurationMode != .profileIntents ? "widget.openAppHint" : "widget.profileMissingHint"))
             }
         }
+        .foregroundStyle(theme.ink)
     }
 
     private func content(_ profile: WidgetProfile) -> some View {
-        VStack(alignment: .leading, spacing: family == .systemSmall || (family == .systemMedium && !profile.contentMode.includesTraining) ? 8 : 12) {
-            HStack(spacing: 5) {
-                GarminDeskBrandMark().frame(width: 13, height: 13)
-                    .foregroundStyle(accent).accessibilityHidden(true)
-                Text(profile.name.isEmpty ? text("profile.default") : profile.name).lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: family == .systemSmall ? 8 : 12) {
             if profile.contentMode.includesTraining {
                 trainingContent(profile)
             } else {
                 metricsContent(profile)
             }
-            footer
+            if let noticeKey {
+                Label(text(noticeKey), systemImage: "exclamationmark.circle.fill")
+                    .font(.system(size: 9, weight: .medium)).foregroundStyle(theme.highlight)
+                    .lineLimit(1).minimumScaleFactor(0.85)
+            }
         }
-        .privacySensitive(!data.snapshot.isDemo)
+        .privacySensitive(true)
     }
 
     @ViewBuilder private func metricsContent(_ profile: WidgetProfile) -> some View {
             if family == .systemSmall {
+                Spacer(minLength: 0)
                 primary(profile.primaryMetric, compact: true)
                 Spacer(minLength: 0)
             } else if family == .systemMedium {
                 HStack(alignment: .top, spacing: 16) {
                     primary(profile.primaryMetric, compact: false).frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(alignment: .leading, spacing: profile.density == .compact ? 5 : 8) {
+                    VStack(alignment: .leading, spacing: profile.density == .compact ? 9 : 12) {
                         ForEach(Array(secondary(profile).prefix(profile.density == .compact ? 3 : 2)), id: \.self) { metric in
                             if profile.density == .compact { compactMetricRow(metric) }
                             else { metricRow(metric) }
@@ -103,7 +98,7 @@ struct GarminWidgetView: View {
                 Spacer(minLength: 0)
             } else {
                 primary(profile.primaryMetric, compact: false)
-                Divider().opacity(0.5)
+                Rectangle().fill(theme.ink.opacity(0.16)).frame(height: 1)
                 LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: profile.density == .compact ? 10 : 16) {
                     ForEach(Array(secondary(profile).prefix(profile.density == .compact ? 8 : 6)), id: \.self) { metric in
                         metricRow(metric)
@@ -126,7 +121,7 @@ struct GarminWidgetView: View {
         } else {
             if profile.contentMode.includesMetrics {
                 primary(profile.primaryMetric, compact: false)
-                Divider().opacity(0.5)
+                Rectangle().fill(theme.ink.opacity(0.16)).frame(height: 1)
             }
             VStack(spacing: profile.density == .compact ? 8 : 10) {
                 trainingCard(future: false, roomy: true)
@@ -142,7 +137,7 @@ struct GarminWidgetView: View {
         let empty = future ? training.futureEmptyText(timeline) : training.pastEmptyText(timeline)
         let issue = training.issueText(future ? timeline?.futureIssue : timeline?.pastIssue,
                                        cached: (future ? timeline?.futureUpdatedAt : timeline?.pastUpdatedAt) != nil)
-        let color: Color = future && profile?.style != .monochrome ? .indigo : accent
+        let color: Color = accent
         let coverage = future ? training.futureCoverageText(timeline) : training.text("pastCoverage")
         let titleLines = roomy || family == .systemSmall ? 2 : 1
         var accessibilityParts = [heading]
@@ -163,7 +158,7 @@ struct GarminWidgetView: View {
                     .font(.system(size: roomy ? 14 : 12, weight: .semibold))
                     .lineLimit(titleLines).minimumScaleFactor(0.85)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text(record.date).font(.system(size: roomy ? 11 : 10)).foregroundStyle(.secondary)
+                Text(record.date).font(.system(size: roomy ? 11 : 10)).foregroundStyle(theme.secondaryInk)
                     .lineLimit(1).minimumScaleFactor(0.85)
                 if !record.values.isEmpty {
                     Text(record.values.joined(separator: " · "))
@@ -181,7 +176,7 @@ struct GarminWidgetView: View {
         }
         .padding(roomy ? 10 : 8)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(color.opacity(0.055), in: RoundedRectangle(cornerRadius: 11))
+        .background(theme.ink.opacity(0.065), in: RoundedRectangle(cornerRadius: 14))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
     }
@@ -214,24 +209,25 @@ struct GarminWidgetView: View {
     private func secondary(_ profile: WidgetProfile) -> [String] { profile.metricIDs.filter { $0 != profile.primaryMetric } }
 
     private func primary(_ id: String, compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Label(text(MetricDefinition.find(id).widgetTitleKey), systemImage: MetricDefinition.find(id).symbol)
-                .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
-            Text(formatter.display(id))
-                .font(.system(size: compact ? 31 : 30, weight: .semibold, design: .rounded))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.5).foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true).layoutPriority(1)
-            if let context = formatter.context(id) {
-                Label(context, systemImage: "clock")
-                    .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+        VStack(alignment: .leading, spacing: compact ? 10 : 8) {
+            HStack(spacing: 6) {
+                Image(systemName: MetricDefinition.find(id).symbol).foregroundStyle(accent)
+                Text(text(MetricDefinition.find(id).widgetTitleKey)).foregroundStyle(theme.secondaryInk)
+            }
+            .font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
+            MetricValueLabel(value: formatter.display(id), size: compact ? 46 : (family == .systemLarge ? 48 : 38))
+                .foregroundStyle(theme.ink).fixedSize(horizontal: false, vertical: true).layoutPriority(1)
+            if let period = presentation.period(id) {
+                Text(period).font(.system(size: 10, weight: .medium)).foregroundStyle(theme.secondaryInk)
             }
             if let progress = formatter.progress(id) {
                 GeometryReader { proxy in
-                    Capsule().fill(accent.opacity(0.14))
+                    Capsule().fill(theme.ink.opacity(0.15))
                     Capsule().fill(accent).frame(width: proxy.size.width * progress)
-                }.frame(height: 4).accessibilityHidden(true)
+                }.frame(height: 5).padding(.top, 2).accessibilityHidden(true)
             }
         }
+        .help(formatter.context(id) ?? "")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(([text(MetricDefinition.find(id).titleKey) + ": " + formatter.display(id)] + [formatter.context(id)].compactMap { $0 }).joined(separator: ", "))
     }
@@ -239,10 +235,12 @@ struct GarminWidgetView: View {
     private func metricRow(_ id: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Label(text(MetricDefinition.find(id).widgetTitleKey), systemImage: MetricDefinition.find(id).symbol)
-                .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
-            Text(formatter.display(id)).font(.system(size: 15, weight: .semibold, design: .rounded))
-                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.65)
-                .fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 10)).foregroundStyle(theme.secondaryInk).lineLimit(1).minimumScaleFactor(0.8)
+            MetricValueLabel(value: formatter.display(id), size: family == .systemLarge ? 23 : 22)
+                .foregroundStyle(theme.ink).fixedSize(horizontal: false, vertical: true)
+            if let period = presentation.period(id) {
+                Text(period).font(.system(size: 8)).foregroundStyle(theme.secondaryInk)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
@@ -252,54 +250,19 @@ struct GarminWidgetView: View {
     private func compactMetricRow(_ id: String) -> some View {
         HStack(spacing: 5) {
             Text(text(MetricDefinition.find(id).widgetTitleKey))
-                .font(.system(size: 10)).foregroundStyle(.secondary)
+                .font(.system(size: 10)).foregroundStyle(theme.secondaryInk)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(formatter.display(id))
-                .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+            MetricValueLabel(value: formatter.display(id), size: 18).foregroundStyle(theme.ink)
         }
         .lineLimit(1).minimumScaleFactor(0.75).frame(minHeight: 21)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(([text(MetricDefinition.find(id).titleKey) + ": " + formatter.display(id)] + [formatter.context(id)].compactMap { $0 }).joined(separator: ", "))
     }
 
-    private var footer: some View {
-        HStack(spacing: 4) {
-            if !data.isConnected {
-                Image(systemName: "exclamationmark.circle")
-                Text(text("status.notConnected"))
-            } else if let day = visibleMetricIDs.compactMap({ data.snapshot.retainedMetrics[$0]?.sourceDate }).min() {
-                Image(systemName: "clock")
-                Text(text("data.day") + " " + (training.dayText(day) ?? day))
-            } else if let refreshedAt {
-                let stale = (profile?.contentMode.includesTraining == true && entry.date.timeIntervalSince(refreshedAt) > data.preferences.staleInterval)
-                    || visibleMetricIDs.contains { data.snapshot.metricIsStale($0, at: entry.date, staleInterval: data.preferences.staleInterval) }
-                Image(systemName: stale ? "clock.badge.exclamationmark" : "arrow.triangle.2.circlepath")
-                Text(text("data.updated"))
-                Text(refreshedAt, style: .time)
-                if hasWarnings { Image(systemName: "exclamationmark.circle") }
-            } else {
-                Text(text("data.empty"))
-            }
-        }.font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
-    }
-
     private var hasWarnings: Bool {
         guard let profile else { return false }
         return (profile.contentMode.includesMetrics && !data.snapshot.warnings.isEmpty)
             || (profile.contentMode.includesTraining && (!(timeline?.warnings.isEmpty ?? true) || timeline?.pastIssue != nil || timeline?.futureIssue != nil))
-    }
-
-    private var refreshedAt: Date? {
-        guard let profile else { return nil }
-        guard profile.contentMode.includesTraining else { return metricRefreshedAt }
-        var dates: [Date]
-        if family == .systemSmall {
-            dates = [smallShowsFuture ? timeline?.futureUpdatedAt : timeline?.pastUpdatedAt].compactMap { $0 }
-        } else {
-            dates = [timeline?.pastUpdatedAt, timeline?.futureUpdatedAt].compactMap { $0 }
-        }
-        if profile.contentMode.includesMetrics && family == .systemLarge, let metricRefreshedAt { dates.append(metricRefreshedAt) }
-        return dates.min()
     }
 
     private var visibleMetricIDs: [String] {
@@ -310,16 +273,11 @@ struct GarminWidgetView: View {
         return [profile.primaryMetric] + Array(secondary(profile).prefix(limit))
     }
 
-    /// Every visible value contributes to freshness, including secondary metrics.
-    private var metricRefreshedAt: Date? {
-        visibleMetricIDs.compactMap { data.snapshot.metricUpdatedAt($0) }.min()
-    }
-
     private func emptyState(symbol: String, title: String, message: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: symbol).font(.title2).foregroundStyle(accent)
             Text(title).font(.headline)
-            Text(message).font(.caption).foregroundStyle(.secondary)
+            Text(message).font(.caption).foregroundStyle(theme.secondaryInk)
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 }

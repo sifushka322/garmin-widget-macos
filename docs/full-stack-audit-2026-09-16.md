@@ -45,6 +45,14 @@ Instant pulse is removed from the catalog, profile migration, display formatter 
 
 Completed sleep, nightly HRV/respiration, daily resting heart rate/SpO₂ and individual weight/VO₂ max records stay meaningful with their date. Their age alone does not trigger a stale-sensor warning or a request to sync a phone. Progress values such as steps and Body Battery retain sync-age handling. Stable records always show their period or measurement date; when the source supplies no actual measurement time, the UI labels the retrieval date instead. SpO₂ labels explicitly identify the daily average. Tests cover migration, hidden legacy readings, dates, unchanged records and delayed progress values.
 
+## Value-first visual redesign
+
+The desktop widget now prioritizes the number and its metric name. It has no profile/brand header, routine check time, success footer or duplicated date. A recent completed night has no visible date; an older record has one short period label. Full provenance remains in app details, help and accessibility labels. One prioritized notice appears for reconnection, a failed check or delayed changing data. Normal app data also no longer occupies a status card.
+
+Shared semantic surfaces use deep teal for energy, indigo for sleep and warm orange for activity. White numerals and smaller units create hierarchy; progress marks use only actual values/goals. Secondary app cards use coordinated accents. Monochrome remains an explicit user choice. The sidebar has a clear selected state and the app uses a restrained neutral canvas around the colored primary card. No invented trend charts or health classifications are added.
+
+The direction follows [Apple's widget hierarchy guidance](https://developer.apple.com/design/human-interface-guidelines/widgets), [color guidance](https://developer.apple.com/design/human-interface-guidelines/color), and the emphasis on reduced clutter in [Gentler Streak's current design](https://docs.gentler.app/release-notes-and-announcements/gentler-stories-black-friday-cyber-monday-offers). It uses native, macOS 14-compatible SwiftUI surfaces; no simulated Liquid Glass effect is presented as a platform API.
+
 ## Reviewed boundaries
 
 Native network requests are generated GET routes. Swift checks the origin/path; WebKit uses an isolated client script, same-origin credentials, bounded streamed responses and abort handles. Native diagnostics omit cookies, CSRF values and response text. The sync policy separates authentication failures, transient backoff, server rate limits, cancellation, date changes and endpoint cadence. Widget data uses atomic replacement, owner-only permissions and a narrow read-only sandbox directory; the extension has no Garmin transport.
