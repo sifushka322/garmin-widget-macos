@@ -83,6 +83,41 @@ struct MenuBarLifecycleTests {
 
     private static func pulse() async { try? await Task.sleep(nanoseconds: 100_000_000) }
 
+    private enum WindowPresentation { case shown, closed, minimized }
+
+    /// AppKit delivers occlusion changes asynchronously, and SwiftUI defers its
+    /// observable update until the view-tree mutation has finished. Wait for the
+    /// real notification path rather than assuming CI finishes it within 100 ms.
+    private static func settleVisibility(_ visibility: MetricWindowVisibilityView, window: NSWindow,
+                                         presentation: WindowPresentation = .shown, phase: String) async throws {
+        var matchingSamples = 0
+        var observed = ""
+        let deadline = ProcessInfo.processInfo.systemUptime + 2
+        while ProcessInfo.processInfo.systemUptime < deadline {
+            let expected = window.isVisible && !window.isMiniaturized
+                && window.occlusionState.contains(.visible) && !NSApp.isHidden
+            let attached = visibility.window === window
+            let actual = visibility.activity.allowsDisplayUpdates
+            let presentationSettled: Bool
+            switch presentation {
+            case .shown: presentationSettled = window.isVisible && !window.isMiniaturized && !NSApp.isHidden
+            case .closed: presentationSettled = !window.isVisible
+            case .minimized: presentationSettled = window.isMiniaturized
+            }
+            observed = "attached=\(attached), visible=\(window.isVisible), miniaturized=\(window.isMiniaturized), "
+                + "occluded=\(!window.occlusionState.contains(.visible)), appHidden=\(NSApp.isHidden), activity=\(actual)"
+            if attached && presentationSettled && actual == expected {
+                matchingSamples += 1
+                if matchingSamples == 3 {
+                    try expect(true, "Metric clock settled after " + phase)
+                    return
+                }
+            } else { matchingSamples = 0 }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        throw Failure(description: "Metric clock did not follow window visibility after \(phase): \(observed)")
+    }
+
     private static func settle(_ store: AppStore) async throws {
         for _ in 0..<100 {
             if !store.isSyncing { await pulse(); return }
@@ -100,8 +135,7 @@ struct MenuBarLifecycleTests {
         guard let content = window.contentView, let visibility = displayVisibilityView(in: content) else {
             throw Failure(description: "Production main window must observe display visibility")
         }
-        try expect(visibility.activity.allowsDisplayUpdates == (window.isVisible && !window.isMiniaturized && window.occlusionState.contains(.visible) && !NSApp.isHidden),
-                   "Metric clock activity must follow actual window visibility")
+        try await settleVisibility(visibility, window: window, phase: "launch")
         try expect(NSApp.activationPolicy() == .accessory, "Application must stay out of Dock")
         try expect(window.isVisible, "Explicit launch must show its main window")
         try expect(status.isVisible && status.button?.image?.isTemplate == true, "Visible status icon must be a template image")
@@ -114,35 +148,34 @@ struct MenuBarLifecycleTests {
         try expect(quit.target === NSApp && quit.isEnabled, "Quit must target this application")
 
         window.close()
-        await pulse()
+        try await settleVisibility(visibility, window: window, presentation: .closed, phase: "close")
+        try expect(!visibility.activity.allowsDisplayUpdates, "Retaining a closed main window must not retain an active metric timeline")
         try expect(!window.isVisible && !delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp), "Closing the window must preserve the background application")
         try expect(status.isVisible, "Closing the window must preserve the status item")
-        try expect(!visibility.activity.allowsDisplayUpdates, "Retaining a closed main window must not retain an active metric timeline")
         try invoke("showSettings", in: state.menu)
-        await pulse()
+        try await settleVisibility(visibility, window: window, phase: "settings")
         try expect(window.isVisible && delegate.lifecycleTestState.navigation.section == .general, "Settings must reopen the window on General")
         try expect(NSApp.activationPolicy() == .accessory, "Settings must not add a Dock icon")
 
         window.miniaturize(nil)
-        await pulse()
+        try await settleVisibility(visibility, window: window, presentation: .minimized, phase: "minimize")
         try expect(!visibility.activity.allowsDisplayUpdates, "Minimizing suspends all metric display schedules")
         _ = delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
-        await pulse()
+        try await settleVisibility(visibility, window: window, phase: "Finder reopen")
         try expect(window.isVisible && !window.isMiniaturized, "Finder reopen must restore a minimized window")
         window.close()
         try invoke("showMainWindow", in: state.menu)
-        await pulse()
+        try await settleVisibility(visibility, window: window, phase: "menu reopen")
         try expect(window.isVisible, "Open must restore a closed window")
-        try expect(visibility.activity.allowsDisplayUpdates == window.occlusionState.contains(.visible), "Reopening restores the clock only for a visible window")
         window.orderOut(nil)
-        await pulse()
+        try await settleVisibility(visibility, window: window, presentation: .closed, phase: "order out")
         try expect(!visibility.activity.allowsDisplayUpdates, "Ordering out a retained window stops its display clock")
         try invoke("showMainWindow", in: state.menu)
-        await pulse()
+        try await settleVisibility(visibility, window: window, phase: "open before widget link")
         let link = WidgetLink(slot: .sport).url!
         window.close()
         delegate.application(NSApp, open: [link])
-        await pulse()
+        try await settleVisibility(visibility, window: window, phase: "widget link")
         try expect(window.isVisible && delegate.lifecycleTestState.navigation.widgetSlot == .sport
                    && delegate.lifecycleTestState.navigation.section == .dashboard, "Widget URL must restore its exact dashboard slot")
 
@@ -163,6 +196,7 @@ struct MenuBarLifecycleTests {
         let before = transport.requests
         clock.advance(31)
         window.close()
+        try await settleVisibility(visibility, window: window, presentation: .closed, phase: "background refresh")
         try invoke("refresh", in: state.menu)
         try await settle(store)
         try expect(transport.requests > before && !window.isVisible, "Menu refresh must work with all windows closed")
