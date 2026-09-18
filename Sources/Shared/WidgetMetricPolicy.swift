@@ -1,4 +1,5 @@
 import Foundation
+import WidgetKit
 
 struct WidgetMetricSelection {
     let primary: String
@@ -27,10 +28,27 @@ enum WidgetMetricPolicy {
             let snapshot = formatter.snapshot
             let stepDay = snapshot.retainedMetrics["steps"]?.sourceDate ?? snapshot.sourceDate
             let goalDay = snapshot.retainedMetrics["stepGoal"]?.sourceDate ?? snapshot.sourceDate
-            guard !stepDay.isEmpty, stepDay == goalDay,
+            guard snapshot.retainedMetrics["steps"] == nil, snapshot.retainedMetrics["stepGoal"] == nil,
+                  stepDay == goalDay,
+                  stepDay == SyncPolicy.sourceDay(for: formatter.now, timeZone: .autoupdatingCurrent),
                   let goal = formatter.value("stepGoal"), goal > 0 else { return nil }
         }
         return formatter.interpretation(id)?.status
+    }
+
+    /// A small summary prioritizes its actual value, readable interpretation and
+    /// record date or notice over an optional second measurement. The timeline uses this same
+    /// limit, so a hidden Body Battery never creates unnecessary minute entries.
+    static func summarySecondaryLimit(data: WidgetData, family: WidgetFamily, at now: Date) -> Int {
+        guard family == .systemSmall else { return family == .systemMedium ? 2 : 6 }
+        let selection = summarySelection(preferences: data.preferences, snapshot: data.snapshot)
+        let formatter = MetricFormatter(snapshot: data.snapshot, language: data.preferences.language, now: now)
+        guard inlineStatus(for: selection.primary, formatter: formatter) != nil else { return 1 }
+        let presentation = WidgetPresentation(snapshot: data.snapshot, language: data.preferences.language, now: now)
+        let notice = presentation.noticeKey(metricIDs: [selection.primary] + Array(selection.secondary.prefix(1)),
+                       connected: data.isConnected, staleInterval: data.preferences.staleInterval,
+                       hasWarnings: !data.snapshot.warnings.isEmpty)
+        return notice == nil && presentation.period(selection.primary) == nil ? 1 : 0
     }
 
     static let overview = ["bodyBattery", "steps", "stress", "sleepDuration", "restingHeartRate", "sleepScore", "intensityMinutes", "activeCalories", "distance"]

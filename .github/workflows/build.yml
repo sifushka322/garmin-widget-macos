@@ -105,8 +105,34 @@ jobs:
           xcrun --sdk macosx --show-sdk-version
       - name: Run all native offline contracts and synthetic visual fixtures
         run: bash scripts/test-offline.sh
-      - name: Upload synthetic visual review fixtures
+      - name: Upload compact visual review
         if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-review-${{ matrix.arch }}
+          path: |
+            build/audit/app/state-fresh-ru-light.png
+            build/audit/app/state-fresh-ru-dark.png
+            build/audit/app/minimum-sport-context-ru-light.png
+            build/audit/app/minimum-sport-context-ru-dark.png
+            build/audit/app/minimum-hrv-context-ru-light.png
+            build/audit/app/default-sport-context-ru-light.png
+            build/audit/app/state-fresh-de-light.png
+            build/audit/app/minimum-sport-context-de-light.png
+            build/audit/app/minimum-sport-context-pl-light.png
+            build/audit/widgets/stress-ru-old-load-network-small-light.png
+            build/audit/widgets/stress-ru-old-load-network-small-dark.png
+            build/audit/widgets/stress-de-old-load-network-small-light.png
+            build/audit/widgets/stress-pl-old-load-network-small-light.png
+            build/audit/widgets/stress-ru-old-hrv-disconnected-small-light.png
+            build/audit/widgets/stress-de-old-hrv-disconnected-small-light.png
+            build/audit/widgets/stress-pl-old-hrv-disconnected-small-light.png
+            build/audit/widgets/stress-ru-dense-old-load-large-light.png
+            build/audit/widgets/stress-de-old-load-network-large-light.png
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Upload synthetic visual review fixtures
+        if: always() && matrix.arch == 'arm64'
         uses: actions/upload-artifact@v7
         with:
           name: visual-audit-${{ matrix.arch }}
@@ -115,7 +141,7 @@ jobs:
             build/audit/widgets/*.png
             build/audit/calendar/*.png
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 7
       - name: Verify read-only widget sharing in an ad-hoc sandbox
         run: bash scripts/test-widget-sandbox.sh
       - name: Build self-contained application
@@ -198,18 +224,33 @@ jobs:
           bash scripts/test-offline.sh
       - name: Verify read-only widget sharing on the older OS
         run: bash scripts/test-widget-sandbox.sh
-      - name: Upload runtime evidence and synthetic visual fixtures
+      - name: Upload runtime evidence and compact visual review
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: runtime-audit-${{ matrix.runner }}-${{ matrix.arch }}
           path: |
             build/audit/runtime/*
-            build/audit/app/*.png
-            build/audit/widgets/*.png
-            build/audit/calendar/*.png
+            build/audit/app/state-fresh-ru-light.png
+            build/audit/app/state-fresh-ru-dark.png
+            build/audit/app/minimum-sport-context-ru-light.png
+            build/audit/app/minimum-sport-context-ru-dark.png
+            build/audit/app/minimum-hrv-context-ru-light.png
+            build/audit/app/default-sport-context-ru-light.png
+            build/audit/app/state-fresh-de-light.png
+            build/audit/app/minimum-sport-context-de-light.png
+            build/audit/app/minimum-sport-context-pl-light.png
+            build/audit/widgets/stress-ru-old-load-network-small-light.png
+            build/audit/widgets/stress-ru-old-load-network-small-dark.png
+            build/audit/widgets/stress-de-old-load-network-small-light.png
+            build/audit/widgets/stress-pl-old-load-network-small-light.png
+            build/audit/widgets/stress-ru-old-hrv-disconnected-small-light.png
+            build/audit/widgets/stress-de-old-hrv-disconnected-small-light.png
+            build/audit/widgets/stress-pl-old-hrv-disconnected-small-light.png
+            build/audit/widgets/stress-ru-dense-old-load-large-light.png
+            build/audit/widgets/stress-de-old-load-network-large-light.png
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 7
 
   release:
     name: Prepare verified release draft

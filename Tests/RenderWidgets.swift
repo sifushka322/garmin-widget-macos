@@ -106,6 +106,47 @@ struct RenderWidgets {
                 }
             }
         }
+        // Readability stress cases combine translated interpretation, an old
+        // record date, and an actionable notice in the smallest fixed family.
+        // The small summary may omit its optional supporting measurement; the
+        // same state also exercises medium and large layouts.
+        for language in [AppLanguage.ru, .de, .pl] {
+            for state in ["old-load-network", "old-hrv-disconnected", "retained-load-waiting", "dense-old-load"] {
+                var data = sample(language: language, now: now)
+                let old = now.addingTimeInterval(-3 * 86400)
+                let oldDay = SyncPolicy.sourceDay(for: old, timeZone: .autoupdatingCurrent)
+                data.snapshot.sourceDate = oldDay
+                data.snapshot.fetchedAt = old
+                data.snapshot.metricContext = GarminMetricContext(trainingLoadLower: 350, trainingLoadUpper: 780,
+                    trainingStatus: "DETRAINING", hrvStatus: "NO_STATUS", hrvWeeklyAverage: 58,
+                    hrvBaselineLow: 49, hrvBaselineHigh: 72)
+                data.preferences.summaryMetrics = ["trainingLoad", "recoveryTime", "hrv", "trainingReadiness"]
+                if state == "old-hrv-disconnected" {
+                    data.preferences.summaryMetrics = ["hrv", "trainingLoad", "sleepScore", "recoveryTime"]
+                    data.isConnected = false
+                } else if state == "retained-load-waiting" {
+                    for id in data.preferences.summaryMetrics {
+                        if let reading = data.snapshot.metrics.removeValue(forKey: id) {
+                            data.snapshot.retainedMetrics[id] = .init(reading: reading, sourceDate: oldDay,
+                                retrievedAt: old, changedAt: old)
+                        }
+                    }
+                } else {
+                    data.snapshot.warnings = ["network.stats"]
+                    if state == "dense-old-load" {
+                        data.preferences.summaryMetrics = ["trainingLoad", "recoveryTime", "hrv", "sleepScore",
+                            "stress", "trainingReadiness", "bodyBattery"]
+                    }
+                }
+                for appearance in [WidgetAppearance.light, .dark] {
+                    data.preferences.widgetAppearance = appearance
+                    for (sizeName, family, size) in families {
+                        try render(data, slot: .overview, family: family, size: size, now: now,
+                            name: "stress-\(language.rawValue)-\(state)-\(sizeName)-\(appearance.rawValue)", output: output)
+                    }
+                }
+            }
+        }
         for language in AppLanguage.supported {
             var preferences = AppPreferences(); preferences.language = language
             let data = WidgetPreviewData.make(preferences: preferences, at: now)

@@ -21,7 +21,15 @@ struct WidgetTimelineScheduleTests {
         check(zip(dates.dropLast(), dates.dropLast().dropFirst()).allSatisfy { $1.timeIntervalSince($0) == 60 }, "Intermediate estimates are one minute apart; exact expiry is a separate final entry")
         let midway = MetricFormatter(snapshot: snapshot, language: .en, now: now.addingTimeInterval(1800))
         check(midway.display("bodyBattery") == "≈54", "Widget display changes without replacing the saved Garmin reading")
-        check(midway.context("bodyBattery")?.contains("Linear estimate") == true, "Estimate provenance remains explicit")
+        let provenance = midway.context("bodyBattery") ?? ""
+        check(provenance.hasPrefix("Local linear estimate from recent Garmin readings. "),
+              "Estimate provenance explicitly names a local calculation and Garmin source readings")
+        let actualContext = MetricFormatter(snapshot: snapshot, language: .en, now: now).context("bodyBattery") ?? ""
+        check(!actualContext.isEmpty && provenance.hasSuffix(actualContext),
+              "Estimate provenance preserves the original measured-at description")
+        check(midway.help("bodyBattery").contains(provenance) &&
+              midway.accessibility("bodyBattery").contains(provenance),
+              "Help and accessibility both disclose the local estimate and actual measurement time")
         check(snapshot.metrics["bodyBattery"] == anchor, "Display calculation preserves actual sample")
         let expired = MetricFormatter(snapshot: snapshot, language: .en, now: dates.last!)
         check(expired.display("bodyBattery") == "60" && !expired.isEstimated("bodyBattery"), "Expired timeline restores last actual value")
@@ -58,6 +66,20 @@ struct WidgetTimelineScheduleTests {
         check(WidgetTimelineSchedule.dates(data: summary, slot: .overview, family: .systemSmall, from: now) == [now], "Small summary ignores its hidden fourth metric")
         check(WidgetTimelineSchedule.dates(data: summary, slot: .overview, family: .systemMedium, from: now) == [now], "Medium summary ignores its hidden fourth metric")
         check(WidgetTimelineSchedule.dates(data: summary, slot: .overview, family: .systemLarge, from: now).count > 1, "Large summary updates its visible fourth Body Battery")
+
+        var focused = data
+        focused.preferences.summaryMetrics = ["trainingLoad", "bodyBattery"]
+        focused.snapshot.metrics["trainingLoad"] = .init(value: 525)
+        focused.snapshot.warnings = ["network.stats"]
+        check(WidgetTimelineSchedule.visibleMetricIDs(data: focused, slot: .overview, family: .systemSmall, at: now) == ["trainingLoad"],
+              "A small summary gives its readable interpretation and warning priority over an optional measurement")
+        check(WidgetTimelineSchedule.dates(data: focused, slot: .overview, family: .systemSmall, from: now) == [now],
+              "A Body Battery hidden by compact focus does not schedule minute entries")
+        check(WidgetTimelineSchedule.dates(data: focused, slot: .overview, family: .systemMedium, from: now).count > 1,
+              "The same Body Battery remains visible and scheduled in a wider widget")
+        focused.snapshot.warnings = []
+        check(WidgetTimelineSchedule.visibleMetricIDs(data: focused, slot: .overview, family: .systemSmall, at: now).contains("bodyBattery"),
+              "A small summary restores its optional measurement when its notice clears")
 
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = .current
         let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
