@@ -157,6 +157,10 @@ struct GarminPayloadNormalizerTests {
 
     static func main() {
         do {
+            try expect(!GarminPayloadNormalizer.matchesSourceDay(group: "stats", payload: ["calendarDate": "2026-09-14", "totalSteps": 900], sourceDay: "2026-09-15"), "Wrong-day stats must fail provenance validation")
+            try expect(!GarminPayloadNormalizer.matchesSourceDay(group: "body_battery", payload: [["date": "2026-09-14"]], sourceDay: "2026-09-15"), "Wrong-day Body Battery must fail provenance validation")
+            try expect(!GarminPayloadNormalizer.matchesSourceDay(group: "hydration", payload: ["calendarDate": "2026-09-14"], sourceDay: "2026-09-15"), "Wrong-day hydration must fail provenance validation")
+            try expect(GarminPayloadNormalizer.matchesSourceDay(group: "sleep", payload: ["dailySleepDTO": ["calendarDate": "2026-09-14"]], sourceDay: "2026-09-15"), "Overnight sleep is not relabeled by guessing day semantics")
             try testAllCanonicalFields()
             try testJSONTypesAndSentinels()
             try testSampleOrderingAndTimestamps()

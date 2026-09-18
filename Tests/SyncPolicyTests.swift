@@ -222,8 +222,42 @@ struct SyncPolicyTests {
                    "Explicit verification must still respect a server pause")
     }
 
+
+    static func testEndpointRetryIsolationAndBudgetDeferral() throws {
+        var policy = ready()
+        let groups: Set<SyncPolicy.Group> = [.stats, .bodyBattery, .sleep]
+        let first = try started(policy.begin(groups: groups, sourceDay: day, at: moment()), "First batch")
+        policy.finish(requestID: first.id, successfulGroups: [.bodyBattery],
+                      transientFailedGroups: [.stats], deferredGroups: [.sleep], at: moment())
+        try expect(policy.checkpoint.gate == nil, "Endpoint transient failures do not create a global pause")
+        let follow = try started(policy.begin(groups: groups, sourceDay: day, at: moment()), "Deferred work should start immediately")
+        try expect(follow.groups == [.sleep], "Only unattempted work runs immediately; failed stats is gated")
+        policy.finish(requestID: follow.id, successfulGroups: [.sleep], at: moment(1))
+        try expect(try delay(policy.begin(groups: groups, sourceDay: day, trigger: .manual, at: moment(1)), from: moment(1)) == 29,
+                   "A healthy group may follow its manual minimum while failed stats keeps its endpoint pause")
+        try expect(try delay(policy.begin(groups: [.stats], sourceDay: day, trigger: .manual, at: moment(30, wallAdjustment: 100000)), from: moment(30, wallAdjustment: 100000)) == 30,
+                   "Wall-clock changes and manual refresh cannot bypass an endpoint's continuous-clock gate")
+        for retry in [60.0, 180, 420, 900] {
+            let request = try started(policy.begin(groups: [.stats], sourceDay: day, at: moment(retry)), "Failed endpoint retry becomes due once")
+            policy.finish(requestID: request.id, successfulGroups: [], transientFailedGroups: [.stats], at: moment(retry))
+        }
+        let healthy = try started(policy.begin(groups: groups, sourceDay: day, at: moment(1800)), "Healthy cadence must continue during longer stats backoff")
+        try expect(healthy.groups == [.bodyBattery], "Stats retry at 1860 cannot postpone Body Battery due at 1800")
+        policy.finish(requestID: healthy.id, successfulGroups: healthy.groups, at: moment(1800))
+        let data = try JSONEncoder().encode(policy.checkpoint)
+        let recovered = try JSONDecoder().decode(SyncPolicy.Checkpoint.self, from: data)
+        try expect(recovered.groupFailures?[.stats]?.attempts == 5, "Per-group backoff survives relaunch")
+        var legacy = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        legacy.removeValue(forKey: "groupFailures")
+        let old = try JSONDecoder().decode(SyncPolicy.Checkpoint.self, from: JSONSerialization.data(withJSONObject: legacy))
+        try expect(old.groupFailures == nil, "Old checkpoints without group failures remain readable")
+        policy.disconnect()
+        try expect(policy.checkpoint.groupFailures == nil, "A different account cannot inherit per-group failures")
+    }
+
     static func main() {
         do {
+            try testEndpointRetryIsolationAndBudgetDeferral()
             try testPerGroupCadenceAndWake()
             try testCoalescingAndNewProfiles()
             try testCancellationAndLateCompletions()

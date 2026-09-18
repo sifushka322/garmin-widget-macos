@@ -19,7 +19,7 @@ final class AppStore: ObservableObject {
     @Published var snapshot: GarminSnapshot { didSet { trainingTimeline = snapshot.trainingTimeline; publishWidgetData() } }
     @Published private(set) var trainingTimeline: TrainingTimelineSnapshot?
     @Published private(set) var widgetSharingAvailable = false
-    @Published var hasSession = false { didSet { publishWidgetData() } }
+    @Published var hasSession = false { didSet { if oldValue != hasSession { publishWidgetData() } } }
     @Published var isSyncing = false
     @Published var lastErrorKey: String?
     @Published var connectionDiagnostic: BridgeDiagnostic?
@@ -33,6 +33,7 @@ final class AppStore: ObservableObject {
     private let sourceTimeZone: () -> TimeZone
     private let automaticScheduling: Bool
     private let writesWidgetData: Bool
+    private let widgetPublisher: ((WidgetData) throws -> Void)?
     private var webDisplayName: String?
     private var webCache = GarminWebCache()
     private var webPolicy = SyncPolicy()
@@ -49,7 +50,8 @@ final class AppStore: ObservableObject {
          defaults: UserDefaults = .standard, clock: (() -> SyncPolicy.Moment)? = nil,
          sourceTimeZone: @escaping () -> TimeZone = { .autoupdatingCurrent },
          automaticScheduling: Bool = true, writesWidgetData: Bool = true,
-         initialWidgetSharingAvailable: Bool = false) {
+         initialWidgetSharingAvailable: Bool = false,
+         widgetPublisher: ((WidgetData) throws -> Void)? = nil) {
         self.supportDirectory = supportDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("GarminDesk", isDirectory: true)
         self.webSession = webSession ?? GarminWebSession()
         self.defaults = defaults
@@ -57,6 +59,7 @@ final class AppStore: ObservableObject {
         self.sourceTimeZone = sourceTimeZone
         self.automaticScheduling = automaticScheduling
         self.writesWidgetData = writesWidgetData
+        self.widgetPublisher = widgetPublisher
         self.widgetSharingAvailable = initialWidgetSharingAvailable
         let supportDirectory = self.supportDirectory
         let prefsURL = supportDirectory.appendingPathComponent("preferences.json")
@@ -78,6 +81,7 @@ final class AppStore: ObservableObject {
         if PrivateSnapshotStore.ownersConflict(cachedSnapshotData, cache: webCache) { webCache = .init() }
         if webConnected {
             let day = SyncPolicy.sourceDay(for: clock?().wallTime ?? Date(), timeZone: sourceTimeZone())
+            webCache = PrivateSnapshotStore.restoreCache(cachedSnapshotData, cache: webCache, sourceDay: day)
             snapshot = PrivateSnapshotStore.restore(cachedSnapshotData, cache: webCache, sourceDay: day)
             trainingTimeline = snapshot.trainingTimeline
         }
@@ -106,6 +110,9 @@ final class AppStore: ObservableObject {
         self.webSession.onDiagnostic = { [weak self] diagnostic in self?.connectionDiagnostic = diagnostic }
         self.webSession.onSignInClosed = { [weak self] in
             guard let self else { return }
+            // A user closing the interactive window cancels its navigation and
+            // verification, including a response already awaiting WebKit.
+            self.cancelLogin()
             self.needsWebSignIn = Self.requiresSessionAction(self.webPolicy.checkpoint.sessionState)
         }
         nextAllowedSync = Date(timeIntervalSince1970: defaults.double(forKey: "GarminDeskNextAllowedSync"))
@@ -254,6 +261,10 @@ final class AppStore: ObservableObject {
         webSyncTask = Task { [weak self] in
             guard let self else { return }
             var successful = Set<SyncPolicy.Group>()
+            var transientFailed = Set<SyncPolicy.Group>()
+            var deferred = Set<SyncPolicy.Group>()
+            let batchStarted = self.syncMoment().monotonicSeconds
+            var lastPublished = batchStarted
             var warnings: [String] = []
             var batchFailure: SyncPolicy.Failure?
             var cancelled = false
@@ -265,7 +276,8 @@ final class AppStore: ObservableObject {
                     if cancelled { self.webPolicy.cancel(requestID: active.id) }
                     else {
                         self.webPolicy.finish(requestID: active.id, successfulGroups: successful,
-                                              failure: batchFailure, at: self.syncMoment())
+                                              failure: batchFailure, transientFailedGroups: transientFailed,
+                                              deferredGroups: deferred, at: self.syncMoment())
                         self.needsWebSignIn = Self.requiresSessionAction(self.webPolicy.checkpoint.sessionState)
                         self.hasSession = self.webConnected && !self.needsWebSignIn
                         // Current-day absence and last known values remain distinct.
@@ -292,7 +304,7 @@ final class AppStore: ObservableObject {
                     // An explicit sign-in may select a different account. Never mix
                     // its new partial response with another account's cached values.
                     let accountChanged = self.webCache.accountDisplayName != name
-                    if verifying || accountChanged {
+                    if accountChanged {
                         self.webCache = .init(); self.snapshot = .empty
                     }
                     self.webCache.accountDisplayName = name
@@ -311,6 +323,12 @@ final class AppStore: ObservableObject {
                 for group in order where active.groups.contains(group) {
                     try Task.checkCancellation()
                     guard self.webRunID == runID else { return }
+                    // Bound one batch to 90 continuous seconds plus at most one
+                    // in-flight request. Unattempted groups remain immediately due.
+                    if self.syncMoment().monotonicSeconds - batchStarted >= 90 {
+                        deferred = active.groups.subtracting(successful).subtracting(transientFailed)
+                        break
+                    }
                     attemptedGroup = group
                     if group == .plannedWorkouts {
                         let requests = GarminWebAPI.calendarRequests(sourceDay: day)
@@ -320,6 +338,10 @@ final class AppStore: ObservableObject {
                         for request in requests {
                             try Task.checkCancellation()
                             guard self.webRunID == runID else { return }
+                            if self.syncMoment().monotonicSeconds - batchStarted >= 90 {
+                                deferred.insert(group)
+                                break
+                            }
                             do {
                                 let payload = try await self.webSession.get(path: request.path, stage: group.rawValue + "." + request.month)
                                 try Task.checkCancellation()
@@ -334,7 +356,11 @@ final class AppStore: ObservableObject {
                             } catch GarminWebError.invalidResponse {
                                 warnings.append("schema_mismatch." + group.rawValue + "." + request.month)
                                 self.setTrainingIssue("schema_mismatch", group: group)
-                                batchFailure = .transient
+                                transientFailed.insert(group)
+                            } catch GarminWebError.network {
+                                warnings.append("network." + group.rawValue + "." + request.month)
+                                self.setTrainingIssue("network", group: group)
+                                transientFailed.insert(group)
                             }
                         }
                         // Persist each successful month even when another fails,
@@ -342,6 +368,10 @@ final class AppStore: ObservableObject {
                         if validMonths == requests.count {
                             successful.insert(group)
                             self.setTrainingIssue(nil, group: group)
+                        }
+                        if self.syncMoment().monotonicSeconds - lastPublished >= 10 {
+                            self.commitWebCache(sourceDay: day, warnings: warnings)
+                            lastPublished = self.syncMoment().monotonicSeconds
                         }
                         continue
                     }
@@ -361,7 +391,8 @@ final class AppStore: ObservableObject {
                                 retrievedAt: self.syncMoment().wallTime, items: TrainingNormalizer.past(payload: payload))
                             self.setTrainingIssue(nil, group: group)
                         } else {
-                            guard GarminPayloadNormalizer.isRecognizedPayload(group: group.rawValue, payload: payload) else { throw GarminWebError.invalidResponse }
+                            guard GarminPayloadNormalizer.isRecognizedPayload(group: group.rawValue, payload: payload),
+                                  GarminPayloadNormalizer.matchesSourceDay(group: group.rawValue, payload: payload, sourceDay: day) else { throw GarminWebError.invalidResponse }
                             let retrievedAt = self.syncMoment().wallTime
                             var values = GarminPayloadNormalizer.normalize(group: group.rawValue, payload: payload, asOf: retrievedAt)
                             var projection = group == .bodyBattery
@@ -381,10 +412,20 @@ final class AppStore: ObservableObject {
                             self.webCache.groups[group.rawValue] = cached
                         }
                         successful.insert(group)
+                        // Fast batches still publish once. Slow batches expose
+                        // completed groups at most once per ten seconds.
+                        if self.syncMoment().monotonicSeconds - lastPublished >= 10 {
+                            self.commitWebCache(sourceDay: day, warnings: warnings)
+                            lastPublished = self.syncMoment().monotonicSeconds
+                        }
                     } catch GarminWebError.invalidResponse {
                         warnings.append("schema_mismatch." + group.rawValue)
                         if group == .activities { self.setTrainingIssue("schema_mismatch", group: group) }
-                        batchFailure = .transient
+                        transientFailed.insert(group)
+                    } catch GarminWebError.network {
+                        warnings.append("network." + group.rawValue)
+                        if group == .activities { self.setTrainingIssue("network", group: group) }
+                        transientFailed.insert(group)
                     }
                 }
                 if !warnings.isEmpty { self.lastErrorKey = "error.partial" }
@@ -498,7 +539,12 @@ final class AppStore: ObservableObject {
     func publishWidgetData() {
         guard writesWidgetData else { return }
         do {
-            try WidgetDataStore.write(WidgetData(preferences: preferences, snapshot: snapshot, isConnected: hasSession))
+            let data = WidgetData(preferences: preferences, snapshot: snapshot, isConnected: hasSession)
+            if let widgetPublisher {
+                try widgetPublisher(data)
+                return
+            }
+            try WidgetDataStore.write(data)
             let configurationAvailable = WidgetDataStore.configurationAvailable
             if widgetSharingAvailable != configurationAvailable { widgetSharingAvailable = configurationAvailable }
             WidgetCenter.shared.reloadAllTimelines()

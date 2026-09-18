@@ -69,12 +69,19 @@ struct SyncPolicy {
         var reason: GateReason
     }
 
+    struct GroupFailure: Codable {
+        var attempts: Int
+        var gate: Gate
+    }
+
     struct Checkpoint: Codable {
         var version = 1
         var sessionState: SessionState = .unavailable
         var successfulGroups: [Group: Stamp] = [:]
         var consecutiveTransientFailures = 0
         var gate: Gate?
+        // Additive optional state keeps existing version-1 checkpoints readable.
+        var groupFailures: [Group: GroupFailure]?
     }
 
     struct Request: Equatable {
@@ -116,7 +123,7 @@ struct SyncPolicy {
         checkpoint.sessionState = .available
         checkpoint.consecutiveTransientFailures = 0
         if checkpoint.gate?.reason != .rateLimit { checkpoint.gate = nil }
-        if clearCadence { checkpoint.successfulGroups = [:] }
+        if clearCadence { checkpoint.successfulGroups = [:]; checkpoint.groupFailures = nil }
     }
 
     /// A new account must not inherit the old account's group freshness. A server
@@ -125,6 +132,7 @@ struct SyncPolicy {
         activeRequest = nil
         checkpoint.sessionState = .unavailable
         checkpoint.successfulGroups = [:]
+        checkpoint.groupFailures = nil
         checkpoint.consecutiveTransientFailures = 0
         if checkpoint.gate?.reason != .rateLimit { checkpoint.gate = nil }
     }
@@ -174,14 +182,26 @@ struct SyncPolicy {
     /// Unknown successful group names cannot poison another group's cadence.
     @discardableResult
     mutating func finish(requestID: UUID, successfulGroups: Set<Group>, failure: Failure? = nil,
+                         transientFailedGroups: Set<Group> = [], deferredGroups: Set<Group> = [],
                          at now: Moment) -> Bool {
         guard let request = activeRequest, request.id == requestID else { return false }
         activeRequest = nil
         let acceptedGroups = successfulGroups.intersection(request.groups)
         for group in acceptedGroups {
             checkpoint.successfulGroups[group] = Stamp(moment: now, sourceDay: request.sourceDay)
+            checkpoint.groupFailures?[group] = nil
         }
-        let effectiveFailure = failure ?? (acceptedGroups == request.groups ? nil : .transient)
+        let failed = transientFailedGroups.intersection(request.groups).subtracting(acceptedGroups)
+        for group in failed {
+            let previous = min(10, max(0, checkpoint.groupFailures?[group]?.attempts ?? 0))
+            let seconds = min(30 * 60, 60 * pow(2, Double(previous)))
+            if checkpoint.groupFailures == nil { checkpoint.groupFailures = [:] }
+            checkpoint.groupFailures?[group] = GroupFailure(attempts: min(10, previous + 1),
+                gate: Gate(startedAt: now, duration: seconds, reason: .transient))
+        }
+        // Budget-deferred groups remain due; they were not failed or refreshed.
+        let accounted = acceptedGroups.union(failed).union(deferredGroups.intersection(request.groups))
+        let effectiveFailure = failure ?? (accounted == request.groups ? nil : .transient)
         guard let effectiveFailure else {
             checkpoint.consecutiveTransientFailures = 0
             if checkpoint.gate?.reason != .rateLimit { checkpoint.gate = nil }
@@ -221,6 +241,11 @@ struct SyncPolicy {
     }
 
     private func delayUntilDue(_ group: Group, sourceDay: String, trigger: Trigger, at now: Moment) -> TimeInterval {
+        // Endpoint failures never hold unrelated healthy groups behind a global gate.
+        // Manual refresh still respects this bounded pause.
+        if let failure = checkpoint.groupFailures?[group] {
+            return remainingDelay(failure.gate, at: now)
+        }
         guard let stamp = checkpoint.successfulGroups[group] else { return 0 }
         if group.isDaily && stamp.sourceDay != sourceDay { return 0 }
         guard let elapsed = elapsed(since: stamp.moment, at: now) else { return 0 }
