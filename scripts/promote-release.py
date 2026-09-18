@@ -166,7 +166,7 @@ def validate_run(run, workflow, jobs, approval, repository):
     require(run.get("head_sha") == approval["commit"] and run.get("head_branch") == "main", "Build run did not test the exact main commit")
     require(run.get("event") in ("push", "workflow_dispatch"), "A pull-request run cannot authorize publication")
     require(run.get("repository", {}).get("full_name") == repository and run.get("head_repository", {}).get("full_name") == repository, "Build run repository differs")
-    required = {"Validate release version", "Offline JavaScript and Python contracts", "macOS arm64", "macOS x86_64", "Runtime macOS 14 arm64", "Runtime macOS 15 x86_64", "Prepare verified release draft"}
+    required = {"Validate release version", "Offline JavaScript and Python contracts", "macOS arm64", "macOS x86_64", "Native macOS 14 arm64", "Native macOS 15 x86_64", "Runtime macOS 14 arm64", "Runtime macOS 15 x86_64", "Prepare verified release draft"}
     for name in required:
         matches = [job for job in jobs if job.get("name") == name]
         require(len(matches) == 1 and matches[0].get("status") == "completed" and matches[0].get("conclusion") == "success", "A required build/draft job did not pass: " + name)

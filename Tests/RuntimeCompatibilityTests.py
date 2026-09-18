@@ -94,18 +94,28 @@ class RuntimeCompatibilityTests(unittest.TestCase):
 
     def test_release_requires_both_standard_runtime_lanes(self):
         workflow = (ROOT / ".github/workflows/build.yml").read_text()
+        native = workflow.split("  native-compat:\n", 1)[1].split("  runtime-compat:\n", 1)[0]
         runtime = workflow.split("  runtime-compat:\n", 1)[1].split("  release:\n", 1)[0]
         release = workflow.split("  release:\n", 1)[1]
         self.assertIn("needs: [version, build]", runtime)
-        self.assertIn("needs: [version, protocol, build, runtime-compat]", release)
+        self.assertIn("needs: [version, protocol, build, native-compat, runtime-compat]", release)
         self.assertRegex(runtime, r"runner: macos-14\s+os_major: '14'\s+arch: arm64")
         self.assertRegex(runtime, r"runner: macos-15-intel\s+os_major: '15'\s+arch: x86_64")
         self.assertNotRegex(runtime, r"macos-[^\s]*(?:large|xlarge)")
         self.assertIn('gh run download "$GITHUB_RUN_ID"', runtime)
         self.assertIn('build$APP_BUILD-$GARMIN_RUNTIME_ARCH-development', runtime)
         self.assertIn("bash scripts/ci-runtime-smoke.sh runtime-packages", runtime)
-        self.assertIn("bash scripts/test-offline.sh", runtime)
-        self.assertIn("bash scripts/test-widget-sandbox.sh", runtime)
+        # Source/SDK checks start before packaging; exact-package launch checks
+        # remain separate. Both pairs are mandatory release dependencies.
+        self.assertIn("needs: version", native)
+        self.assertNotIn("needs: [version, build]", native)
+        self.assertIn("bash scripts/test-offline.sh", native)
+        self.assertIn("bash scripts/test-widget-sandbox.sh", native)
+        self.assertNotIn("bash scripts/test-offline.sh", runtime)
+        for lane in (native, runtime):
+            self.assertRegex(lane, r"runner: macos-14\s+os_major: '14'\s+arch: arm64")
+            self.assertRegex(lane, r"runner: macos-15-intel\s+os_major: '15'\s+arch: x86_64")
+            self.assertNotRegex(lane, r"macos-[^\s]*(?:large|xlarge)")
 
 
 if __name__ == "__main__":

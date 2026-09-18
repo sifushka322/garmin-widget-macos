@@ -42,7 +42,7 @@ class FakeGitHub:
                     "head_sha": approval["commit"], "head_branch": "main", "event": "push",
                     "repository": {"full_name": "fixture/repo"}, "head_repository": {"full_name": "fixture/repo"}}
         self.jobs = [{"name": name, "status": "completed", "conclusion": "success"} for name in
-                     ("Validate release version", "Offline JavaScript and Python contracts", "macOS arm64", "macOS x86_64", "Runtime macOS 14 arm64", "Runtime macOS 15 x86_64", "Prepare verified release draft")]
+                     ("Validate release version", "Offline JavaScript and Python contracts", "macOS arm64", "macOS x86_64", "Native macOS 14 arm64", "Native macOS 15 x86_64", "Runtime macOS 14 arm64", "Runtime macOS 15 x86_64", "Prepare verified release draft")]
         self.release = {"id": 40, "tag_name": "v0.5.0", "target_commitish": approval["commit"], "draft": True, "prerelease": False}
         self.assets = [{"id": index + 1, "name": name, "size": len(data), "state": "uploaded", "digest": "sha256:" + digest(data)}
                        for index, (name, data) in enumerate(sorted(payloads.items()))]
@@ -292,7 +292,7 @@ class ReleasePromotionTests(unittest.TestCase):
                 job["conclusion"] = "skipped"; self.reject(); job["conclusion"] = "success"
 
     def test_missing_runtime_compatibility_job_prevents_publication(self):
-        for name in ("Runtime macOS 14 arm64", "Runtime macOS 15 x86_64"):
+        for name in ("Native macOS 14 arm64", "Native macOS 15 x86_64", "Runtime macOS 14 arm64", "Runtime macOS 15 x86_64"):
             with self.subTest(job=name):
                 original = self.github.jobs
                 self.github.jobs = [job for job in original if job["name"] != name]
