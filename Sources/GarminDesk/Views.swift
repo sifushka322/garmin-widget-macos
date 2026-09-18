@@ -251,7 +251,6 @@ private struct MetricDisplayClock<Content: View>: View {
                 content(now)
             }
         }
-        .id(displayContext.revision)
         .onAppear { isPresented = true }
         .onDisappear { isPresented = false }
     }
@@ -335,8 +334,8 @@ private struct MainMetricView: View {
                 MetricValueLabel(value: formatter.display(metricID), size: compact ? 50 : 60)
                     .foregroundStyle(theme.ink)
                     .contentTransition(.numericText())
-                if let explanation {
-                    Text(explanation.status).font(.system(size: 13, weight: .semibold))
+                if let status = WidgetMetricPolicy.inlineStatus(for: metricID, formatter: formatter) {
+                    Text(status).font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(theme.ink).fixedSize(horizontal: false, vertical: true)
                 }
                 if let context = metricCardContext(metricID, formatter: formatter) {
@@ -392,6 +391,7 @@ private struct SmallMetricView: View {
         let explanation = MetricExplanation.make(metricID: metricID, snapshot: store.snapshot,
                                                    language: store.preferences.language, now: now)
         let context = metricCardContext(metricID, formatter: formatter)
+        let status = WidgetMetricPolicy.inlineStatus(for: metricID, formatter: formatter)
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 8) {
                 Image(systemName: definition.symbol).font(.system(size: 13, weight: .medium))
@@ -411,11 +411,11 @@ private struct SmallMetricView: View {
             MetricValueLabel(value: formatter.display(metricID), size: compact ? 28 : 32)
                 .foregroundStyle(.primary)
                 .frame(height: 42, alignment: .leading)
-            Text(explanation?.status ?? " ")
+            Text(status ?? " ")
                 .font(.system(size: 12, weight: .medium)).foregroundStyle(accent)
                 .lineLimit(2).minimumScaleFactor(0.85)
                 .frame(maxWidth: .infinity, minHeight: 32, maxHeight: 32, alignment: .topLeading)
-                .accessibilityHidden(explanation == nil)
+                .accessibilityHidden(status == nil)
             Spacer(minLength: 0)
             Text(context ?? " ").font(.system(size: 10)).foregroundStyle(.secondary)
                 .lineLimit(1).minimumScaleFactor(0.75)

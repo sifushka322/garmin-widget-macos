@@ -56,6 +56,22 @@ import Foundation
             try expect(candidates.count == Set(candidates).count, "Candidates never duplicate rows")
             try expect(candidates.allSatisfy(MetricDefinition.isSupported), "Templates cannot request removed metric IDs")
         }
+        var interpreted = GarminSnapshot.demo
+        interpreted.isDemo = false
+        let formatter = MetricFormatter(snapshot: interpreted, language: .en)
+        for id in ["bodyBattery", "stress", "sleepScore", "trainingReadiness", "recoveryTime", "trainingLoad", "hrv", "steps"] {
+            try expect(WidgetMetricPolicy.inlineStatus(for: id, formatter: formatter) != nil, "Meaningful status remains inline: " + id)
+        }
+        for id in ["vo2Max", "distance", "calories", "activeCalories", "sleepDuration", "weight", "hydration", "restingHeartRate"] {
+            try expect(WidgetMetricPolicy.inlineStatus(for: id, formatter: formatter) == nil, "Generic descriptions belong in details: " + id)
+            try expect(formatter.interpretation(id) != nil && !formatter.help(id).isEmpty, "Removing an inline phrase preserves full help: " + id)
+        }
+        interpreted.metrics["stepGoal"] = nil
+        try expect(WidgetMetricPolicy.inlineStatus(for: "steps", formatter: .init(snapshot: interpreted, language: .en)) == nil,
+                   "Steps without a goal do not show a generic inline phrase")
+        interpreted.retainedMetrics["stepGoal"] = .init(reading: .init(value: 10_000), sourceDate: "2000-01-01", retrievedAt: date, changedAt: date)
+        try expect(WidgetMetricPolicy.inlineStatus(for: "steps", formatter: .init(snapshot: interpreted, language: .en)) == nil,
+                   "A goal from another day cannot create a progress interpretation")
         print("PASS: \(checks) widget selection and migration checks")
     }
 }
