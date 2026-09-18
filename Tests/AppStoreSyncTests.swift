@@ -539,8 +539,27 @@ struct AppStoreSyncTests {
         try expect(rig.store.trainingTimeline?.futureCoverage == .unavailable, "Unavailable future data cannot claim an empty published plan")
     }
 
+    static func testTransientEndpointDoesNotStarveOtherGroups() async throws {
+        let rig = try Rig(); defer { rig.clean() }
+        let now = rig.clock.moment.wallTime
+        rig.web.errors["stats"] = .network
+        rig.web.payloads["body_battery"] = [["bodyBatteryValuesArray": [[now.addingTimeInterval(-180).timeIntervalSince1970 * 1000, 70.0]]]]
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(rig.store.snapshot.metrics["bodyBattery"]?.value == 70 && rig.store.snapshot.metrics["sleepDuration"]?.value == 300,
+                   "One failed endpoint cannot starve independent Garmin groups")
+        let checkpoint = try rig.checkpoint()
+        try expect(checkpoint.successfulGroups[.stats] == nil && checkpoint.successfulGroups[.bodyBattery] != nil && checkpoint.successfulGroups[.sleep] != nil,
+                   "Only successful groups earn freshness")
+        try expect(rig.store.nextSyncAt == now.addingTimeInterval(60), "Partial transient failure keeps bounded retry gate")
+        rig.web.calls = []; rig.web.errors["stats"] = nil; rig.clock.advance(60)
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(rig.web.calls == ["stats"] && rig.store.snapshot.metrics["steps"]?.value == 123,
+                   "Retry fetches only failed group; healthy readings keep their cadence")
+    }
+
     static func main() async {
         do {
+            try await testTransientEndpointDoesNotStarveOtherGroups()
             try await testBodyBatteryRefreshAndRegression()
             try await testEmptyUnchangedAndRecovery()
             try await testAccountOwnershipAcrossRestart()
