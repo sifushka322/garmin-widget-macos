@@ -21,8 +21,10 @@ substantive override_reason after an explicit, informed owner release request.
 That report instead uses Overall result: NOT RUN, Normal upgrade: NOT RUN,
 Owner override: explicit release request after disclosure, Override reason:
 <the exact reason>, and Unverified coverage: <the exact unchecked coverage>.
-Public notes must then include Normal upgrade validation: NOT RUN and the same
-reason. Failed/unknown results are never eligible for this exception.
+Public notes must then either state Normal upgrade validation: NOT RUN and the
+same reason, or link the exact repository audit report that records both. They
+must never claim the unperformed check passed. Failed/unknown results are never
+eligible for this exception.
 
 The report must document the environment and every check required by
 docs/widget-upgrade-validation.md. The workflow verifies the recorded approval
@@ -147,14 +149,18 @@ def sanitized_text(text):
     require(not re.search(forbidden, text), "Report contains a private path, address, or credential-shaped literal")
 
 
-def validate_public_notes(data, approval):
+def validate_public_notes(data, approval, repository):
     require(sha256(data) == approval["release_notes_sha256"], "Public notes digest differs")
     text = data.decode("utf-8")
     require(approval["version"] in text and len(text.strip()) >= 80, "Public notes lack release identity or content")
     sanitized_text(text)
     if approval["upgrade_result"] == "not_run":
-        require("Normal upgrade validation: NOT RUN" in text.splitlines() and approval["override_reason"] in text,
-                "Public notes must explicitly disclose unverified normal upgrade and the informed owner override")
+        inline_disclosure = ("Normal upgrade validation: NOT RUN" in text.splitlines()
+                             and approval["override_reason"] in text)
+        report_url = f"https://github.com/{repository}/blob/main/{approval['report']}"
+        linked_disclosure = re.search(r"\[[^\]\n]+\]\(" + re.escape(report_url) + r"\)", text) is not None
+        require(inline_disclosure or linked_disclosure,
+                "Public notes must disclose the informed exception or link its exact audit report")
         require(not {"Normal upgrade validation: PASS", "Normal upgrade: PASS"}.intersection(text.splitlines()),
                 "Public notes must not claim an unperformed normal upgrade passed")
 
@@ -296,7 +302,7 @@ def promote(root, environment, github=None):
         require(git(root, "ls-tree", head, "--", path).decode().startswith("100644 blob "), "Approval/report must be ordinary tracked files")
     validate_report(git(root, "show", f"{head}:{approval['report']}"), approval)
     notes = git(root, "show", f"{head}:{approval['release_notes_path']}")
-    validate_public_notes(notes, approval)
+    validate_public_notes(notes, approval, repository)
 
     github = github or GitHub(repository)
     require(github.api("git/ref/heads/main")["object"]["sha"] == head, "Main advanced beyond the approval commit")

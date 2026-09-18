@@ -197,6 +197,28 @@ class ReleasePromotionTests(unittest.TestCase):
         self.assertEqual(self.github.published, ["v0.5.0"])
         self.assertIn("Normal upgrade validation: NOT RUN", self.github.release["body"])
 
+    def test_informed_override_can_link_the_exact_public_audit_record(self):
+        self.make_override()
+        self.notes = ("# GarminDesk 0.5.0\n\nFinal release with completed product changes.\n\n"
+                      "[Validation report](https://github.com/fixture/repo/blob/main/" + self.report_path + ")\n").encode()
+        self.approval["release_notes_sha256"] = digest(self.notes)
+        self.save_approval()
+        with contextlib.redirect_stdout(io.StringIO()):
+            promotion.promote(self.root, self.environment, self.github)
+        self.assertEqual(self.github.published, ["v0.5.0"])
+        self.assertIn("Normal upgrade: NOT RUN", self.report.decode())
+
+    def test_linked_override_cannot_reference_another_repository_or_report(self):
+        self.make_override()
+        for target in ("https://github.com/other/repo/blob/main/" + self.report_path,
+                       "https://github.com/fixture/repo/blob/main/docs/unrelated.md"):
+            with self.subTest(target=target):
+                self.notes = ("# GarminDesk 0.5.0\n\nFinal release with product changes. "
+                              "See the [Validation report](" + target + ").\n").encode()
+                self.approval["release_notes_sha256"] = digest(self.notes)
+                self.save_approval()
+                self.reject()
+
     def test_not_run_without_explicit_owner_override_is_rejected(self):
         self.make_override(); self.approval["owner_override"] = False
         self.save_approval(); self.reject()
