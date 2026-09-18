@@ -108,6 +108,9 @@ class RuntimeCompatibilityTests(unittest.TestCase):
         # Source/SDK checks start before packaging; exact-package launch checks
         # remain separate. Both pairs are mandatory release dependencies.
         self.assertIn("needs: version", native)
+        self.assertIn('test "$(uname -m)" = "$GARMIN_RUNTIME_ARCH"', native)
+        self.assertIn('test "$(sw_vers -productVersion | cut -d. -f1)" = "$GARMIN_RUNTIME_OS_MAJOR"', native)
+        self.assertIn("python3 Tests/ReleasePromotionTests.py", workflow.split("  protocol:\n", 1)[0])
         self.assertNotIn("needs: [version, build]", native)
         self.assertIn("bash scripts/test-offline.sh", native)
         self.assertIn("bash scripts/test-widget-sandbox.sh", native)
