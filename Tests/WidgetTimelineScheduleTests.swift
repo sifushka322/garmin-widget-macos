@@ -21,7 +21,15 @@ struct WidgetTimelineScheduleTests {
         check(zip(dates.dropLast(), dates.dropLast().dropFirst()).allSatisfy { $1.timeIntervalSince($0) == 60 }, "Intermediate estimates are one minute apart; exact expiry is a separate final entry")
         let midway = MetricFormatter(snapshot: snapshot, language: .en, now: now.addingTimeInterval(1800))
         check(midway.display("bodyBattery") == "≈54", "Widget display changes without replacing the saved Garmin reading")
-        check(midway.context("bodyBattery")?.contains("Linear estimate") == true, "Estimate provenance remains explicit")
+        let provenance = midway.context("bodyBattery") ?? ""
+        check(provenance.hasPrefix("Local linear estimate from recent Garmin readings. "),
+              "Estimate provenance explicitly names a local calculation and Garmin source readings")
+        let actualContext = MetricFormatter(snapshot: snapshot, language: .en, now: now).context("bodyBattery") ?? ""
+        check(!actualContext.isEmpty && provenance.hasSuffix(actualContext),
+              "Estimate provenance preserves the original measured-at description")
+        check(midway.help("bodyBattery").contains(provenance) &&
+              midway.accessibility("bodyBattery").contains(provenance),
+              "Help and accessibility both disclose the local estimate and actual measurement time")
         check(snapshot.metrics["bodyBattery"] == anchor, "Display calculation preserves actual sample")
         let expired = MetricFormatter(snapshot: snapshot, language: .en, now: dates.last!)
         check(expired.display("bodyBattery") == "60" && !expired.isEstimated("bodyBattery"), "Expired timeline restores last actual value")
