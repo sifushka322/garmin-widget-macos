@@ -17,8 +17,8 @@ struct WidgetTimelineScheduleTests {
         var data = WidgetData(preferences: .init(), snapshot: snapshot, isConnected: true)
         let dates = WidgetTimelineSchedule.dates(data: data, slot: .day, from: now)
         check(dates.count == 62, "One current, 60 minute estimates, and one expiry entry")
-        check(dates.first == now && dates.last == now.addingTimeInterval(3660), "Schedule covers the bounded estimate and its expiry")
-        check(zip(dates, dates.dropFirst()).allSatisfy { $1.timeIntervalSince($0) == 60 }, "Intermediate entries are one minute apart")
+        check(dates.first == now && dates.last == now.addingTimeInterval(3600).addingTimeInterval(0.001), "Schedule covers the bounded estimate and its expiry")
+        check(zip(dates.dropLast(), dates.dropLast().dropFirst()).allSatisfy { $1.timeIntervalSince($0) == 60 }, "Intermediate estimates are one minute apart; exact expiry is a separate final entry")
         let midway = MetricFormatter(snapshot: snapshot, language: .en, now: now.addingTimeInterval(1800))
         check(midway.display("bodyBattery") == "≈54", "Widget display changes without replacing the saved Garmin reading")
         check(midway.context("bodyBattery")?.contains("Linear estimate") == true, "Estimate provenance remains explicit")
@@ -45,6 +45,7 @@ struct WidgetTimelineScheduleTests {
         let rollback = now.addingTimeInterval(-30)
         check(BodyBatteryDisplaySchedule.dates(snapshot: snapshot, from: rollback) == [rollback], "Clock rollback cannot project a future anchor")
 
+        data.snapshot = snapshot
         var sport = data
         for id in WidgetMetricPolicy.sport where id != "bodyBattery" { sport.snapshot.metrics[id] = .init(value: 50) }
         check(WidgetTimelineSchedule.dates(data: sport, slot: .sport, family: .systemSmall, from: now) == [now], "Small sport displays readiness only, so hidden Body Battery has no timeline")

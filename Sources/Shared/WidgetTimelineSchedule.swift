@@ -9,7 +9,7 @@ enum BodyBatteryDisplaySchedule {
                       timeZone: TimeZone = .autoupdatingCurrent) -> [Date] {
         guard isVisible, metricID == "bodyBattery", !snapshot.isDemo,
               let projection = snapshot.bodyBatteryProjection,
-              let anchor = projection.anchor.measuredAt, now >= anchor,
+              let anchor = projection.anchor.measuredAt, now >= anchor, now <= projection.validUntil,
               snapshot.metrics["bodyBattery"] == projection.anchor,
               snapshot.sourceDate == SyncPolicy.sourceDay(for: now, timeZone: timeZone),
               snapshot.sourceDate == SyncPolicy.sourceDay(for: anchor, timeZone: timeZone) else { return [now] }
@@ -22,7 +22,11 @@ enum BodyBatteryDisplaySchedule {
         // No repeating timer survives the final entry or the source-day boundary.
         for minute in max(1, Int(elapsedMinutes) + 1)...61 {
             let tick = anchor.addingTimeInterval(Double(minute) * 60)
-            let date = midnight.map { min(tick, $0) } ?? tick
+            // value(at:) accepts the endpoint itself. The first invalid instant
+            // must restore the actual value instead of retaining it another minute.
+            let expiry = projection.validUntil.addingTimeInterval(0.001)
+            let boundedTick = min(tick, expiry)
+            let date = midnight.map { min(boundedTick, $0) } ?? boundedTick
             if snapshot.bodyBatteryEstimate(at: date, timeZone: timeZone) == nil {
                 if dates.count > 1 || snapshot.bodyBatteryEstimate(at: now, timeZone: timeZone) != nil { dates.append(date) }
                 break
