@@ -154,22 +154,46 @@ private struct MainMetricView: View {
     private var theme: DeskMetricTheme { .metric(metricID, style: style) }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 20) {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            content(at: context.date)
+        }
+    }
+
+    private func content(at now: Date) -> some View {
+        let formatter = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language, now: now)
+        let explanation = MetricExplanation.make(metricID: metricID, snapshot: store.snapshot,
+                                                   language: store.preferences.language, now: now)
+        return HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 14) {
-                Label(store.text(definition.titleKey), systemImage: definition.symbol)
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(theme.secondaryInk)
-                    .lineLimit(2)
-                MetricValueLabel(value: store.displayValue(metricID), size: compact ? 50 : 60)
+                HStack(alignment: .top, spacing: 8) {
+                    Label(store.text(definition.titleKey), systemImage: definition.symbol)
+                        .font(.system(size: 13, weight: .medium)).foregroundStyle(theme.secondaryInk)
+                        .lineLimit(2)
+                    if let explanation {
+                        MetricInfoButton(explanation: explanation, title: store.text(definition.titleKey),
+                                         language: store.preferences.language)
+                            .foregroundStyle(theme.secondaryInk)
+                    }
+                }
+                MetricValueLabel(value: formatter.display(metricID), size: compact ? 50 : 60)
                     .foregroundStyle(theme.ink)
                     .contentTransition(.numericText())
-                if let context = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language).context(metricID) {
+                if let explanation {
+                    Text(explanation.status).font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.ink).fixedSize(horizontal: false, vertical: true)
+                    if let supporting = explanation.supportingText {
+                        Text(supporting).font(.system(size: 11)).foregroundStyle(theme.secondaryInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if let context = formatter.context(metricID) {
                     Text(context).font(.system(size: 11, weight: .medium)).foregroundStyle(theme.secondaryInk)
-                } else if store.numericValue(metricID) == nil {
+                } else if formatter.value(metricID) == nil {
                     Text(store.text("data.empty")).font(.caption).foregroundStyle(theme.secondaryInk)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
             ZStack {
-                if let progress = store.progress(metricID) {
+                if let progress = formatter.progress(metricID) {
                     Circle().strokeBorder(theme.ink.opacity(0.13), lineWidth: 7)
                     Circle().trim(from: 0, to: progress)
                         .stroke(theme.highlight, style: StrokeStyle(lineWidth: 7, lineCap: .round))
@@ -187,7 +211,7 @@ private struct MainMetricView: View {
         .frame(maxWidth: .infinity, minHeight: compact ? 154 : 176, alignment: .leading)
         .background(theme.background, in: RoundedRectangle(cornerRadius: 24))
         .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(theme.ink.opacity(0.10)))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -202,7 +226,16 @@ private struct SmallMetricView: View {
     private var accent: Color { colorScheme == .dark ? theme.highlight : theme.top }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            content(at: context.date)
+        }
+    }
+
+    private func content(at now: Date) -> some View {
+        let formatter = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language, now: now)
+        let explanation = MetricExplanation.make(metricID: metricID, snapshot: store.snapshot,
+                                                   language: store.preferences.language, now: now)
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 8) {
                 Image(systemName: definition.symbol).font(.system(size: 13, weight: .medium))
                     .foregroundStyle(accent).frame(width: 28, height: 28)
@@ -210,10 +243,22 @@ private struct SmallMetricView: View {
                     .accessibilityHidden(true)
                 Text(store.text(definition.titleKey)).font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                if let explanation {
+                    MetricInfoButton(explanation: explanation, title: store.text(definition.titleKey),
+                                     language: store.preferences.language).foregroundStyle(.secondary)
+                }
             }
-            MetricValueLabel(value: store.displayValue(metricID), size: compact ? 28 : 32)
+            MetricValueLabel(value: formatter.display(metricID), size: compact ? 28 : 32)
                 .foregroundStyle(.primary)
-            if let context = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language).context(metricID) {
+            if let explanation {
+                Text(explanation.status).font(.system(size: 11, weight: .medium)).foregroundStyle(accent)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let supporting = explanation.supportingText {
+                    Text(supporting).font(.system(size: 10)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if let context = formatter.context(metricID) {
                 Text(context).font(.system(size: 10)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -222,7 +267,52 @@ private struct SmallMetricView: View {
         .padding(compact ? 16 : 18)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 20))
         .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(accent.opacity(0.10)))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct MetricInfoButton: View {
+    let explanation: MetricExplanation
+    let title: String
+    let language: AppLanguage
+    @State private var isPresented = false
+
+    var body: some View {
+        Button { isPresented.toggle() } label: {
+            Image(systemName: "info.circle").font(.system(size: 13))
+                .frame(width: 24, height: 24).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(MetricExplanation.helpLabel(language: language))
+        .accessibilityLabel(title + ": " + MetricExplanation.helpLabel(language: language))
+        .popover(isPresented: $isPresented) {
+            MetricExplanationPanel(explanation: explanation, title: title, language: language)
+        }
+    }
+}
+
+/// Shared by the actual popover and its synthetic visual fixture.
+struct MetricExplanationPanel: View {
+    let explanation: MetricExplanation
+    let title: String
+    let language: AppLanguage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.headline)
+            Text(explanation.status).font(.subheadline.weight(.semibold))
+            if let supporting = explanation.supportingText {
+                Text(supporting).font(.callout).foregroundStyle(.secondary)
+            }
+            Text(explanation.detail).font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+            if let url = explanation.sourceURL {
+                Link(MetricExplanation.sourceLabel(language: language), destination: url).font(.callout)
+            }
+        }
+        .textSelection(.enabled).padding(20).frame(width: 360)
+        .foregroundStyle(.primary)
+        .environment(\.locale, language.locale)
     }
 }
 

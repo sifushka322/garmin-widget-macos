@@ -248,6 +248,13 @@ struct SharedModelTests {
         progress.groupUpdatedAt = ["stats": old, "body_battery": old]
         try expect(progress.metricIsStale("steps", at: now, staleInterval: 3600), "Steps depend on recent sync")
         try expect(progress.metricIsStale("bodyBattery", at: now, staleInterval: 3600), "Body Battery depends on recent sync")
+        progress.groupUpdatedAt["body_battery"] = now
+        progress.metrics["bodyBattery"]?.measuredAt = now.addingTimeInterval(-7200)
+        try expect(progress.metricIsStale("bodyBattery", at: now, staleInterval: 3600),
+                   "A fresh retrieval must not conceal an old Body Battery measurement")
+        progress.metrics["bodyBattery"]?.measuredAt = now.addingTimeInterval(-60)
+        try expect(!progress.metricIsStale("bodyBattery", at: now, staleInterval: 3600),
+                   "A recent retrieved Body Battery measurement remains current")
         var weight = snapshot(["weight": 70])
         weight.metrics["weight"]?.measuredAt = old
         try expect(MetricFormatter(snapshot: weight, language: .en).context("weight")?.hasPrefix("Measured ") == true,

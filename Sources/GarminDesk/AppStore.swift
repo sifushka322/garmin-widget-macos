@@ -62,10 +62,9 @@ final class AppStore: ObservableObject {
         let prefsURL = supportDirectory.appendingPathComponent("preferences.json")
         preferences = (try? Data(contentsOf: prefsURL)).flatMap { try? AppJSON.decoder.decode(AppPreferences.self, from: $0) } ?? AppPreferences()
         let cacheURL = supportDirectory.appendingPathComponent("snapshot.json")
-        snapshot = (try? Data(contentsOf: cacheURL)).flatMap { try? AppJSON.decoder.decode(GarminSnapshot.self, from: $0) }
-            ?? .empty
-        if snapshot.isDemo || !defaults.bool(forKey: "GarminDeskWebConnected") { snapshot = .empty }
-        trainingTimeline = snapshot.trainingTimeline
+        let cachedSnapshotData = try? Data(contentsOf: cacheURL)
+        snapshot = .empty
+        trainingTimeline = nil
         webConnected = defaults.bool(forKey: "GarminDeskWebConnected")
         let policyURL = supportDirectory.appendingPathComponent("sync-policy.json")
         let checkpoint = (try? Data(contentsOf: policyURL)).flatMap { try? AppJSON.decoder.decode(SyncPolicy.Checkpoint.self, from: $0) } ?? .init()
@@ -73,6 +72,15 @@ final class AppStore: ObservableObject {
         let groupURL = supportDirectory.appendingPathComponent("metric-groups.json")
         webCache = (try? Data(contentsOf: groupURL)).flatMap { try? AppJSON.decoder.decode(GarminWebCache.self, from: $0) } ?? .init()
         if webCache.version != 1 { webCache = .init() }
+        // Either cache file may be the last successful write from an account
+        // switch. Discard both sides of a conflict before an error handler can
+        // republish an unverified group's values without a profile response.
+        if PrivateSnapshotStore.ownersConflict(cachedSnapshotData, cache: webCache) { webCache = .init() }
+        if webConnected {
+            let day = SyncPolicy.sourceDay(for: clock?().wallTime ?? Date(), timeZone: sourceTimeZone())
+            snapshot = PrivateSnapshotStore.restore(cachedSnapshotData, cache: webCache, sourceDay: day)
+            trainingTimeline = snapshot.trainingTimeline
+        }
         // A missing/corrupt cache cannot inherit freshness from a separate policy
         // file, including an interrupted write from an older build.
         var restoredCheckpoint = webPolicy.checkpoint
@@ -354,9 +362,23 @@ final class AppStore: ObservableObject {
                             self.setTrainingIssue(nil, group: group)
                         } else {
                             guard GarminPayloadNormalizer.isRecognizedPayload(group: group.rawValue, payload: payload) else { throw GarminWebError.invalidResponse }
-                            let values = GarminPayloadNormalizer.normalize(group: group.rawValue, payload: payload)
-                            self.webCache.groups[group.rawValue] = GarminMetricGroupCache(sourceDay: day,
-                                retrievedAt: self.syncMoment().wallTime, metrics: values)
+                            let retrievedAt = self.syncMoment().wallTime
+                            var values = GarminPayloadNormalizer.normalize(group: group.rawValue, payload: payload, asOf: retrievedAt)
+                            var projection = group == .bodyBattery
+                                ? GarminPayloadNormalizer.bodyBatteryProjection(payload: payload, asOf: retrievedAt) : nil
+                            if group == .bodyBattery,
+                               let previous = self.webCache.groups[group.rawValue], previous.sourceDay == day,
+                               let old = previous.metrics["bodyBattery"], let oldDate = old.measuredAt,
+                               let newDate = values["bodyBattery"]?.measuredAt, oldDate > newDate {
+                                // A lagging response may contain an earlier series.
+                                // Keep the last actual sample and original trend expiry.
+                                values["bodyBattery"] = old
+                                projection = previous.bodyBatteryProjection
+                            }
+                            var cached = GarminMetricGroupCache(sourceDay: day, retrievedAt: retrievedAt, metrics: values)
+                            cached.bodyBatteryProjection = projection
+                            cached.metricContext = GarminPayloadNormalizer.metricContext(group: group.rawValue, payload: payload)
+                            self.webCache.groups[group.rawValue] = cached
                         }
                         successful.insert(group)
                     } catch GarminWebError.invalidResponse {
@@ -402,7 +424,7 @@ final class AppStore: ObservableObject {
         let current = webCache.snapshot(sourceDay: sourceDay, fallback: snapshot, warnings: warnings)
         guard !current.isDemo else { return }
         snapshot = current
-        do { try writePrivate(AppJSON.encoder.encode(current), name: "snapshot.json") }
+        do { try writePrivate(PrivateSnapshotStore.encode(current, accountDisplayName: webCache.accountDisplayName), name: "snapshot.json") }
         catch { if lastErrorKey == nil { lastErrorKey = "error.storage" } }
     }
     private func persistWebState() {

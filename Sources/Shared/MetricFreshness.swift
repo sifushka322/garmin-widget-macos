@@ -23,6 +23,12 @@ extension GarminSnapshot {
     func metricUpdatedAt(_ id: String) -> Date? {
         if metrics[id] == nil { return retainedMetrics[id]?.retrievedAt }
         guard metrics[id] != nil else { return nil }
+        if id == "bodyBattery" {
+            // Before the source field existed, only the daily report supplied
+            // Body Battery. An unrelated older stats fetch must not age it.
+            let group = bodyBatterySourceGroup ?? "body_battery"
+            return groupUpdatedAt[group] ?? (fetchedAt == .distantPast ? nil : fetchedAt)
+        }
         let groups = GarminWebAPI.requiredGroups(metricIDs: [id]).subtracting([.profile, .devices])
         // Daily stats owns resting HR whenever it supplies the value.
         let stamps = groups.compactMap { groupUpdatedAt[$0.rawValue] }
@@ -35,5 +41,8 @@ extension GarminSnapshot {
               let updated = metricUpdatedAt(id) else { return false }
         return retainedMetrics[id] != nil || sourceDate != SyncPolicy.sourceDay(for: now, timeZone: timeZone)
             || now.timeIntervalSince(updated) > staleInterval
+            // Re-fetching the same old Body Battery sample does not make the
+            // watch measurement current. Keep retrieval and sample time distinct.
+            || (id == "bodyBattery" && visibleReading(id)?.measuredAt.map { now.timeIntervalSince($0) > staleInterval } == true)
     }
 }

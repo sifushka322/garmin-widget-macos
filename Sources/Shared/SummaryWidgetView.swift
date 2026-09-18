@@ -7,7 +7,7 @@ struct SummaryWidgetView: View {
     let date: Date
     let family: WidgetFamily
     private var language: AppLanguage { data.preferences.language }
-    private var formatter: MetricFormatter { .init(snapshot: data.snapshot, language: language) }
+    private var formatter: MetricFormatter { .init(snapshot: data.snapshot, language: language, now: date) }
     private var theme: DeskMetricTheme { .summary(appearance: data.preferences.widgetAppearance) }
     private var presentation: WidgetPresentation { .init(snapshot: data.snapshot, language: language, now: date) }
     private var selection: WidgetMetricSelection {
@@ -70,7 +70,7 @@ struct SummaryWidgetView: View {
                 .lineLimit(1).minimumScaleFactor(0.8)
             value(id, size: size)
         }
-        .help(formatter.context(id) ?? "")
+        .help(formatter.help(id))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibility(id))
     }
@@ -83,7 +83,7 @@ struct SummaryWidgetView: View {
             value(id, size: size)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .help(formatter.context(id) ?? "")
+        .help(formatter.help(id))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibility(id))
     }
@@ -91,6 +91,10 @@ struct SummaryWidgetView: View {
     private func value(_ id: String, size: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             MetricValueLabel(value: formatter.display(id), size: size).foregroundStyle(theme.ink)
+            if let status = formatter.interpretation(id)?.status {
+                Text(status).font(.system(size: 8, weight: .medium)).foregroundStyle(theme.secondaryInk)
+                    .lineLimit(1).minimumScaleFactor(0.75)
+            }
             if let period = presentation.period(id) {
                 Text(period).font(.system(size: 8)).foregroundStyle(theme.secondaryInk)
                     .lineLimit(1).minimumScaleFactor(0.8)
@@ -110,13 +114,12 @@ struct SummaryWidgetView: View {
             MetricValueLabel(value: formatter.display(id), size: 20).foregroundStyle(theme.ink)
         }
         .lineLimit(1).minimumScaleFactor(0.75)
-        .help(formatter.context(id) ?? "")
+        .help(formatter.help(id))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibility(id))
     }
 
     private func accessibility(_ id: String) -> String {
-        ([text(MetricDefinition.find(id).titleKey) + ": " + formatter.display(id)]
-            + [formatter.context(id)].compactMap { $0 }).joined(separator: ". ")
+        formatter.accessibility(id)
     }
 }

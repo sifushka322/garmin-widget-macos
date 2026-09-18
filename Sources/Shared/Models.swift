@@ -290,6 +290,9 @@ struct GarminSnapshot: Codable {
     var trainingTimeline: TrainingTimelineSnapshot?
     var retainedMetrics: [String: RetainedMetricReading] = [:]
     var metricChangedAt: [String: Date] = [:]
+    var metricContext: GarminMetricContext? = nil
+    var bodyBatteryProjection: BodyBatteryProjection?
+    var bodyBatterySourceGroup: String?
 
     init(fetchedAt: Date, sourceDate: String, devices: [String], metrics: [String: MetricReading], warnings: [String] = [], isDemo: Bool = false, groupUpdatedAt: [String: Date] = [:], trainingTimeline: TrainingTimelineSnapshot? = nil) {
         self.fetchedAt = fetchedAt; self.sourceDate = sourceDate; self.devices = devices
@@ -298,7 +301,7 @@ struct GarminSnapshot: Codable {
         self.trainingTimeline = trainingTimeline
     }
 
-    enum CodingKeys: String, CodingKey { case fetchedAt, sourceDate, devices, metrics, warnings, isDemo, groupUpdatedAt, trainingTimeline, retainedMetrics, metricChangedAt }
+    enum CodingKeys: String, CodingKey { case fetchedAt, sourceDate, devices, metrics, warnings, isDemo, groupUpdatedAt, trainingTimeline, retainedMetrics, metricChangedAt, metricContext, bodyBatteryProjection, bodyBatterySourceGroup }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         fetchedAt = try c.decode(Date.self, forKey: .fetchedAt)
@@ -311,6 +314,9 @@ struct GarminSnapshot: Codable {
         trainingTimeline = try c.decodeIfPresent(TrainingTimelineSnapshot.self, forKey: .trainingTimeline)
         retainedMetrics = try c.decodeIfPresent([String: RetainedMetricReading].self, forKey: .retainedMetrics) ?? [:]
         metricChangedAt = try c.decodeIfPresent([String: Date].self, forKey: .metricChangedAt) ?? [:]
+        metricContext = try c.decodeIfPresent(GarminMetricContext.self, forKey: .metricContext)
+        bodyBatteryProjection = try c.decodeIfPresent(BodyBatteryProjection.self, forKey: .bodyBatteryProjection)
+        bodyBatterySourceGroup = try c.decodeIfPresent(String.self, forKey: .bodyBatterySourceGroup)
     }
 
     static var demo: GarminSnapshot {

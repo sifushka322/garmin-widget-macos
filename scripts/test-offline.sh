@@ -26,7 +26,7 @@ for source in "${shared[@]}"; do
     model_sources+=("$source")
 done
 frameworks=(-framework SwiftUI -framework AppKit -framework WidgetKit -framework WebKit -framework Security -framework ServiceManagement)
-for suite in SharedModelTests WidgetConfigurationTests WidgetMetricPolicyTests TrainingCalendarTests TrainingPresentationTests LocalizationTests SyncPolicyTests GarminPayloadNormalizerTests TrainingModelsTests; do
+for suite in SharedModelTests WidgetConfigurationTests WidgetMetricPolicyTests TrainingCalendarTests TrainingPresentationTests LocalizationTests SyncPolicyTests GarminPayloadNormalizerTests TrainingModelsTests MetricExplanationTests BodyBatteryProjectionTests WidgetTimelineScheduleTests; do
     suite_sources=("${model_sources[@]}")
     if [[ "$suite" == WidgetConfigurationTests ]]; then suite_sources=("${shared[@]}"); fi
     printf 'Compiling and running %s\n' "$suite"
@@ -34,7 +34,8 @@ for suite in SharedModelTests WidgetConfigurationTests WidgetMetricPolicyTests T
     "build/audit/$suite"
 done
 host=(Sources/GarminDesk/AppStore.swift Sources/GarminDesk/PythonBridge.swift
-    Sources/GarminDesk/GarminWebSession.swift Sources/GarminDesk/GarminWebTransport.swift)
+    Sources/GarminDesk/GarminWebSession.swift Sources/GarminDesk/GarminWebTransport.swift
+    Sources/GarminDesk/PrivateSnapshotStore.swift)
 for suite in GarminWebBoundaryTests AppStoreSyncTests; do
     printf 'Compiling and running %s\n' "$suite"
     xcrun swiftc "${options[@]}" -module-name "$suite" "${model_sources[@]}" "${host[@]}" "Tests/$suite.swift" "${frameworks[@]}" -o "build/audit/$suite"
@@ -50,6 +51,12 @@ xcrun swiftc "${options[@]}" -module-name RenderApp "${shared[@]}" "${host[@]}" 
     "${frameworks[@]}" -o build/audit/render-app
 printf 'Rendering app visual fixtures\n'
 build/audit/render-app build/audit/app
+printf 'Compiling and running isolated menu-bar lifecycle checks\n'
+xcrun swiftc "${options[@]}" -D GARMIN_LIFECYCLE_TEST -module-name MenuBarLifecycleTests \
+    "${shared[@]}" "${host[@]}" Sources/GarminDesk/Views.swift Sources/GarminDesk/TrainingTimelineView.swift \
+    Sources/GarminDesk/GarminDeskApp.swift Tests/MenuBarLifecycleTests.swift \
+    "${frameworks[@]}" -o build/audit/MenuBarLifecycleTests
+build/audit/MenuBarLifecycleTests
 printf 'Compiling calendar visual fixtures\n'
 xcrun swiftc "${options[@]}" -module-name RenderTrainingCalendar "${shared[@]}" Tests/RenderTrainingCalendar.swift \
     "${frameworks[@]}" -o build/audit/render-training-calendar

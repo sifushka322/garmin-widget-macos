@@ -38,12 +38,16 @@ App preferences store language, app appearance, widget appearance, Summary’s o
 A Mac with a compatible Swift compiler and macOS SDK is required. The script compiles native code directly using `xcrun swiftc`, without Swift Package Manager.
 
 ```bash
-APP_VERSION=0.5.0 APP_BUILD=11 CONFIGURATION=release bash scripts/build-app.sh
+APP_VERSION=0.6.0 APP_BUILD=12 CONFIGURATION=release bash scripts/build-app.sh
 bash scripts/verify-release.sh build/GarminDesk.app
 bash scripts/package-release.sh
 ```
 
 `build-app.sh` builds the app and extension, generates the icon, applies ad-hoc signatures, and verifies the bundle. `package-release.sh` packages the built app into ZIP/DMG files with SHA-256 checksums; it does not install the app or publish a release.
+
+Current source builds the [0.6.0 candidate](releases/0.6.0.md). It runs in the menu
+bar without a Dock icon; use its watch icon for settings, refresh and Quit. The
+0.5.0 installation description above refers to the existing published release.
 
 | Variable | Purpose |
 | --- | --- |

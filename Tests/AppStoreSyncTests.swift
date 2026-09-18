@@ -484,7 +484,7 @@ struct AppStoreSyncTests {
         rig.store.sync(trigger: .automatic); try await settled(rig.store)
         try expect(rig.web.calls.filter { $0 == "activities" }.count == 2, "Activities follow the selected refresh cadence")
         try expect(rig.web.calls.filter { $0.hasPrefix("planned_workouts.") }.count == 2, "Calendar must not follow the faster activity cadence")
-        let persisted = try AppJSON.decoder.decode(GarminSnapshot.self, from: Data(contentsOf: rig.directory.appendingPathComponent("snapshot.json")))
+        let persisted = try AppJSON.decoder.decode(GarminPrivateSnapshot.self, from: Data(contentsOf: rig.directory.appendingPathComponent("snapshot.json"))).snapshot
         try expect(persisted.trainingTimeline == rig.store.trainingTimeline, "Training data must survive the same private snapshot contract used by widgets")
     }
 
@@ -541,8 +541,10 @@ struct AppStoreSyncTests {
 
     static func main() async {
         do {
+            try await testBodyBatteryRefreshAndRegression()
             try await testEmptyUnchangedAndRecovery()
             try await testAccountOwnershipAcrossRestart()
+            try await testPrivateSnapshotOwnerMismatchAndFailedWrite()
             try await testPolicyBeforeWebsite()
             try await testBootstrapExpiration()
             try await testFixedWidgetsAndIndependentCadences()
@@ -585,6 +587,104 @@ struct AppStoreSyncTests {
         }
         let rig = try Rig(); defer { rig.clean() }
         try expect(!rig.store.snapshot.isDemo && rig.store.snapshot.metrics.isEmpty, "A connected installation with missing cache cannot show invented demo measurements")
+    }
+
+    static func testPrivateSnapshotOwnerMismatchAndFailedWrite() async throws {
+        let now = TestClock().moment.wallTime
+        let day = SyncPolicy.sourceDay(for: now, timeZone: TimeZone(secondsFromGMT: 0)!)
+        var previous = GarminSnapshot(fetchedAt: now, sourceDate: day, devices: [],
+                                      metrics: ["sleepDuration": .init(value: 999)])
+        previous.retainedMetrics["hrv"] = .init(reading: .init(value: 888), sourceDate: "2026-09-14", retrievedAt: now, changedAt: now)
+        let oldBytes = try PrivateSnapshotStore.encode(previous, accountDisplayName: "previous-account")
+        var currentCache = GarminWebCache(accountDisplayName: "fixture-user")
+        currentCache.groups["stats"] = .init(sourceDay: day, retrievedAt: now, metrics: ["steps": .init(value: 42)])
+
+        try expect(!PrivateSnapshotStore.restore(oldBytes, cache: currentCache, sourceDay: day).hasMeasurements,
+                   "Conflicting private owners must fail closed because either file could be the newer successful write")
+        for saved in [try AppJSON.encoder.encode(previous), Data("invalid".utf8)] {
+            let restored = PrivateSnapshotStore.restore(saved, cache: currentCache, sourceDay: day)
+            try expect(restored.metrics["steps"]?.value == 42, "Legacy/damaged snapshot must recover verified group readings")
+            try expect(restored.visibleReading("sleepDuration") == nil && restored.visibleReading("hrv") == nil,
+                       "Unowned or differently owned current and retained readings must never enter fallback")
+        }
+        let matchingBytes = try PrivateSnapshotStore.encode(previous, accountDisplayName: "fixture-user")
+        let matching = PrivateSnapshotStore.restore(matchingBytes, cache: currentCache, sourceDay: day)
+        try expect(matching.visibleReading("sleepDuration")?.value == 999 && matching.visibleReading("hrv")?.value == 888,
+                   "Matching ownership must preserve current and last-known provenance")
+        try expect(!PrivateSnapshotStore.restore(matchingBytes, cache: .init(), sourceDay: day).hasMeasurements,
+                   "A snapshot cannot establish ownership when the group cache is missing")
+
+        let rig = try Rig(groups: GarminWebCache(accountDisplayName: "previous-account")); defer { rig.clean() }
+        let snapshotURL = rig.directory.appendingPathComponent("snapshot.json")
+        // An occupied directory deterministically fails the snapshot write while
+        // metric-groups.json remains writable. Restoring old bytes afterwards
+        // models an interrupted/denied replacement that left account A on disk.
+        try FileManager.default.createDirectory(at: snapshotURL, withIntermediateDirectories: false)
+        rig.web.payloads["sleep"] = ["unexpected": true]
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        let cache = try AppJSON.decoder.decode(GarminWebCache.self, from: Data(contentsOf: rig.directory.appendingPathComponent("metric-groups.json")))
+        try expect(cache.accountDisplayName == "fixture-user", "A separately successful cache write must persist the newly verified owner")
+        var blockedTargetIsDirectory: ObjCBool = false
+        try expect(FileManager.default.fileExists(atPath: snapshotURL.path, isDirectory: &blockedTargetIsDirectory) && blockedTargetIsDirectory.boolValue,
+                   "The fixture must prove snapshot replacement failed while the group write succeeded")
+        try FileManager.default.removeItem(at: snapshotURL)
+        try oldBytes.write(to: snapshotURL)
+        let web = MockWeb()
+        web.payloads["sleep"] = ["unexpected": true]
+        let reopened = AppStore(supportDirectory: rig.directory, webSession: web, defaults: rig.defaults,
+                                clock: { rig.clock.moment }, sourceTimeZone: { TimeZone(secondsFromGMT: 0)! },
+                                automaticScheduling: false, writesWidgetData: false)
+        defer { reopened.cancelLogin(resumeAutomatic: false) }
+        try expect(reopened.snapshot.visibleReading("sleepDuration") == nil && reopened.snapshot.visibleReading("hrv") == nil,
+                   "Relaunch after a lost snapshot write must reject the previous account before any website request")
+        try expect(!reopened.snapshot.hasMeasurements, "Conflicting files must not guess which account owns the current session")
+        rig.clock.advance(60)
+        web.prepareError = .network
+        reopened.sync(trigger: .manual); try await settled(reopened)
+        try expect(web.prepares == 1 && !reopened.snapshot.hasMeasurements,
+                   "A failure before profile verification must not republish either side of an owner conflict")
+        web.prepareError = nil
+        rig.clock.advance(1800)
+        reopened.sync(trigger: .manual); try await settled(reopened)
+        try expect(reopened.snapshot.visibleReading("sleepDuration") == nil && reopened.snapshot.visibleReading("hrv") == nil,
+                   "A partial new-account refresh must not resurrect the rejected old snapshot")
+        try expect(reopened.snapshot.metrics["steps"]?.value == 123, "Profile verification must restore the new account's valid groups")
+        let persisted = try AppJSON.decoder.decode(GarminPrivateSnapshot.self, from: Data(contentsOf: snapshotURL))
+        try expect(persisted.accountDisplayName == "fixture-user", "The next successful private snapshot write must carry its owner")
+        let widgetBytes = try AppJSON.encoder.encode(WidgetData(preferences: reopened.preferences, snapshot: reopened.snapshot, isConnected: true))
+        let widgetText = String(decoding: widgetBytes, as: UTF8.self)
+        try expect(!widgetText.contains("accountDisplayName") && !widgetText.contains("fixture-user") && !widgetText.contains("previous-account"),
+                   "Private snapshot ownership must never be serialized into the widget payload")
+    }
+
+    static func testBodyBatteryRefreshAndRegression() async throws {
+        let rig = try Rig(); defer { rig.clean() }
+        let now = rig.clock.moment.wallTime
+        func payload(_ offset: TimeInterval, _ value: Double) -> [[String: Any]] {
+            [["bodyBatteryValuesArray": [[now.addingTimeInterval(offset).timeIntervalSince1970 * 1000, value]]]]
+        }
+        rig.web.payloads["body_battery"] = payload(-180, 70)
+        rig.store.sync(); try await settled(rig.store)
+        try expect(rig.store.snapshot.metrics["bodyBattery"] == .init(value: 70, measuredAt: now.addingTimeInterval(-180)),
+                   "Body Battery retains actual sample time after successful sync")
+        rig.clock.advance(60)
+        rig.web.payloads["body_battery"] = payload(-600, 80)
+        rig.store.sync(); try await settled(rig.store)
+        try expect(rig.store.snapshot.metrics["bodyBattery"]?.value == 70,
+                   "An older report received later must not roll Body Battery backwards")
+        rig.clock.advance(60)
+        rig.web.payloads["body_battery"] = payload(60, 65)
+        rig.store.sync(); try await settled(rig.store)
+        try expect(rig.store.snapshot.metrics["bodyBattery"] == .init(value: 65, measuredAt: now.addingTimeInterval(60)),
+                   "A later actual sample replaces the old Body Battery")
+        rig.clock.advance(60)
+        rig.web.payloads["body_battery"] = NSNull()
+        rig.web.payloads["stats"] = ["totalSteps": 123, "bodyBatteryMostRecentValue": 63]
+        rig.store.sync(); try await settled(rig.store)
+        try expect(rig.store.snapshot.metrics["bodyBattery"] == .init(value: 63) && rig.store.snapshot.bodyBatterySourceGroup == "stats",
+                   "Summary supplies latest Body Battery if daily report is empty without inventing its sample time")
+        try expect(rig.store.snapshot.bodyBatteryProjection == nil,
+                   "An undated summary cannot inherit the previous series trend")
     }
 
     static func testEmptyUnchangedAndRecovery() async throws {

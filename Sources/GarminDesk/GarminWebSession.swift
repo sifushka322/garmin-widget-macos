@@ -114,6 +114,8 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
             self.window = window
         }
         window?.title = title + " · " + (webView.url?.host ?? connectHost)
+        if window?.isMiniaturized == true { window?.deminiaturize(nil) }
+        NSApp.unhide(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         isShowingSignIn = true

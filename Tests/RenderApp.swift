@@ -77,8 +77,9 @@ import SwiftUI
         for language in [AppLanguage.ru, .en] {
             store.preferences.language = language
             for dark in [false, true] {
-                for state in ["waiting", "retained", "unchanged", "network", "checking", "fresh", "stable-records"] {
+                for state in ["waiting", "retained", "unchanged", "network", "checking", "fresh", "stable-records", "sport-context", "sport-low-load", "hrv-context", "sport-ratio", "body-battery-estimated", "body-battery-expired"] {
                     navigation.widgetSlot = .overview
+                    store.preferences.summaryMetrics = AppPreferences.defaultSummaryMetrics
                     store.hasSession = true
                     store.isSyncing = state == "checking"
                     store.lastErrorKey = state == "network" ? "error.network" : nil
@@ -112,12 +113,50 @@ import SwiftUI
                         snapshot.retainedMetrics["bodyBattery"] = .init(reading: .init(value: 40), sourceDate: "2026-09-13", retrievedAt: old, changedAt: old)
                     }
                     if state == "network" { snapshot.warnings = ["network.connection"] }
+                    if state.hasPrefix("body-battery-") {
+                        navigation.widgetSlot = .day
+                        let anchor = MetricReading(value: 60, measuredAt: now.addingTimeInterval(state == "body-battery-estimated" ? -1800 : -7200))
+                        snapshot.metrics["bodyBattery"] = anchor
+                        snapshot.bodyBatteryProjection = .init(anchor: anchor, pointsPerHour: -12,
+                            validUntil: anchor.measuredAt!.addingTimeInterval(3600))
+                    }
+                    if ["sport-context", "sport-low-load", "hrv-context", "sport-ratio"].contains(state) {
+                        snapshot.metricContext = GarminMetricContext(trainingLoadLower: 350, trainingLoadUpper: 780,
+                            trainingStatus: "DETRAINING", hrvStatus: "BALANCED", hrvWeeklyAverage: 58,
+                            hrvBaselineLow: 49, hrvBaselineHigh: 72)
+                        if state == "sport-ratio" {
+                            snapshot.metricContext = GarminMetricContext(trainingStatus: "PRODUCTIVE",
+                                trainingLoadStatus: "OPTIMAL", trainingLoadRatio: 1.2)
+                        }
+                        snapshot.groupUpdatedAt["training"] = now
+                        snapshot.groupUpdatedAt["hrv"] = now
+                        if state == "hrv-context" {
+                            store.preferences.summaryMetrics = ["hrv", "trainingLoad", "sleepScore", "restingHeartRate"]
+                            // One low night must still show the received balanced weekly status.
+                            snapshot.metrics["hrv"] = .init(value: 32)
+                        } else {
+                            navigation.widgetSlot = .sport
+                            snapshot.metrics["trainingLoad"] = .init(value: state == "sport-low-load" ? 180 : 525)
+                        }
+                    }
                     store.snapshot = snapshot
                     try render(store, navigation: navigation, dark: dark, size: CGSize(width: 780, height: 760),
                                name: "state-\(state)-\(language.rawValue)-\(dark ? "dark" : "light")", output: output)
                     if state == "fresh" || state == "stable-records" {
                         try render(store, navigation: navigation, dark: dark, size: CGSize(width: 1100, height: 800),
                                    name: "wide-\(state)-\(language.rawValue)-\(dark ? "dark" : "light")", output: output)
+                    }
+                    if ["sport-context", "sport-low-load", "hrv-context", "sport-ratio"].contains(state) {
+                        try render(store, navigation: navigation, dark: dark, size: CGSize(width: 780, height: 620),
+                                   name: "minimum-\(state)-\(language.rawValue)-\(dark ? "dark" : "light")", output: output,
+                                   scrollOffset: state == "hrv-context" ? 0 : 180)
+                        let metricID = state == "hrv-context" ? "hrv" : "trainingLoad"
+                        guard let explanation = MetricExplanation.make(metricID: metricID, snapshot: snapshot,
+                                                                         language: language, now: now) else {
+                            fatalError("Synthetic context fixture must have an explanation")
+                        }
+                        try renderExplanation(explanation, metricID: metricID, language: language, dark: dark,
+                                              name: "explanation-\(state)-\(language.rawValue)-\(dark ? "dark" : "light")", output: output)
                     }
                 }
             }
@@ -169,5 +208,32 @@ import SwiftUI
 
     @MainActor private static func descendants(of view: NSView) -> [NSView] {
         view.subviews.flatMap { [$0] + descendants(of: $0) }
+    }
+
+    @MainActor private static func renderExplanation(_ explanation: MetricExplanation, metricID: String,
+                                                     language: AppLanguage, dark: Bool, name: String, output: URL) throws {
+        try autoreleasepool {
+            let panel = MetricExplanationPanel(explanation: explanation,
+                title: Localizer.text(MetricDefinition.find(metricID).titleKey, language: language), language: language)
+                .environment(\.colorScheme, dark ? .dark : .light)
+                .background(Color(nsColor: .controlBackgroundColor))
+            let host = NSHostingView(rootView: panel)
+            let size = host.fittingSize
+            // This is the actual popover body and its intrinsic height. The
+            // longest RU training explanation must fit on the minimum window.
+            guard size.width <= 361, size.height <= 560 else {
+                fatalError("Metric explanation does not fit minimum screen: \(size)")
+            }
+            let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            defer { window.contentView = nil; window.close() }
+            window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)!
+            window.contentView = host; host.frame = CGRect(origin: .zero, size: size)
+            window.displayIfNeeded(); host.layoutSubtreeIfNeeded()
+            guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { fatalError("No popover bitmap") }
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            guard let bytes = bitmap.representation(using: .png, properties: [:]) else { fatalError("No popover PNG") }
+            try bytes.write(to: output.appendingPathComponent(name + ".png"))
+        }
     }
 }

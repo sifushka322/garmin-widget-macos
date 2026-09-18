@@ -6,6 +6,9 @@ info="$app_path/Contents/Info.plist"
 widget="$app_path/Contents/PlugIns/GarminDeskWidgets.appex"
 /usr/bin/plutil -lint "$info" "$widget/Contents/Info.plist"
 /usr/bin/codesign --verify --deep --strict "$app_path"
+if [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$info")" != "true" ]]; then
+    printf 'The menu-bar application must declare LSUIElement=true.\n' >&2; exit 1
+fi
 test -s "$app_path/Contents/Resources/LICENSE.md"
 test -s "$app_path/Contents/Resources/NOTICE.md"
 architecture="$(/usr/bin/lipo -archs "$app_path/Contents/MacOS/GarminDesk")"

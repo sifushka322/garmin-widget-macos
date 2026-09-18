@@ -66,7 +66,7 @@ enum GarminWebAPI {
         for id in metricIDs {
             switch id {
             case "steps", "stepGoal", "distance", "calories", "activeCalories", "floors", "intensityMinutes", "restingHeartRate", "stress": groups.insert(.stats)
-            case "bodyBattery": groups.insert(.bodyBattery)
+            case "bodyBattery": groups.formUnion([.stats, .bodyBattery])
             case "sleepDuration", "sleepScore", "deepSleep", "lightSleep", "remSleep", "awakeSleep": groups.insert(.sleep)
             case "hrv": groups.insert(.hrv)
             case "spo2": groups.insert(.spo2)
@@ -87,6 +87,8 @@ struct GarminMetricGroupCache: Codable {
     var sourceDay: String
     var retrievedAt: Date
     var metrics: [String: MetricReading]
+    var metricContext: GarminMetricContext? = nil
+    var bodyBatteryProjection: BodyBatteryProjection?
 }
 
 struct GarminPastActivitiesCache: Codable {
@@ -154,12 +156,48 @@ struct GarminWebCache: Codable {
         var metrics: [String: MetricReading] = [:]
         var newest = Date.distantPast
         var retrievals: [String: Date] = [:]
+        var metricContext = GarminMetricContext()
         // Sorted order makes shared fields deterministic; stats owns daily resting HR.
         for key in groups.keys.sorted(by: { lhs, rhs in lhs == "stats" ? false : (rhs == "stats" ? true : lhs < rhs) }) {
             guard let group = groups[key], group.sourceDay == sourceDay else { continue }
             newest = max(newest, group.retrievedAt)
             retrievals[key] = group.retrievedAt
             metrics.merge(group.metrics) { _, current in current }
+            if let context = group.metricContext {
+                // Context travels with the same group and day as its reading.
+                if key == "training" {
+                    metricContext.trainingLoadLower = context.trainingLoadLower
+                    metricContext.trainingLoadUpper = context.trainingLoadUpper
+                    metricContext.trainingStatus = context.trainingStatus
+                    metricContext.trainingLoadStatus = context.trainingLoadStatus
+                    metricContext.trainingLoadRatio = context.trainingLoadRatio
+                } else if key == "hrv" {
+                    metricContext.hrvStatus = context.hrvStatus
+                    metricContext.hrvWeeklyAverage = context.hrvWeeklyAverage
+                    metricContext.hrvBaselineLow = context.hrvBaselineLow
+                    metricContext.hrvBaselineHigh = context.hrvBaselineHigh
+                }
+            }
+        }
+        // The summary's latest scalar may advance before the sparse daily report.
+        // Keep a recent timed report when the two disagree. Only use the scalar
+        // after a 20-minute report gap (a conservative product fallback, not proof
+        // of sample chronology). Never assign a report timestamp to another value.
+        let report = groups["body_battery"].flatMap { $0.sourceDay == sourceDay ? $0 : nil }
+        let summary = groups["stats"].flatMap { $0.sourceDay == sourceDay ? $0 : nil }
+        let reportReading = report?.metrics["bodyBattery"]
+        let summaryReading = summary?.metrics["bodyBattery"]
+        var batterySource: String?
+        if let recorded = reportReading {
+            if let scalar = summaryReading, scalar.value != recorded.value,
+               let measuredAt = recorded.measuredAt, let summary,
+               summary.retrievedAt.timeIntervalSince(measuredAt) > 20 * 60 {
+                metrics["bodyBattery"] = scalar; batterySource = "stats"
+            } else {
+                metrics["bodyBattery"] = recorded; batterySource = "body_battery"
+            }
+        } else if let scalar = summaryReading {
+            metrics["bodyBattery"] = scalar; batterySource = "stats"
         }
         // A known empty response means this day has no measurements. It must not
         // resurrect yesterday's data, or a stale value from an earlier same-day read.
@@ -172,6 +210,11 @@ struct GarminWebCache: Codable {
         }
         var result = GarminSnapshot(fetchedAt: max(newest, training?.fetchedAt ?? .distantPast), sourceDate: sourceDay, devices: devices, metrics: metrics,
                                     warnings: warnings, groupUpdatedAt: retrievals, trainingTimeline: training)
+        result.metricContext = metricContext == GarminMetricContext() ? nil : metricContext
+        result.bodyBatterySourceGroup = batterySource
+        if batterySource == "body_battery", report?.bodyBatteryProjection?.anchor == metrics["bodyBattery"] {
+            result.bodyBatteryProjection = report?.bodyBatteryProjection
+        }
         // A successful empty response means no current reading, not permission
         // to erase the last real value. Keep its original day and timestamps.
         var previous = fallback.isDemo ? [:] : fallback.retainedMetrics

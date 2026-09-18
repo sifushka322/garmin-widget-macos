@@ -37,7 +37,7 @@ enum GarminPayloadNormalizer {
         case "stats":
             return has(object, ["totalSteps", "dailyStepGoal", "totalDistanceMeters", "totalKilocalories",
                                 "activeKilocalories", "floorsAscended", "restingHeartRate", "averageStressLevel",
-                                "moderateIntensityMinutes", "vigorousIntensityMinutes", "calendarDate", "privacyProtected"])
+                                "moderateIntensityMinutes", "vigorousIntensityMinutes", "bodyBatteryMostRecentValue", "calendarDate", "privacyProtected"])
         case "heart":
             return has(object, ["heartRateValues", "restingHeartRate", "calendarDate"])
                 && (object["heartRateValues"] == nil || object["heartRateValues"] is NSNull || object["heartRateValues"] is [Any])
@@ -63,7 +63,7 @@ enum GarminPayloadNormalizer {
         }
     }
 
-    static func normalize(group: String, payload: Any) -> [String: MetricReading] {
+    static func normalize(group: String, payload: Any, asOf: Date? = nil) -> [String: MetricReading] {
         var result: [String: MetricReading] = [:]
         let object = dictionary(payload)
 
@@ -88,6 +88,9 @@ enum GarminPayloadNormalizer {
             }
             put("distance", object["totalDistanceMeters"], scale: 0.001)
             put("stress", object["averageStressLevel"], maximum: 100)
+            // Garmin's daily report can be sparse; its daily summary also exposes
+            // the current scalar. No documented measurement time accompanies it.
+            put("bodyBattery", object["bodyBatteryMostRecentValue"], maximum: 100)
             if let moderate = number(object["moderateIntensityMinutes"]),
                let vigorous = number(object["vigorousIntensityMinutes"]) {
                 put("intensityMinutes", moderate + 2 * vigorous)
@@ -98,9 +101,11 @@ enum GarminPayloadNormalizer {
             }
             put("restingHeartRate", object["restingHeartRate"], positive: true)
         case "body_battery":
-            let samples = records(payload).compactMap { latestPair($0["bodyBatteryValuesArray"], maximum: 100) }
-            if let sample = samples.max(by: { $0.date < $1.date }) {
-                put("bodyBattery", sample.value, measuredAt: sample.date, maximum: 100)
+            let samples = bodyBatterySamples(payload: payload).filter {
+                asOf == nil || $0.measuredAt! <= asOf!
+            }
+            if let sample = samples.max(by: { $0.measuredAt! < $1.measuredAt! }) {
+                put("bodyBattery", sample.value, measuredAt: sample.measuredAt, maximum: 100)
             }
         case "sleep":
             let sleep = dictionary(object["dailySleepDTO"])
@@ -147,12 +152,8 @@ enum GarminPayloadNormalizer {
                 ?? number(latest["vo2MaxValue"], positive: true)
             put("vo2Max", value, positive: true)
         case "training":
-            let latest = dictionary(object["mostRecentTrainingStatus"])
-            var entries = dictionary(latest["latestTrainingStatusData"]).values.compactMap { $0 as? [String: Any] }
-            let primary = entries.filter { trueBoolean($0["primaryTrainingDevice"]) }
-            if !primary.isEmpty { entries = primary }
-            guard entries.count == 1 else { return [:] }
-            put("trainingLoad", dictionary(entries[0]["acuteTrainingLoadDTO"])["dailyTrainingLoadAcute"])
+            guard let selected = trainingEntry(object) else { return [:] }
+            put("trainingLoad", dictionary(selected["acuteTrainingLoadDTO"])["dailyTrainingLoadAcute"])
         case "weight":
             let entries = records(object["dateWeightList"])
             let dated = entries.compactMap { entry -> (date: Date, entry: [String: Any])? in
@@ -171,6 +172,73 @@ enum GarminPayloadNormalizer {
             break
         }
         return result
+    }
+
+    static func bodyBatteryProjection(payload: Any, asOf: Date) -> BodyBatteryProjection? {
+        BodyBatteryProjection.make(samples: bodyBatterySamples(payload: payload), asOf: asOf)
+    }
+
+    private static func bodyBatterySamples(payload: Any) -> [MetricReading] {
+        records(payload).flatMap { entry in
+            (entry["bodyBatteryValuesArray"] as? [Any] ?? []).compactMap { raw -> MetricReading? in
+                // The daily report is a documented pair array. Do not guess the
+                // meaning of extra fields or turn a status string into a number.
+                guard let row = raw as? [Any], row.count == 2,
+                      let date = timestamp(row[0]), let value = number(row[1]), value <= 100 else { return nil }
+                return .init(value: value, measuredAt: date)
+            }
+        }
+    }
+
+    /// Preserve only known interpretation fields from the very same device
+    /// selection used for the metric. Unknown strings never enter the UI.
+    static func metricContext(group: String, payload: Any) -> GarminMetricContext? {
+        let object = dictionary(payload)
+        var result = GarminMetricContext()
+        switch group {
+        case "training":
+            guard let selected = trainingEntry(object) else { return nil }
+            let statuses: Set<String> = ["DETRAINING", "RECOVERY", "MAINTAINING", "PRODUCTIVE", "PEAKING",
+                                         "OVERREACHING", "UNPRODUCTIVE", "STRAINED", "NO_STATUS", "NONE", "PAUSED"]
+            result.trainingStatus = statusToken(selected["trainingStatusFeedbackPhrase"], allowed: statuses, numberedPhrase: true)
+                ?? statusToken(selected["trainingStatus"], allowed: statuses)
+            let acute = dictionary(selected["acuteTrainingLoadDTO"])
+            result.trainingLoadStatus = statusToken(acute["acwrStatus"], allowed: ["LOW", "OPTIMAL", "HIGH", "VERY_HIGH"])
+            result.trainingLoadRatio = number(acute["dailyAcuteChronicWorkloadRatio"])
+            // min/maxTrainingLoadChronic refer to chronic load. Do not present
+            // them as an acute-load target or classify an acute reading by them.
+        case "hrv":
+            let summary = dictionary(object["hrvSummary"])
+            result.hrvStatus = statusToken(summary["status"], allowed: ["BALANCED", "UNBALANCED", "LOW", "POOR", "NONE", "NO_STATUS"])
+            result.hrvWeeklyAverage = number(summary["weeklyAvg"], positive: true)
+            let baseline = dictionary(summary["baseline"])
+            if let low = number(baseline["balancedLow"], positive: true),
+               let high = number(baseline["balancedUpper"], positive: true), high > low {
+                result.hrvBaselineLow = low; result.hrvBaselineHigh = high
+            }
+        default: return nil
+        }
+        return result == GarminMetricContext() ? nil : result
+    }
+
+    private static func trainingEntry(_ object: [String: Any]) -> [String: Any]? {
+        let latest = dictionary(object["mostRecentTrainingStatus"])
+        var entries = dictionary(latest["latestTrainingStatusData"]).values.compactMap { $0 as? [String: Any] }
+        let primary = entries.filter { trueBoolean($0["primaryTrainingDevice"]) }
+        if !primary.isEmpty { entries = primary }
+        return entries.count == 1 ? entries[0] : nil
+    }
+
+    private static func statusToken(_ raw: Any?, allowed: Set<String>, numberedPhrase: Bool = false) -> String? {
+        guard let raw = raw as? String, raw.utf8.count <= 80 else { return nil }
+        var token = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if numberedPhrase, let split = token.lastIndex(of: "_") {
+            let suffix = token[token.index(after: split)...]
+            if !suffix.isEmpty && suffix.allSatisfy({ $0.isASCII && $0.isNumber }) {
+                token = String(token[..<split])
+            }
+        }
+        return allowed.contains(token) ? token : nil
     }
 
     static func deviceNames(from payload: Any) -> [String] {

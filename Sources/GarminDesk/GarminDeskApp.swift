@@ -1,8 +1,10 @@
 import AppKit
 import SwiftUI
 import Combine
+import CoreServices
 import Darwin
 
+#if !GARMIN_LIFECYCLE_TEST
 @main
 enum GarminDeskLauncher {
     @MainActor static func main() {
@@ -10,13 +12,17 @@ enum GarminDeskLauncher {
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
-        app.setActivationPolicy(.regular)
+        // Keep settings and Garmin's sign-in windows usable without adding a
+        // Dock icon. LSUIElement also prevents a Dock flash during launch.
+        app.setActivationPolicy(.accessory)
         withExtendedLifetime(delegate) { app.run() }
     }
 }
+#endif
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    private let storeFactory: @MainActor () -> AppStore
     private var store: AppStore!
     private let navigation = MainWindowNavigation()
     private var mainWindow: NSWindow?
@@ -24,10 +30,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var observers: [NSObjectProtocol] = []
     private var menuLanguage: String?
     private var pendingURL: URL?
+    private var statusItem: NSStatusItem?
+    private let statusMenu = NSMenu()
+    private let statusTextItem = NSMenuItem()
+    private let lastCheckedItem = NSMenuItem()
+    private let nextCheckItem = NSMenuItem()
+    private let refreshItem = NSMenuItem()
+    private let connectItem = NSMenuItem()
+
+    init(storeFactory: @escaping @MainActor () -> AppStore = { AppStore() }) {
+        self.storeFactory = storeFactory
+        super.init()
+    }
+
+#if GARMIN_LIFECYCLE_TEST
+    // This read-only seam is absent from release builds. The harness runs the
+    // real delegate/menu/window code with a fully isolated synthetic AppStore.
+    var lifecycleTestState: (store: AppStore?, navigation: MainWindowNavigation, window: NSWindow?, status: NSStatusItem?, menu: NSMenu) {
+        (store, navigation, mainWindow, statusItem, statusMenu)
+    }
+#endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        store = AppStore()
+        let launchEvent = NSAppleEventManager.shared().currentAppleEvent
+        let launchedAtLogin = launchEvent?.eventID == kAEOpenApplication
+            && launchEvent?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+        store = storeFactory()
         configureMenu()
+        configureStatusItem()
         subscription = store.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.update() }
         }
@@ -45,7 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let url = pendingURL {
             pendingURL = nil
             application(NSApp, open: [url])
-        } else {
+        } else if !launchedAtLogin {
             showMainWindow()
         }
         if store.hasSession { store.sync(trigger: .automatic) }
@@ -62,11 +92,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(rootView: MainWindowView(store: store, navigation: navigation))
             window.center()
+#if !GARMIN_LIFECYCLE_TEST
             window.setFrameAutosaveName("GarminDeskMainWindow")
+#endif
             mainWindow = window
         }
         update()
         if mainWindow?.isMiniaturized == true { mainWindow?.deminiaturize(nil) }
+        NSApp.unhide(nil)
         mainWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -76,8 +109,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showMainWindow()
     }
 
+    @objc private func refresh() { store.sync(trigger: .manual) }
+
+    @objc private func connect() { store.connectGarmin() }
+
+    @objc private func showAbout() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(nil)
+    }
+
     private func update() {
         configureMenu()
+        updateStatusMenu()
         switch store.preferences.appearance {
         case .system: mainWindow?.appearance = nil
         case .light: mainWindow?.appearance = NSAppearance(named: .aqua)
@@ -105,7 +148,103 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showMainWindow()
     }
 
-    func applicationWillTerminate(_ notification: Notification) { store?.cancelLogin(resumeAutomatic: false) }
+    func applicationWillTerminate(_ notification: Notification) {
+        subscription?.cancel()
+        store?.cancelLogin(resumeAutomatic: false)
+        if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+    }
+
+    private func configureStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: true) { rect in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            context.setFillColor(NSColor.black.cgColor)
+            context.addPath(GarminDeskBrandGeometry.path(in: rect))
+            context.fillPath()
+            return true
+        }
+        image.isTemplate = true
+        item.button?.image = image
+        item.button?.setAccessibilityLabel("Garmin Desk")
+        item.menu = statusMenu
+        statusMenu.delegate = self
+        // State is owned by AppStore; automatic validation would re-enable
+        // Refresh during a request merely because its target implements it.
+        statusMenu.autoenablesItems = false
+        statusItem = item
+        rebuildStatusMenu()
+    }
+
+    private func rebuildStatusMenu() {
+        statusMenu.removeAllItems()
+        for item in [statusTextItem, lastCheckedItem, nextCheckItem] {
+            item.isEnabled = false
+            statusMenu.addItem(item)
+        }
+        statusMenu.addItem(.separator())
+        func action(_ title: String, _ selector: Selector, _ key: String = "") -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
+            item.target = self
+            statusMenu.addItem(item)
+            return item
+        }
+        _ = action(store.text("widget.openApp"), #selector(showMainWindow), "0")
+        _ = action(store.text("action.settings") + "…", #selector(showSettings), ",")
+        refreshItem.action = #selector(refresh)
+        refreshItem.target = self
+        refreshItem.keyEquivalent = "r"
+        statusMenu.addItem(refreshItem)
+        connectItem.action = #selector(connect)
+        connectItem.target = self
+        statusMenu.addItem(connectItem)
+        statusMenu.addItem(.separator())
+        _ = action(store.text("menu.about"), #selector(showAbout))
+        let quit = NSMenuItem(title: store.text("action.quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.target = NSApp
+        statusMenu.addItem(quit)
+        updateStatusMenu()
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === statusMenu { updateStatusMenu() }
+    }
+
+    private func updateStatusMenu() {
+        guard store != nil, statusItem != nil else { return }
+        let statusKey: String
+        if store.isSyncing { statusKey = "data.syncing" }
+        else if store.needsWebSignIn { statusKey = "status.signInRequired" }
+        else if ["error.network", "error.timeout", "error.protocol", "error.partial", "error.rate_limit"].contains(store.lastErrorKey ?? "") {
+            statusKey = "data.checkFailed"
+        }
+        else if !store.hasSession { statusKey = "status.notConnected" }
+        else if !store.snapshot.hasMeasurements { statusKey = "data.waiting" }
+        else if store.isStale { statusKey = "widget.notice.waiting" }
+        else { statusKey = "status.connected" }
+        statusTextItem.title = store.text(statusKey)
+        statusTextItem.toolTip = store.lastErrorKey.map { store.text($0) }
+        lastCheckedItem.title = store.updatedText
+        lastCheckedItem.isHidden = store.snapshot.fetchedAt == .distantPast
+        if let nextSyncAt = store.nextSyncAt, nextSyncAt > Date(), !store.isSyncing {
+            let formatter = DateFormatter()
+            formatter.locale = store.preferences.language.locale
+            formatter.dateStyle = Calendar.autoupdatingCurrent.isDateInToday(nextSyncAt) ? .none : .short
+            formatter.timeStyle = .short
+            nextCheckItem.title = store.text("connection.nextSync") + " " + formatter.string(from: nextSyncAt)
+            nextCheckItem.isHidden = false
+        } else { nextCheckItem.isHidden = true }
+        refreshItem.title = store.text(store.isSyncing ? "data.syncing" : "action.sync")
+        refreshItem.isEnabled = store.hasSession && !store.isSyncing
+        connectItem.title = store.text(store.needsWebSignIn ? "connection.reconnect" : "connection.webSignIn") + "…"
+        connectItem.isHidden = store.hasSession
+        connectItem.isEnabled = !store.isSyncing
+        statusItem?.button?.toolTip = "Garmin Desk — " + statusTextItem.title
+        statusItem?.button?.setAccessibilityValue(statusTextItem.title)
+    }
 
     private func configureMenu() {
         let language = store.preferences.language.effectiveCode
@@ -152,5 +291,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowMenu.addItem(NSMenuItem(title: store.text("menu.zoom"), action: #selector(NSWindow.performZoom(_:)), keyEquivalent: ""))
         NSApp.windowsMenu = windowMenu
         NSApp.mainMenu = menu
+        if statusItem != nil { rebuildStatusMenu() }
     }
 }

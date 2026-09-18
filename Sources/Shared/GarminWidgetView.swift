@@ -20,7 +20,7 @@ struct GarminWidgetView: View {
     private var metricSelection: WidgetMetricSelection {
         WidgetMetricPolicy.selection(for: profile, snapshot: data.snapshot)
     }
-    private var formatter: MetricFormatter { MetricFormatter(snapshot: data.snapshot, language: language) }
+    private var formatter: MetricFormatter { MetricFormatter(snapshot: data.snapshot, language: language, now: entry.date) }
     private var timeline: TrainingTimelineSnapshot? { data.snapshot.trainingTimeline }
     private var destination: URL? { URL(string: "garmindesk://widget/" + entry.slot.rawValue) }
     private var theme: DeskMetricTheme { entry.slot.theme(appearance: data.preferences.widgetAppearance) }
@@ -144,6 +144,10 @@ struct GarminWidgetView: View {
             .font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
             MetricValueLabel(value: formatter.display(id), size: compact ? 46 : (family == .systemLarge ? 48 : 38))
                 .foregroundStyle(theme.ink).layoutPriority(1)
+            if let status = formatter.interpretation(id)?.status {
+                Text(status).font(.system(size: 10, weight: .medium)).foregroundStyle(theme.secondaryInk)
+                    .lineLimit(1).minimumScaleFactor(0.75)
+            }
             if let period = presentation.period(id) {
                 Text(period).font(.system(size: 10, weight: .medium)).foregroundStyle(theme.secondaryInk)
             }
@@ -154,9 +158,9 @@ struct GarminWidgetView: View {
                 }.frame(height: 5).padding(.top, 2).accessibilityHidden(true)
             }
         }
-        .help(formatter.context(id) ?? "")
+        .help(formatter.help(id))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(([text(MetricDefinition.find(id).titleKey) + ": " + formatter.display(id)] + [formatter.context(id)].compactMap { $0 }).joined(separator: ", "))
+        .accessibilityLabel(formatter.accessibility(id))
     }
 
     private func metricRow(_ id: String) -> some View {
@@ -165,13 +169,18 @@ struct GarminWidgetView: View {
                 .font(.system(size: 10)).foregroundStyle(theme.secondaryInk).lineLimit(1).minimumScaleFactor(0.8)
             MetricValueLabel(value: formatter.display(id), size: family == .systemLarge ? 23 : 22)
                 .foregroundStyle(theme.ink)
+            if let status = formatter.interpretation(id)?.status {
+                Text(status).font(.system(size: 8)).foregroundStyle(theme.secondaryInk)
+                    .lineLimit(1).minimumScaleFactor(0.75)
+            }
             if let period = presentation.period(id) {
                 Text(period).font(.system(size: 8)).foregroundStyle(theme.secondaryInk)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .help(formatter.help(id))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(([text(MetricDefinition.find(id).titleKey) + ": " + formatter.display(id)] + [formatter.context(id)].compactMap { $0 }).joined(separator: ", "))
+        .accessibilityLabel(formatter.accessibility(id))
     }
 
     private func compactMetricRow(_ id: String) -> some View {
@@ -182,8 +191,9 @@ struct GarminWidgetView: View {
             MetricValueLabel(value: formatter.display(id), size: 18).foregroundStyle(theme.ink)
         }
         .lineLimit(1).minimumScaleFactor(0.75).frame(minHeight: 21)
+        .help(formatter.help(id))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(([text(MetricDefinition.find(id).titleKey) + ": " + formatter.display(id)] + [formatter.context(id)].compactMap { $0 }).joined(separator: ", "))
+        .accessibilityLabel(formatter.accessibility(id))
     }
 
     private var hasWarnings: Bool {

@@ -27,10 +27,12 @@ Sources/GarminDesk/GarminDeskApp.swift
 Sources/GarminDesk/GarminWebSession.swift
 Sources/GarminDesk/GarminWebTransport.swift
 Sources/GarminDesk/Localization.swift
+Sources/GarminDesk/PrivateSnapshotStore.swift
 Sources/GarminDesk/PythonBridge.swift
 Sources/GarminDesk/TrainingTimelineView.swift
 Sources/GarminDesk/Views.swift
 Sources/GarminDeskWidgets/GarminDeskWidgets.swift
+Sources/Shared/BodyBatteryProjection.swift
 Sources/Shared/DeskVisualStyle.swift
 Sources/Shared/GarminDeskBrandGeometry.swift
 Sources/Shared/GarminDeskBrandMark.swift
@@ -47,6 +49,7 @@ Sources/Shared/LocalizationsNL.swift
 Sources/Shared/LocalizationsPL.swift
 Sources/Shared/LocalizationsPTBR.swift
 Sources/Shared/LocalizationsZHHans.swift
+Sources/Shared/MetricExplanation.swift
 Sources/Shared/MetricFormatter.swift
 Sources/Shared/MetricFreshness.swift
 Sources/Shared/Models.swift
@@ -62,11 +65,15 @@ Sources/Shared/WidgetMetricPolicy.swift
 Sources/Shared/WidgetPresentation.swift
 Sources/Shared/WidgetPreviewData.swift
 Sources/Shared/WidgetSlot.swift
+Sources/Shared/WidgetTimelineSchedule.swift
 Tests/AppStoreSyncTests.swift
+Tests/BodyBatteryProjectionTests.swift
 Tests/BrandIconTests.swift
 Tests/GarminPayloadNormalizerTests.swift
 Tests/GarminWebBoundaryTests.swift
 Tests/LocalizationTests.swift
+Tests/MenuBarLifecycleTests.swift
+Tests/MetricExplanationTests.swift
 Tests/ReleaseDraftTests.py
 Tests/ReleasePromotionTests.py
 Tests/RenderApp.swift
@@ -81,10 +88,13 @@ Tests/WebReadScriptTests.mjs
 Tests/WidgetConfigurationTests.swift
 Tests/WidgetMetricPolicyTests.swift
 Tests/WidgetSandboxProbe.swift
+Tests/WidgetTimelineScheduleTests.swift
+docs/audit-0.6.0.md
 docs/audit-auth.md
 docs/audit-data-flow.md
 docs/audit-data-options.md
 docs/audit-wellness-export.md
+docs/body-battery-refresh-audit.md
 docs/branding/README.md
 docs/branding/concepts/01-pulse.png
 docs/branding/concepts/02-orbit.png
@@ -100,6 +110,8 @@ docs/distribution.md
 docs/full-stack-audit-2026-09-16.md
 docs/garmin-ingestion-audit-2026-09-15.md
 docs/localization.md
+docs/menu-bar-lifecycle-validation.md
+docs/metric-explanations-audit-2026-09-19.md
 docs/native-contract.md
 docs/native-sync-validation.md
 docs/native-web-live-validation.md
@@ -107,6 +119,7 @@ docs/publication-checklist.md
 docs/releases/0.3.0.md
 docs/releases/0.4.0.md
 docs/releases/0.5.0.md
+docs/releases/0.6.0.md
 docs/releases/approvals/v0.5.0.json
 docs/releases/public-notes/v0.5.0.md
 docs/releases/validation/0.5.0-publication.md

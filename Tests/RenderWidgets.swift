@@ -30,6 +30,33 @@ struct RenderWidgets {
             }
         }
         for language in [AppLanguage.en, .ru] {
+            for state in ["optimal-detraining", "low-load", "high-load", "hrv-balanced-low-night", "context-missing", "garmin-ratio"] {
+                var data = sample(language: language, now: now)
+                data.snapshot.metricContext = GarminMetricContext(trainingLoadLower: 350, trainingLoadUpper: 780,
+                    trainingStatus: "DETRAINING", hrvStatus: "BALANCED", hrvWeeklyAverage: 58,
+                    hrvBaselineLow: 49, hrvBaselineHigh: 72)
+                if state == "low-load" { data.snapshot.metrics["trainingLoad"] = .init(value: 180) }
+                if state == "high-load" { data.snapshot.metrics["trainingLoad"] = .init(value: 985) }
+                if state == "hrv-balanced-low-night" {
+                    data.preferences.summaryMetrics = ["hrv", "sleepScore", "trainingLoad", "recoveryTime"]
+                    data.snapshot.metrics["hrv"] = .init(value: 32)
+                } else {
+                    data.preferences.summaryMetrics = ["trainingLoad", "recoveryTime", "hrv", "trainingReadiness"]
+                }
+                if state == "context-missing" { data.snapshot.metricContext = nil }
+                if state == "garmin-ratio" {
+                    data.snapshot.metricContext = GarminMetricContext(trainingStatus: "PRODUCTIVE",
+                        trainingLoadStatus: "OPTIMAL", trainingLoadRatio: 1.2)
+                }
+                for (sizeName, family, size) in families {
+                    // Summary covers a load/HRV primary; sport covers load in a
+                    // secondary tile while retaining readiness as its primary.
+                    for slot in [WidgetSlot.overview, .sport] {
+                        try render(data, slot: slot, family: family, size: size, now: now,
+                                   name: "context-\(language.rawValue)-\(state)-\(slot.rawValue)-\(sizeName)", output: output)
+                    }
+                }
+            }
             for customization in ["chosen", "zero", "unavailable"] {
                 var data = sample(language: language, now: now)
                 data.preferences.summaryMetrics = ["steps", "sleepDuration", "hrv", "vo2Max"]
@@ -42,7 +69,7 @@ struct RenderWidgets {
                                name: "custom-summary-\(language.rawValue)-\(customization)-\(sizeName)", output: output)
                 }
             }
-            for state in ["missing-primary", "partial", "only-recovery", "retained-sleep", "disconnected", "waiting", "legacy-demo"] {
+            for state in ["missing-primary", "partial", "only-recovery", "retained-sleep", "disconnected", "waiting", "legacy-demo", "body-battery-estimated", "body-battery-expired"] {
                 var data = sample(language: language, now: now)
                 switch state {
                 case "missing-primary": data.snapshot.metrics.removeValue(forKey: "bodyBattery"); data.snapshot.metrics.removeValue(forKey: "trainingReadiness")
@@ -57,6 +84,11 @@ struct RenderWidgets {
                 case "disconnected": data.isConnected = false
                 case "waiting": data.snapshot = .empty
                 case "legacy-demo": data.snapshot = .demo; data.isConnected = false
+                case "body-battery-estimated", "body-battery-expired":
+                    let anchor = MetricReading(value: 60, measuredAt: now.addingTimeInterval(state == "body-battery-estimated" ? -1800 : -7200))
+                    data.snapshot.metrics["bodyBattery"] = anchor
+                    data.snapshot.bodyBatteryProjection = .init(anchor: anchor, pointsPerHour: -12,
+                        validUntil: anchor.measuredAt!.addingTimeInterval(3600))
                 default: break
                 }
                 if state == "retained-sleep" {

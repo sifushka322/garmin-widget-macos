@@ -10,9 +10,13 @@ GarminDesk — installation
    A large Summary combines the main measurements in one layout. Choose
    its measurements under Widgets; add Sleep or Training for more detail.
 
-GarminDesk is a regular windowed app with a Dock icon. Clicking a widget
-opens its corresponding view in the app. Closing the window keeps synchronization
-running; ⌘Q quits. Choose the interface language under General.
+GarminDesk runs in the menu bar without a Dock icon. Click the small watch
+icon at the top right for settings, refresh, or quit. Clicking a widget opens
+its corresponding view. Closing the window keeps synchronization running;
+⌘Q quits. Choose the interface language under General.
+
+Measurement cards show a short interpretation. Click the information button
+for the meaning, personal ranges when available, and the reading time.
 
 No Python, Homebrew, extra libraries, or terminal setup is needed. The app
 connects directly to Garmin Connect using system WebKit. New readings require
