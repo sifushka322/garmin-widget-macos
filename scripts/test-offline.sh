@@ -26,19 +26,20 @@ for source in "${shared[@]}"; do
     model_sources+=("$source")
 done
 frameworks=(-framework SwiftUI -framework AppKit -framework WidgetKit -framework WebKit -framework Security -framework ServiceManagement)
-for suite in SharedModelTests WidgetConfigurationTests WidgetMetricPolicyTests TrainingCalendarTests TrainingPresentationTests LocalizationTests SyncPolicyTests GarminPayloadNormalizerTests TrainingModelsTests MetricExplanationTests BodyBatteryProjectionTests WidgetTimelineScheduleTests; do
-    suite_sources=("${model_sources[@]}")
-    if [[ "$suite" == WidgetConfigurationTests ]]; then suite_sources=("${shared[@]}"); fi
-    printf 'Compiling and running %s\n' "$suite"
-    xcrun swiftc "${options[@]}" -module-name "$suite" "${suite_sources[@]}" "Tests/$suite.swift" "${frameworks[@]}" -o "build/audit/$suite"
-    "build/audit/$suite"
-done
+# Compile the synchronization host first so host-type errors fail before the full model matrix.
 host=(Sources/GarminDesk/AppStore.swift Sources/GarminDesk/PythonBridge.swift
     Sources/GarminDesk/GarminWebSession.swift Sources/GarminDesk/GarminWebTransport.swift
     Sources/GarminDesk/PrivateSnapshotStore.swift)
 for suite in GarminWebBoundaryTests AppStoreSyncTests; do
     printf 'Compiling and running %s\n' "$suite"
     xcrun swiftc "${options[@]}" -module-name "$suite" "${model_sources[@]}" "${host[@]}" "Tests/$suite.swift" "${frameworks[@]}" -o "build/audit/$suite"
+    "build/audit/$suite"
+done
+for suite in SharedModelTests WidgetConfigurationTests WidgetMetricPolicyTests TrainingCalendarTests TrainingPresentationTests LocalizationTests SyncPolicyTests GarminPayloadNormalizerTests TrainingModelsTests MetricExplanationTests BodyBatteryProjectionTests WidgetTimelineScheduleTests; do
+    suite_sources=("${model_sources[@]}")
+    if [[ "$suite" == WidgetConfigurationTests ]]; then suite_sources=("${shared[@]}"); fi
+    printf 'Compiling and running %s\n' "$suite"
+    xcrun swiftc "${options[@]}" -module-name "$suite" "${suite_sources[@]}" "Tests/$suite.swift" "${frameworks[@]}" -o "build/audit/$suite"
     "build/audit/$suite"
 done
 printf 'Compiling widget visual fixtures\n'

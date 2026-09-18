@@ -341,11 +341,12 @@ final class AppStore: ObservableObject {
                         }
                         // A completed marker is valid only alongside the exact
                         // payload written in this refresh generation.
-                        self.webCache.calendarRefreshProgress?.completedMonths = self.webCache.calendarRefreshProgress?.completedMonths.filter { month, stamp in
+                        let validCompletedMonths = self.webCache.calendarRefreshProgress?.completedMonths.filter { month, stamp in
                             requests.contains { $0.month == month } &&
                             self.webCache.calendarMonths?[month]?.sourceDay == day &&
                             self.webCache.calendarMonths?[month]?.retrievedAt == stamp
                         } ?? [:]
+                        self.webCache.calendarRefreshProgress?.completedMonths = validCompletedMonths
                         for request in requests where self.webCache.calendarRefreshProgress?.completedMonths[request.month] == nil {
                             try Task.checkCancellation()
                             guard self.webRunID == runID else { return }
