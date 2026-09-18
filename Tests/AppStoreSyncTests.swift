@@ -562,6 +562,7 @@ struct AppStoreSyncTests {
 
     static func main() async {
         do {
+            try testHistoricalCalendarAndProvenance()
             try await testHistoricalMigrationRecovery()
             try await testHistoricalEmptyAndExpiry()
             try await testHistoricalBudgetRestartAndOwnedSkip()
@@ -604,6 +605,41 @@ struct AppStoreSyncTests {
         } catch { fputs("FAIL: \(error)\n", stderr); exit(1) }
     }
 
+
+    static func testHistoricalCalendarAndProvenance() throws {
+        for (day, expected) in ["2026-01-01": "2025-12-31", "2024-03-01": "2024-02-29",
+                                "2026-03-01": "2026-02-28", "2026-03-09": "2026-03-08",
+                                "2026-11-02": "2026-11-01"] {
+            try expect(GarminHistoricalRecovery.previousDay(for: day) == expected,
+                       "Historical calendar arithmetic must survive year, leap-day and DST boundaries")
+        }
+        for invalid in ["", "2026-02-30", "2026-13-01", "0001-01-01"] {
+            try expect(GarminHistoricalRecovery.previousDay(for: invalid) == nil, "Invalid or underflowing days cannot form a history request")
+        }
+        let moment = TestClock().moment
+        let day = SyncPolicy.sourceDay(for: moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!)
+        let recovery = GarminHistoricalRecovery(sourceDay: day, startedAt: moment, queued: Set(GarminHistoricalRecovery.eligibleGroups))
+        var now = moment; now.wallTime.addTimeInterval(-7200); now.monotonicSeconds += 30
+        try expect(recovery.pending(sourceDay: day, at: now).count == 6, "Same-boot recovery expiry follows continuous time across a wall rollback")
+        now.monotonicSeconds = moment.monotonicSeconds + 3600
+        try expect(recovery.pending(sourceDay: day, at: now).isEmpty, "Recovery expires after one continuous hour")
+        now.bootID = "new-boot"; now.wallTime = moment.wallTime.addingTimeInterval(3600)
+        try expect(recovery.pending(sourceDay: day, at: now).isEmpty, "Cross-boot recovery expiry uses its persisted wall deadline")
+        let yesterday = GarminHistoricalRecovery.previousDay(for: day)!
+        let older = GarminHistoricalRecovery.previousDay(for: yesterday)!
+        let readiness: [[String: Any]] = [
+            ["calendarDate": older, "timestamp": "2026-09-01T11:00:00Z", "score": 10],
+            ["timestamp": "2026-09-01T12:00:00Z", "score": 80]]
+        try expect(GarminPayloadNormalizer.historicalSourceDay(group: "readiness", payload: readiness, requestedDay: yesterday) == yesterday &&
+                   GarminPayloadNormalizer.normalize(group: "readiness", payload: readiness)["trainingReadiness"]?.value == 80,
+                   "A selected undated readiness row uses the requested day, never another row's date")
+        let vo2: [[String: Any]] = [["generic": ["calendarDate": older, "vo2MaxValue": 45]]]
+        try expect(GarminPayloadNormalizer.historicalSourceDay(group: "vo2_max", payload: vo2, requestedDay: yesterday) == older,
+                   "An explicitly older completed VO2 record preserves its source date")
+        try expect(!SyncPolicy.Group.currentMetrics.contains(.historicalRecovery) &&
+                   !GarminHistoricalRecovery.eligibleGroups.contains(.bodyBattery),
+                   "Historical recovery is opt-in scheduler work and can never project Body Battery")
+    }
 
     private static func emptyRecoveryGroups(_ web: MockWeb) {
         for group in GarminHistoricalRecovery.eligibleGroups { web.payloads[group.rawValue] = NSNull() }
@@ -692,7 +728,8 @@ struct AppStoreSyncTests {
         rig.clock.advance(60, wallAdjustment: -86400)
         rig.store.sync(); try await settled(rig.store)
         rig.store.sync(trigger: .automatic); try await settled(rig.store)
-        try expect(originalDay < futureDay && (try cachedWebState(rig)).historicalRecovery?.sourceDay == futureDay &&
+        let rolledBack = try cachedWebState(rig)
+        try expect(originalDay < futureDay && rolledBack.historicalRecovery?.sourceDay == futureDay &&
                    rig.web.calls.filter { $0.hasPrefix("historical.") }.count == probes,
                    "Date rollback cannot recreate an older day's six consumed attempts")
     }
@@ -758,8 +795,9 @@ struct AppStoreSyncTests {
         limited.store.sync(trigger: .automatic); try await settled(limited.store)
         limited.web.errors["historical.sleep"] = .rateLimited(retryAfter: 1800)
         limited.store.sync(trigger: .automatic); try await settled(limited.store)
+        let limitedCheckpoint = try limited.checkpoint()
         try expect(limited.web.calls.filter { $0.hasPrefix("historical.") } == ["historical.sleep"] &&
-                   (try limited.checkpoint()).gate?.reason == .rateLimit, "Historical HTTP429 stops all remaining probes and preserves the server pause")
+                   limitedCheckpoint.gate?.reason == .rateLimit, "Historical HTTP429 stops all remaining probes and preserves the server pause")
 
         let disk = try Rig(historicalRecoveryEnabled: true); defer { disk.clean() }
         emptyRecoveryGroups(disk.web)
@@ -794,11 +832,13 @@ struct AppStoreSyncTests {
         emptyRecoveryGroups(rig.web)
         rig.web.payloads["historical.hrv"] = ["hrvSummary": ["lastNightAvg": 44]]
         rig.store.sync(trigger: .automatic); try await settled(rig.store)
-        try expect(rig.store.snapshot.visibleReading("hrv") == nil && (try cachedWebState(rig)).historicalRecovery?.attempted.isEmpty == true,
+        let cleared = try cachedWebState(rig)
+        try expect(rig.store.snapshot.visibleReading("hrv") == nil && cleared.historicalRecovery?.attempted.isEmpty == true,
                    "Verified account change clears both foreign history and consumed-attempt markers")
         rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        let recovered = try cachedWebState(rig)
         try expect(rig.store.snapshot.retainedMetrics["hrv"]?.reading.value == 44 &&
-                   (try cachedWebState(rig)).accountDisplayName == "fixture-user", "Only the newly verified account supplies recovered records")
+                   recovered.accountDisplayName == "fixture-user", "Only the newly verified account supplies recovered records")
     }
 
     static func testAccountOwnershipAcrossRestart() async throws {

@@ -20,7 +20,7 @@ struct GarminHistoricalRecovery: Codable {
         guard let date = formatter.date(from: sourceDay),
               let previous = calendar.date(byAdding: .day, value: -1, to: date) else { return nil }
         let result = formatter.string(from: previous)
-        return GarminWebAPI.validDay(result) ? result : nil
+        return GarminWebAPI.validDay(result) && result < sourceDay ? result : nil
     }
 
     func pending(sourceDay: String, at now: SyncPolicy.Moment) -> [SyncPolicy.Group] {
