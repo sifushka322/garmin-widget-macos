@@ -4,7 +4,11 @@ The dashboard previously exposed numbers and their reporting dates, with little
 help interpreting them. The shared `MetricExplanation` presentation now provides
 a short status, personal context where available, and an explanation for every
 catalog metric. Dashboard cards include an information button with the longer
-explanation and a relevant Garmin source. Widget layouts can use the same model.
+explanation and a relevant Garmin source. Concise scale, goal, and recovery
+statuses appear inline; definitions that merely repeat the metric title stay in
+the information panel. Personal context and separate training status remain in
+the information panel, widget help, and accessibility. Widget layouts use the
+same model.
 The explanation, context, help, and local-estimate messages are fully cataloged
 in all twelve supported interface languages. The catalogs have the same 106 keys;
 English fallback is not accepted as translation coverage.
@@ -13,7 +17,7 @@ English fallback is not accepted as translation coverage.
 
 | Metric | Displayed interpretation | Constraint |
 | --- | --- | --- |
-| Acute training load | Below / within / above the personal Garmin range; exact lower and upper values | No universal threshold. A recognized Garmin training status is a separate line. Low load never automatically becomes “detraining.” |
+| Acute training load | Garmin's acute/chronic ratio category; a personal acute range only when explicitly available | No universal threshold. Recognized Garmin training status is separate context in the information panel, help, and accessibility. Low load never automatically becomes “detraining.” |
 | HRV | Recorded-night value, explicitly distinguished from Garmin's weekly HRV status | Weekly average and personal baseline are shown when provided. Garmin's Poor category uses an age-based reference; it is not inferred here. A retained older night is not described as last night. |
 | Training readiness | Poor 1–24, low 25–49, moderate 50–74, high 75–94, prime 95–100 | Uses Garmin's published scale. Zero has no readiness assessment. |
 | Sleep score | Poor <60, fair 60–79, good 80–89, excellent 90–100 | Sleep length alone does not determine sleep quality. |
@@ -41,8 +45,9 @@ chronic load: they are deliberately **not** used to classify the displayed acute
 load. Exact acute-range presentation is supported by the shared model, but the
 current adapter leaves those optional fields absent because that mapping has
 not been verified. In the absence of Garmin's recognized ratio category, the
-card states that a personal range is unavailable, while still showing a
-recognized training status if provided.
+inline status states that a personal range is unavailable. A recognized
+training status, if provided, remains available separately in the information
+panel, widget help, and accessibility; it is not a second inline card status.
 
 Garmin training status terms covered are detraining, recovery, maintaining,
 productive, peaking, overreaching, unproductive, strained, no status and paused.

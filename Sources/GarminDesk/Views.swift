@@ -392,7 +392,7 @@ private struct SmallMetricView: View {
                                                    language: store.preferences.language, now: now)
         let context = metricCardContext(metricID, formatter: formatter)
         let status = WidgetMetricPolicy.inlineStatus(for: metricID, formatter: formatter)
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 8) {
                 Image(systemName: definition.symbol).font(.system(size: 13, weight: .medium))
                     .foregroundStyle(accent).frame(width: 28, height: 28)
@@ -410,7 +410,7 @@ private struct SmallMetricView: View {
             .frame(height: 34, alignment: .leading)
             MetricValueLabel(value: formatter.display(metricID), size: compact ? 28 : 32)
                 .foregroundStyle(.primary)
-                .frame(height: 42, alignment: .leading)
+                .frame(height: compact ? 36 : 40, alignment: .leading)
             Text(status ?? " ")
                 .font(.system(size: 12, weight: .medium)).foregroundStyle(accent)
                 .lineLimit(2).minimumScaleFactor(0.85)
@@ -423,7 +423,7 @@ private struct SmallMetricView: View {
                 .accessibilityHidden(context == nil)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: compact ? 168 : 180, alignment: .topLeading)
+        .frame(height: compact ? 144 : 152, alignment: .topLeading)
         .padding(compact ? 16 : 20)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 20))
         .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(accent.opacity(0.10)))
@@ -588,7 +588,9 @@ struct DashboardView: View {
                             if let primary = selectedMetrics.first {
                                 MainMetricView(store: store, metricID: primary, style: profile.style,
                                                compact: profile.density == .compact)
-                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 12, alignment: .topLeading)], spacing: 12) {
+                                LazyVGrid(columns: selectedMetrics.count == 5
+                                    ? Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .topLeading), count: 2)
+                                    : [GridItem(.adaptive(minimum: 210), spacing: 12, alignment: .topLeading)], spacing: 12) {
                                     ForEach(Array(selectedMetrics.dropFirst()), id: \.self) { id in
                                         SmallMetricView(store: store, metricID: id, style: profile.style,
                                                         compact: profile.density == .compact)

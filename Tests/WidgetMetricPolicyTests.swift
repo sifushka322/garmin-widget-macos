@@ -58,7 +58,8 @@ import Foundation
         }
         var interpreted = GarminSnapshot.demo
         interpreted.isDemo = false
-        let formatter = MetricFormatter(snapshot: interpreted, language: .en)
+        interpreted.sourceDate = SyncPolicy.sourceDay(for: date, timeZone: .autoupdatingCurrent)
+        let formatter = MetricFormatter(snapshot: interpreted, language: .en, now: date)
         for id in ["bodyBattery", "stress", "sleepScore", "trainingReadiness", "recoveryTime", "trainingLoad", "hrv", "steps"] {
             try expect(WidgetMetricPolicy.inlineStatus(for: id, formatter: formatter) != nil, "Meaningful status remains inline: " + id)
         }
@@ -67,11 +68,20 @@ import Foundation
             try expect(formatter.interpretation(id) != nil && !formatter.help(id).isEmpty, "Removing an inline phrase preserves full help: " + id)
         }
         interpreted.metrics["stepGoal"] = nil
-        try expect(WidgetMetricPolicy.inlineStatus(for: "steps", formatter: .init(snapshot: interpreted, language: .en)) == nil,
+        try expect(WidgetMetricPolicy.inlineStatus(for: "steps", formatter: .init(snapshot: interpreted, language: .en, now: date)) == nil,
                    "Steps without a goal do not show a generic inline phrase")
         interpreted.retainedMetrics["stepGoal"] = .init(reading: .init(value: 10_000), sourceDate: "2000-01-01", retrievedAt: date, changedAt: date)
-        try expect(WidgetMetricPolicy.inlineStatus(for: "steps", formatter: .init(snapshot: interpreted, language: .en)) == nil,
+        try expect(WidgetMetricPolicy.inlineStatus(for: "steps", formatter: .init(snapshot: interpreted, language: .en, now: date)) == nil,
                    "A goal from another day cannot create a progress interpretation")
+        interpreted.metrics["steps"] = nil
+        interpreted.retainedMetrics["steps"] = .init(reading: .init(value: 5_000), sourceDate: "2000-01-01", retrievedAt: date, changedAt: date)
+        try expect(WidgetMetricPolicy.inlineStatus(for: "steps", formatter: .init(snapshot: interpreted, language: .en, now: date)) == nil,
+                   "Matching retained steps and goal still cannot show today's progress or a generic substitute")
+        interpreted.retainedMetrics = [:]
+        interpreted.metrics["steps"] = .init(value: 5_000); interpreted.metrics["stepGoal"] = .init(value: 10_000)
+        interpreted.sourceDate = "2000-01-01"
+        try expect(WidgetMetricPolicy.inlineStatus(for: "steps", formatter: .init(snapshot: interpreted, language: .en, now: date)) == nil,
+                   "A legacy prior-day current cache cannot imply today's goal progress")
         print("PASS: \(checks) widget selection and migration checks")
     }
 }

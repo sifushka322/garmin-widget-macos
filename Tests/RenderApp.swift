@@ -146,6 +146,10 @@ import SwiftUI
                         try render(store, navigation: navigation, dark: dark, size: CGSize(width: 1100, height: 800),
                                    name: "wide-\(state)-\(language.rawValue)-\(dark ? "dark" : "light")", output: output)
                     }
+                    if state == "sport-context" {
+                        try render(store, navigation: navigation, dark: dark, size: CGSize(width: 960, height: 760),
+                                   name: "default-sport-context-\(language.rawValue)-\(dark ? "dark" : "light")", output: output)
+                    }
                     if ["sport-context", "sport-low-load", "hrv-context", "sport-ratio"].contains(state) {
                         try render(store, navigation: navigation, dark: dark, size: CGSize(width: 780, height: 620),
                                    name: "minimum-\(state)-\(language.rawValue)-\(dark ? "dark" : "light")", output: output,
@@ -241,8 +245,14 @@ import SwiftUI
             }
         }
         for card in cards {
-            guard abs(card.height - 220) < 1 || abs(card.height - 200) < 1 else {
+            guard abs(card.height - 192) < 1 || abs(card.height - 176) < 1 else {
                 fatalError("Metric card must use one of the two uniform density heights (\(fixture)): \(card)")
+            }
+        }
+        if cards.count == 4 && fixture.contains("sport-context") {
+            let rows = Dictionary(grouping: cards, by: { Int($0.minY.rounded()) })
+            guard rows.count == 2, rows.values.allSatisfy({ $0.count == 2 }) else {
+                fatalError("Four secondary cards must form two balanced rows (\(fixture)): \(cards)")
             }
         }
         for first in cards.indices {

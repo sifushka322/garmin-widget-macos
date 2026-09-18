@@ -14,7 +14,7 @@ struct SummaryWidgetView: View {
         WidgetMetricPolicy.summarySelection(preferences: data.preferences, snapshot: data.snapshot)
     }
     private var secondary: [String] {
-        Array(selection.secondary.prefix(family == .systemSmall ? 1 : (family == .systemMedium ? 2 : 6)))
+        Array(selection.secondary.prefix(WidgetMetricPolicy.summarySecondaryLimit(data: data, family: family, at: date)))
     }
     private var notice: String? {
         if !data.isConnected && !data.snapshot.hasMeasurements { return "widget.connect" }

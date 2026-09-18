@@ -40,7 +40,7 @@ enum BodyBatteryDisplaySchedule {
 /// Only metrics actually rendered in this family require intermediate entries.
 /// WidgetKit retains control of when these dated entries are shown.
 enum WidgetTimelineSchedule {
-    static func visibleMetricIDs(data: WidgetData, slot: WidgetSlot, family: WidgetFamily) -> [String] {
+    static func visibleMetricIDs(data: WidgetData, slot: WidgetSlot, family: WidgetFamily, at now: Date = Date()) -> [String] {
         let profile = slot.profile(in: data.preferences)
         guard profile.contentMode.includesMetrics else { return [] }
         let selection = slot == .overview
@@ -48,8 +48,8 @@ enum WidgetTimelineSchedule {
             : WidgetMetricPolicy.selection(for: profile, snapshot: data.snapshot)
         let secondaryCount: Int
         if slot == .overview {
-            // SummaryWidgetView renders 1 / 2 / 6 secondary metrics.
-            secondaryCount = family == .systemSmall ? 1 : (family == .systemMedium ? 2 : 6)
+            // Keep the compact focus mode identical to SummaryWidgetView.
+            secondaryCount = WidgetMetricPolicy.summarySecondaryLimit(data: data, family: family, at: now)
         } else {
             // GarminWidgetView uses these exact family/density limits.
             switch family {
@@ -64,7 +64,7 @@ enum WidgetTimelineSchedule {
     static func dates(data: WidgetData?, slot: WidgetSlot, family: WidgetFamily = .systemLarge,
                       from now: Date) -> [Date] {
         guard let data, !data.snapshot.isDemo,
-              visibleMetricIDs(data: data, slot: slot, family: family).contains("bodyBattery") else { return [now] }
+              visibleMetricIDs(data: data, slot: slot, family: family, at: now).contains("bodyBattery") else { return [now] }
         return BodyBatteryDisplaySchedule.dates(snapshot: data.snapshot, from: now)
     }
 }
