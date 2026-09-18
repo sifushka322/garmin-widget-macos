@@ -35,6 +35,13 @@ for suite in GarminWebBoundaryTests AppStoreSyncTests; do
     xcrun swiftc "${options[@]}" -module-name "$suite" "${model_sources[@]}" "${host[@]}" "Tests/$suite.swift" "${frameworks[@]}" -o "build/audit/$suite"
     "build/audit/$suite"
 done
+# Exercise AppKit lifecycle before the longer rendering matrix.
+printf 'Compiling and running isolated menu-bar lifecycle checks\n'
+xcrun swiftc "${options[@]}" -D GARMIN_LIFECYCLE_TEST -module-name MenuBarLifecycleTests \
+    "${shared[@]}" "${host[@]}" Sources/GarminDesk/Views.swift Sources/GarminDesk/TrainingTimelineView.swift \
+    Sources/GarminDesk/GarminDeskApp.swift Tests/MenuBarLifecycleTests.swift \
+    "${frameworks[@]}" -o build/audit/MenuBarLifecycleTests
+build/audit/MenuBarLifecycleTests
 for suite in SharedModelTests WidgetConfigurationTests WidgetMetricPolicyTests TrainingCalendarTests TrainingPresentationTests LocalizationTests SyncPolicyTests GarminPayloadNormalizerTests TrainingModelsTests MetricExplanationTests BodyBatteryProjectionTests WidgetTimelineScheduleTests; do
     suite_sources=("${model_sources[@]}")
     if [[ "$suite" == WidgetConfigurationTests ]]; then suite_sources=("${shared[@]}"); fi
@@ -52,12 +59,6 @@ xcrun swiftc "${options[@]}" -module-name RenderApp "${shared[@]}" "${host[@]}" 
     "${frameworks[@]}" -o build/audit/render-app
 printf 'Rendering app visual fixtures\n'
 build/audit/render-app build/audit/app
-printf 'Compiling and running isolated menu-bar lifecycle checks\n'
-xcrun swiftc "${options[@]}" -D GARMIN_LIFECYCLE_TEST -module-name MenuBarLifecycleTests \
-    "${shared[@]}" "${host[@]}" Sources/GarminDesk/Views.swift Sources/GarminDesk/TrainingTimelineView.swift \
-    Sources/GarminDesk/GarminDeskApp.swift Tests/MenuBarLifecycleTests.swift \
-    "${frameworks[@]}" -o build/audit/MenuBarLifecycleTests
-build/audit/MenuBarLifecycleTests
 printf 'Compiling calendar visual fixtures\n'
 xcrun swiftc "${options[@]}" -module-name RenderTrainingCalendar "${shared[@]}" Tests/RenderTrainingCalendar.swift \
     "${frameworks[@]}" -o build/audit/render-training-calendar
