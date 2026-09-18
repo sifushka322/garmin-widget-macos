@@ -27,9 +27,9 @@ struct SummaryWidgetView: View {
     private func text(_ key: String) -> String { Localizer.text(key, language: language) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: family == .systemSmall ? 8 : 12) {
+        VStack(alignment: .leading, spacing: family == .systemSmall ? 6 : 12) {
             if family == .systemSmall {
-                primary(size: 46)
+                primary(size: 42)
                 if let id = secondary.first { compactRow(id) }
             } else if family == .systemMedium {
                 GeometryReader { geometry in
@@ -45,7 +45,7 @@ struct SummaryWidgetView: View {
                 primary(size: 48)
                 if !secondary.isEmpty {
                     Rectangle().fill(theme.ink.opacity(0.16)).frame(height: 1)
-                    LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
+                    LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)],
                               alignment: .leading, spacing: 14) {
                         ForEach(secondary, id: \.self) { id in metric(id, size: 25) }
                     }
@@ -68,7 +68,7 @@ struct SummaryWidgetView: View {
             Label(text(MetricDefinition.find(id).widgetTitleKey), systemImage: MetricDefinition.find(id).symbol)
                 .font(.system(size: 11, weight: .medium)).foregroundStyle(theme.secondaryInk)
                 .lineLimit(1).minimumScaleFactor(0.8)
-            value(id, size: size)
+            value(id, size: size, showsStatus: true)
         }
         .help(formatter.help(id))
         .accessibilityElement(children: .ignore)
@@ -80,7 +80,7 @@ struct SummaryWidgetView: View {
             Text(text(MetricDefinition.find(id).widgetTitleKey))
                 .font(.system(size: 10, weight: .medium)).foregroundStyle(theme.secondaryInk)
                 .lineLimit(1).minimumScaleFactor(0.75)
-            value(id, size: size)
+            value(id, size: size, showsStatus: family == .systemLarge && secondary.count <= 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .help(formatter.help(id))
@@ -88,16 +88,16 @@ struct SummaryWidgetView: View {
         .accessibilityLabel(accessibility(id))
     }
 
-    private func value(_ id: String, size: CGFloat) -> some View {
+    private func value(_ id: String, size: CGFloat, showsStatus: Bool) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             MetricValueLabel(value: formatter.display(id), size: size).foregroundStyle(theme.ink)
-            if let status = formatter.interpretation(id)?.status {
-                Text(status).font(.system(size: 8, weight: .medium)).foregroundStyle(theme.secondaryInk)
-                    .lineLimit(1).minimumScaleFactor(0.75)
+            if showsStatus, let status = WidgetMetricPolicy.inlineStatus(for: id, formatter: formatter) {
+                Text(status).font(.system(size: 10, weight: .medium)).foregroundStyle(theme.secondaryInk)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             if let period = presentation.period(id) {
-                Text(period).font(.system(size: 8)).foregroundStyle(theme.secondaryInk)
-                    .lineLimit(1).minimumScaleFactor(0.8)
+                Text(period).font(.system(size: 9)).foregroundStyle(theme.secondaryInk)
+                    .lineLimit(1).minimumScaleFactor(1)
             }
         }
     }
@@ -108,7 +108,8 @@ struct SummaryWidgetView: View {
                 Text(text(MetricDefinition.find(id).widgetTitleKey))
                     .font(.system(size: 9, weight: .medium)).foregroundStyle(theme.secondaryInk)
                 if let period = presentation.period(id) {
-                    Text(period).font(.system(size: 8)).foregroundStyle(theme.secondaryInk)
+                    Text(period).font(.system(size: 9)).foregroundStyle(theme.secondaryInk)
+                        .lineLimit(1).minimumScaleFactor(1)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
             MetricValueLabel(value: formatter.display(id), size: 20).foregroundStyle(theme.ink)

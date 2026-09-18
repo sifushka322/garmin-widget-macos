@@ -334,8 +334,19 @@ final class AppStore: ObservableObject {
                         let requests = GarminWebAPI.calendarRequests(sourceDay: day)
                         guard !requests.isEmpty else { throw GarminWebError.invalidResponse }
                         self.webCache.calendarMonths = self.webCache.calendarMonths?.filter { key, _ in requests.contains { $0.month == key } }
-                        var validMonths = 0
-                        for request in requests {
+                        let calendarNow = self.syncMoment()
+                        let maximumAge = self.webPolicy.configuration.cadence(for: group)
+                        if self.webCache.calendarRefreshProgress?.isCurrent(sourceDay: day, at: calendarNow, maximumAge: maximumAge) != true {
+                            self.webCache.calendarRefreshProgress = .init(sourceDay: day, startedAt: calendarNow)
+                        }
+                        // A completed marker is valid only alongside the exact
+                        // payload written in this refresh generation.
+                        self.webCache.calendarRefreshProgress?.completedMonths = self.webCache.calendarRefreshProgress?.completedMonths.filter { month, stamp in
+                            requests.contains { $0.month == month } &&
+                            self.webCache.calendarMonths?[month]?.sourceDay == day &&
+                            self.webCache.calendarMonths?[month]?.retrievedAt == stamp
+                        } ?? [:]
+                        for request in requests where self.webCache.calendarRefreshProgress?.completedMonths[request.month] == nil {
                             try Task.checkCancellation()
                             guard self.webRunID == runID else { return }
                             if self.syncMoment().monotonicSeconds - batchStarted >= 90 {
@@ -350,9 +361,10 @@ final class AppStore: ObservableObject {
                                 let items = TrainingNormalizer.planned(payload: payload, sourceDay: day)
                                     .filter { String($0.localDate.prefix(7)) == request.month }
                                 if self.webCache.calendarMonths == nil { self.webCache.calendarMonths = [:] }
+                                let retrievedAt = self.syncMoment().wallTime
                                 self.webCache.calendarMonths?[request.month] = GarminCalendarMonthCache(sourceDay: day,
-                                    retrievedAt: self.syncMoment().wallTime, items: items)
-                                validMonths += 1
+                                    retrievedAt: retrievedAt, items: items)
+                                self.webCache.calendarRefreshProgress?.completedMonths[request.month] = retrievedAt
                             } catch GarminWebError.invalidResponse {
                                 warnings.append("schema_mismatch." + group.rawValue + "." + request.month)
                                 self.setTrainingIssue("schema_mismatch", group: group)
@@ -365,7 +377,8 @@ final class AppStore: ObservableObject {
                         }
                         // Persist each successful month even when another fails,
                         // but never mark a partial calendar batch fully fresh.
-                        if validMonths == requests.count {
+                        if requests.allSatisfy({ self.webCache.calendarRefreshProgress?.completedMonths[$0.month] != nil }) {
+                            self.webCache.calendarRefreshProgress = nil
                             successful.insert(group)
                             self.setTrainingIssue(nil, group: group)
                         }

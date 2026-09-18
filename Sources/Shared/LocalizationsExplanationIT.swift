@@ -25,7 +25,7 @@ enum LocalizationExplanationIT {
         "explanation.hrv.insufficient": "Dati HRV recenti insufficienti",
         "explanation.hrv.weekly": "Media di 7 giorni: %1$@ %2$@",
         "explanation.hrv.baseline": "Il tuo riferimento: %1$@–%2$@ %3$@",
-        "explanation.hrv.detail": "Il valore indica la variazione media tra i battiti dell'ultima notte. Lo stato HRV Garmin confronta la media di 7 giorni con il riferimento personale, che richiede circa tre settimane di sonno. Una notte non è lo stato settimanale; più alto non è sempre meglio.",
+        "explanation.hrv.detail": "Il valore è la variazione media degli intervalli tra battiti della notte registrata. Garmin confronta la media di 7 giorni con il riferimento personale, basato su circa tre settimane di sonno. «%@» indica invece un'HRV molto inferiore all'intervallo di riferimento per età. Una notte non è lo stato settimanale; più alto non è sempre meglio.",
         "explanation.readiness.prime": "Preparazione ottimale",
         "explanation.readiness.high": "Preparazione alta",
         "explanation.readiness.moderate": "Preparazione moderata",
@@ -96,7 +96,7 @@ enum LocalizationExplanationIT {
         "explanation.training.PEAKING.title": "Picco di forma",
         "explanation.training.PEAKING.detail": "Il carico ridotto ha favorito il recupero e un breve picco di prestazione.",
         "explanation.training.OVERREACHING.title": "Sovraccarico",
-        "explanation.training.OVERREACHING.detail": "L'allenamento supera la capacità di recupero e limita i progressi.",
+        "explanation.training.OVERREACHING.detail": "Garmin classifica il carico di allenamento come molto alto e controproducente.",
         "explanation.training.UNPRODUCTIVE.title": "Non produttivo",
         "explanation.training.UNPRODUCTIVE.detail": "La forma cala nonostante un carico adeguato; contano anche sonno, alimentazione e stress.",
         "explanation.training.STRAINED.title": "Affaticamento",
@@ -107,7 +107,7 @@ enum LocalizationExplanationIT {
         "explanation.training.PAUSED.detail": "La valutazione dello stato di allenamento è sospesa in Garmin.",
         "explanation.help": "Che cosa significa",
         "explanation.source": "Scopri di più su Garmin",
-        "explanation.forecast": "Stima lineare dall'ultima tendenza Garmin. %@",
+        "explanation.forecast": "Stima lineare locale dalle ultime misurazioni Garmin. %@",
         "explanation.labeledDetail": "%1$@: %2$@",
     ]
 }

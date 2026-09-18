@@ -103,6 +103,26 @@ struct GarminCalendarMonthCache: Codable {
     var items: [PlannedWorkoutSummary]
 }
 
+/// A single two-month refresh may span several time-bounded batches.
+/// This progress is private and saved atomically with the month payloads.
+struct GarminCalendarRefreshProgress: Codable {
+    var id = UUID()
+    var sourceDay: String
+    var startedAt: SyncPolicy.Moment
+    var completedMonths: [String: Date] = [:]
+
+    func isCurrent(sourceDay: String, at now: SyncPolicy.Moment, maximumAge: TimeInterval) -> Bool {
+        guard self.sourceDay == sourceDay else { return false }
+        let elapsed: TimeInterval
+        if startedAt.bootID == now.bootID {
+            elapsed = now.monotonicSeconds - startedAt.monotonicSeconds
+        } else {
+            elapsed = now.wallTime.timeIntervalSince(startedAt.wallTime)
+        }
+        return elapsed.isFinite && elapsed >= 0 && elapsed < maximumAge
+    }
+}
+
 struct GarminWebCache: Codable {
     var version = 1
     // Private cache ownership only; never copied into the widget snapshot.
@@ -112,6 +132,7 @@ struct GarminWebCache: Codable {
     // Optional additive fields keep version-1 caches readable.
     var pastActivities: GarminPastActivitiesCache?
     var calendarMonths: [String: GarminCalendarMonthCache]?
+    var calendarRefreshProgress: GarminCalendarRefreshProgress?
     var trainingIssues: [String: String]?
 
     func trainingTimeline(sourceDay: String) -> TrainingTimelineSnapshot? {

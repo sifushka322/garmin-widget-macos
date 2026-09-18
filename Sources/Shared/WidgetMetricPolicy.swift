@@ -16,6 +16,23 @@ enum WidgetMetricPolicy {
         let available = ordered.filter { formatter.value($0) != nil }
         return .init(primary: available.first ?? ordered[0], secondary: Array(available.dropFirst()))
     }
+    /// Compact surfaces show interpretations only when they add a useful scale,
+    /// goal or recovery state. Full explanations remain available in help/AX.
+    private static let inlineStatusMetrics: Set<String> = ["bodyBattery", "stress", "sleepScore", "trainingReadiness",
+                                                           "recoveryTime", "trainingLoad", "hrv", "steps"]
+
+    static func inlineStatus(for id: String, formatter: MetricFormatter) -> String? {
+        guard inlineStatusMetrics.contains(id) else { return nil }
+        if id == "steps" {
+            let snapshot = formatter.snapshot
+            let stepDay = snapshot.retainedMetrics["steps"]?.sourceDate ?? snapshot.sourceDate
+            let goalDay = snapshot.retainedMetrics["stepGoal"]?.sourceDate ?? snapshot.sourceDate
+            guard !stepDay.isEmpty, stepDay == goalDay,
+                  let goal = formatter.value("stepGoal"), goal > 0 else { return nil }
+        }
+        return formatter.interpretation(id)?.status
+    }
+
     static let overview = ["bodyBattery", "steps", "stress", "sleepDuration", "restingHeartRate", "sleepScore", "intensityMinutes", "activeCalories", "distance"]
     static let sport = ["trainingReadiness", "recoveryTime", "trainingLoad", "vo2Max", "intensityMinutes", "activeCalories", "hrv", "bodyBattery", "steps", "distance"]
     static let sleep = ["sleepDuration", "sleepScore", "deepSleep", "remSleep", "lightSleep", "hrv", "restingHeartRate", "respiration", "awakeSleep"]

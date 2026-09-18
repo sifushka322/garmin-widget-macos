@@ -25,7 +25,7 @@ enum LocalizationExplanationEN {
         "explanation.hrv.insufficient": "Insufficient recent HRV data",
         "explanation.hrv.weekly": "7-day average: %1$@ %2$@",
         "explanation.hrv.baseline": "Your baseline: %1$@–%2$@ %3$@",
-        "explanation.hrv.detail": "The displayed value is last night's average variation between heartbeats. Garmin's HRV status evaluates the 7-day average against your personal baseline, which takes about three weeks of sleep data to establish. One night's value is not the weekly status; higher is not always better.",
+        "explanation.hrv.detail": "The value is average heartbeat-interval variation for the recorded night. Garmin compares the 7-day average with your personal baseline, built from about three weeks of sleep data. “%@” instead refers to HRV well below the age-based reference range. A night's value is not the weekly status; higher is not always better.",
         "explanation.readiness.prime": "Prime readiness",
         "explanation.readiness.high": "High readiness",
         "explanation.readiness.moderate": "Moderate readiness",
@@ -96,7 +96,7 @@ enum LocalizationExplanationEN {
         "explanation.training.PEAKING.title": "Peaking",
         "explanation.training.PEAKING.detail": "Reduced load has supported recovery and a short-lived performance peak.",
         "explanation.training.OVERREACHING.title": "Overreaching",
-        "explanation.training.OVERREACHING.detail": "Training demands exceed recovery capacity and limit progress.",
+        "explanation.training.OVERREACHING.detail": "Garmin classifies your training load as very high and counterproductive.",
         "explanation.training.UNPRODUCTIVE.title": "Unproductive",
         "explanation.training.UNPRODUCTIVE.detail": "Fitness is declining despite adequate load; sleep, nutrition and stress also matter.",
         "explanation.training.STRAINED.title": "Strained",
@@ -107,7 +107,7 @@ enum LocalizationExplanationEN {
         "explanation.training.PAUSED.detail": "Training status evaluation is paused in Garmin.",
         "explanation.help": "What this means",
         "explanation.source": "Learn more from Garmin",
-        "explanation.forecast": "Linear estimate from the latest Garmin trend. %@",
+        "explanation.forecast": "Local linear estimate from recent Garmin readings. %@",
         "explanation.labeledDetail": "%1$@: %2$@",
     ]
 }

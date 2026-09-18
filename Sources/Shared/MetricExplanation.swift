@@ -105,7 +105,7 @@ struct MetricExplanation: Equatable {
                low.isFinite, high.isFinite, low > 0, high > low {
                 lines.append(format("hrv.baseline", digits(low), digits(high), Localizer.text("unit.ms", language: language)))
             }
-            return explanation(status, text("hrv.detail"),
+            return explanation(status, format("hrv.detail", text("hrv.poor")),
                 supporting: lines.isEmpty ? nil : lines.joined(separator: "\n"),
                 source: "https://www8.garmin.com/manuals/webhelp/GUID-25E3235D-44D2-4384-A591-DD1D71BEBCB1/EN-US/GUID-9282196F-D969-404D-B678-F48A13D8D0CB.html")
         case "trainingReadiness":

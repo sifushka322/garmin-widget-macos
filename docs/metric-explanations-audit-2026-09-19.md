@@ -5,15 +5,16 @@ help interpreting them. The shared `MetricExplanation` presentation now provides
 a short status, personal context where available, and an explanation for every
 catalog metric. Dashboard cards include an information button with the longer
 explanation and a relevant Garmin source. Widget layouts can use the same model.
-The explanation copy supports Russian and English; other interface languages
-currently use English for these additions.
+The explanation, context, help, and local-estimate messages are fully cataloged
+in all twelve supported interface languages. The catalogs have the same 106 keys;
+English fallback is not accepted as translation coverage.
 
 ## Interpretation rules
 
 | Metric | Displayed interpretation | Constraint |
 | --- | --- | --- |
 | Acute training load | Below / within / above the personal Garmin range; exact lower and upper values | No universal threshold. A recognized Garmin training status is a separate line. Low load never automatically becomes “detraining.” |
-| HRV | Last night's value, explicitly distinguished from Garmin's weekly HRV status | Weekly average and personal baseline are shown when provided. The nightly value never determines the weekly status. |
+| HRV | Recorded-night value, explicitly distinguished from Garmin's weekly HRV status | Weekly average and personal baseline are shown when provided. Garmin's Poor category uses an age-based reference; it is not inferred here. A retained older night is not described as last night. |
 | Training readiness | Poor 1–24, low 25–49, moderate 50–74, high 75–94, prime 95–100 | Uses Garmin's published scale. Zero has no readiness assessment. |
 | Sleep score | Poor <60, fair 60–79, good 80–89, excellent 90–100 | Sleep length alone does not determine sleep quality. |
 | Stress | Resting 0–25, low 26–50, medium 51–75, high 76–100 | Explicitly described as the day's average from `averageStressLevel`, not current emotions or an instantaneous measurement. |
@@ -66,8 +67,11 @@ recognized status; arbitrary suffixes and numeric status codes remain unknown.
 - Training status is a longer-term interpretation of fitness, load and HRV:
   [Garmin training status manual](https://www8.garmin.com/manuals/webhelp/GUID-2CF5620C-E585-4E0A-9CC3-9565533EEE4D/EN-US/GUID-6F81BF5B-B49A-4506-95E2-0F4A04D8B319.html),
   [Garmin training status explanation](https://www.garmin.com/en-GB/blog/garmin-training-status-and-how-to-use-it/).
-- HRV status compares a seven-day average with a personal baseline, formed using
-  about three weeks of sleep data:
+- HRV Balanced, Unbalanced, and Low compare a seven-day average with a personal
+  baseline, formed using about three weeks of sleep data. The same manual's
+  status table defines Poor against the age-based reference range and No status
+  as insufficient data for the seven-day average. These are descriptions of the
+  received Garmin categories, not app-computed health thresholds:
   [Garmin HRV status manual](https://www8.garmin.com/manuals/webhelp/GUID-25E3235D-44D2-4384-A591-DD1D71BEBCB1/EN-US/GUID-9282196F-D969-404D-B678-F48A13D8D0CB.html).
 - Readiness categories:
   [Garmin training readiness](https://www.garmin.com/en-MY/garmin-technology/running-science-entry-level/after-running/training-readiness/).
@@ -91,6 +95,30 @@ recognized status; arbitrary suffixes and numeric status codes remain unknown.
 sleep and stress category boundary; score rounding; malformed ranges; missing
 personal context; a detraining status alongside an optimal load; independence of
 nightly HRV and weekly status; retained-history isolation; unsupported metrics;
-nonfinite values; Russian copy; English fallback; and additive context decoding.
+nonfinite values; localized copy; and additive context decoding. The localization
+suite checks every explanation key and substitution in all twelve languages,
+known Garmin status codes, HRV age-reference wording, retained-night context,
+VoiceOver support text, locale-aware percentages, and the local estimate label.
 The shared test runner and dashboard/widget rendering checks provide integration
 validation. See the release audit for executed test and render results.
+
+## Semantic follow-up before release
+
+- `OVERREACHING` describes Garmin's very high, counterproductive load category.
+  The app does not claim to have measured recovery capacity or diagnosed
+  overtraining. The Chinese label says that load is excessive; the separate
+  unproductive label does not read like simple maintenance.
+- `UNPRODUCTIVE` still describes decreasing fitness despite adequate load;
+  `DETRAINING` still describes decline after an extended reduction in training.
+  Labels never change the canonical payload codes or normalization rules.
+- Body Battery's approximation is explicitly described as computed locally
+  from Garmin readings. Its same-day, one-hour validity and bounds remain in
+  `BodyBatteryProjection`; translation does not extend its lifetime.
+- The cached locale merge preserves the original 345 keys and adds the 106
+  explanation keys under a disjoint namespace. The effective system language
+  is resolved at lookup, not frozen in the cache.
+
+The HRV clarification uses the exact manual already linked above (Forerunner 570,
+v5, June 2026), whose status table was checked again during this review. Training
+categories were cross-checked with the official
+[Garmin training-status reference](https://www.garmin.com/en-US/garmin-technology/cycling-science/physiological-measurements/training-status/).

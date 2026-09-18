@@ -92,6 +92,7 @@ Tests/ReleasePromotionTests.py
 Tests/RenderApp.swift
 Tests/RenderTrainingCalendar.swift
 Tests/RenderWidgets.swift
+Tests/RuntimeCompatibilityTests.py
 Tests/SharedModelTests.swift
 Tests/SyncPolicyTests.swift
 Tests/TrainingCalendarTests.swift
@@ -147,6 +148,7 @@ docs/widget-upgrade-validation.md
 scripts/build-app.sh
 scripts/build-connector.sh
 scripts/build-widgets.sh
+scripts/ci-runtime-smoke.sh
 scripts/generate-icon.sh
 scripts/generate-icon.swift
 scripts/package-release.sh

@@ -116,7 +116,7 @@ struct GarminWidgetView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     primary(metricSelection.primary, compact: false)
                     Rectangle().fill(theme.ink.opacity(0.16)).frame(height: 1)
-                    LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)], alignment: .leading, spacing: profile.density == .compact ? 10 : 16) {
+                    LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)], alignment: .leading, spacing: profile.density == .compact ? 10 : 16) {
                         ForEach(Array(secondary(profile).prefix(profile.density == .compact ? 8 : 6)), id: \.self) { metric in
                             metricRow(metric)
                         }
@@ -136,17 +136,17 @@ struct GarminWidgetView: View {
     private func secondary(_ profile: WidgetProfile) -> [String] { metricSelection.secondary }
 
     private func primary(_ id: String, compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: compact ? 10 : 8) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: MetricDefinition.find(id).symbol).foregroundStyle(accent)
                 Text(text(MetricDefinition.find(id).widgetTitleKey)).foregroundStyle(theme.secondaryInk)
             }
             .font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
-            MetricValueLabel(value: formatter.display(id), size: compact ? 46 : (family == .systemLarge ? 48 : 38))
+            MetricValueLabel(value: formatter.display(id), size: compact ? 42 : (family == .systemLarge ? 48 : 38))
                 .foregroundStyle(theme.ink).layoutPriority(1)
-            if let status = formatter.interpretation(id)?.status {
+            if let status = WidgetMetricPolicy.inlineStatus(for: id, formatter: formatter) {
                 Text(status).font(.system(size: 10, weight: .medium)).foregroundStyle(theme.secondaryInk)
-                    .lineLimit(1).minimumScaleFactor(0.75)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             if let period = presentation.period(id) {
                 Text(period).font(.system(size: 10, weight: .medium)).foregroundStyle(theme.secondaryInk)
@@ -169,12 +169,14 @@ struct GarminWidgetView: View {
                 .font(.system(size: 10)).foregroundStyle(theme.secondaryInk).lineLimit(1).minimumScaleFactor(0.8)
             MetricValueLabel(value: formatter.display(id), size: family == .systemLarge ? 23 : 22)
                 .foregroundStyle(theme.ink)
-            if let status = formatter.interpretation(id)?.status {
-                Text(status).font(.system(size: 8)).foregroundStyle(theme.secondaryInk)
-                    .lineLimit(1).minimumScaleFactor(0.75)
+            if family == .systemLarge, metricSelection.secondary.count <= 4,
+               let status = WidgetMetricPolicy.inlineStatus(for: id, formatter: formatter) {
+                Text(status).font(.system(size: 10)).foregroundStyle(theme.secondaryInk)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             if let period = presentation.period(id) {
-                Text(period).font(.system(size: 8)).foregroundStyle(theme.secondaryInk)
+                Text(period).font(.system(size: 9)).foregroundStyle(theme.secondaryInk)
+                    .lineLimit(1).minimumScaleFactor(1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
