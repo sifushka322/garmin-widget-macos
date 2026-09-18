@@ -11,12 +11,16 @@ struct MetricFormatter {
     }
 
     func help(_ id: String) -> String {
-        [interpretation(id)?.supportingText, interpretation(id)?.detail, context(id)].compactMap { $0 }.joined(separator: "\n")
+        let explanation = interpretation(id)
+        return [explanation?.supportingText, explanation?.detail, context(id)].compactMap { $0 }.joined(separator: "\n")
     }
 
     func accessibility(_ id: String) -> String {
-        ([text(MetricDefinition.find(id).titleKey) + ": " + display(id)]
-            + [interpretation(id)?.status, context(id)].compactMap { $0 }).joined(separator: ". ")
+        let explanation = interpretation(id)
+        let value = String(format: text("explanation.labeledDetail"), locale: language.locale,
+                           text(MetricDefinition.find(id).titleKey), display(id))
+        return ([value] + [explanation?.status, explanation?.supportingText, context(id)]
+            .compactMap { $0 }).joined(separator: ". ")
     }
     func value(_ id: String) -> Double? {
         if id == "bodyBattery", let estimate = snapshot.bodyBatteryEstimate(at: now) { return estimate }
@@ -43,7 +47,9 @@ struct MetricFormatter {
             let minutes = Int(value.rounded())
             if minutes >= 60 { return "\(minutes / 60) \(text("unit.hours")) \(minutes % 60) \(text("unit.minutes"))" }
             return "\(minutes) \(text("unit.minutes"))"
-        case .percent: return digits + "%"
+        case .percent:
+            number.numberStyle = .percent
+            return number.string(from: NSNumber(value: value / 100)) ?? "—"
         case .number, .score: return (isEstimated(id) ? "≈" : "") + digits
         default:
             let key: String
@@ -71,9 +77,7 @@ struct MetricFormatter {
             date.locale = language.locale; date.dateStyle = .short; date.timeStyle = .short
             let measuredText = text("data.measured") + " " + date.string(from: measured)
             if isEstimated(id) {
-                return (language.effectiveLanguage == .ru
-                    ? "Линейная оценка по последнему тренду Garmin. "
-                    : "Linear estimate from the latest Garmin trend. ") + measuredText
+                return String(format: text("explanation.forecast"), locale: language.locale, measuredText)
             }
             return measuredText
         }

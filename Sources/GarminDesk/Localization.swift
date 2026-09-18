@@ -7,8 +7,18 @@ enum Localizer {
 
     /// Internal tables also let tests detect omissions before English fallback hides them.
     static func table(for language: AppLanguage) -> [String: String] {
+        localizedTables[language.effectiveLanguage] ?? english
+    }
+
+    // Build each complete catalog once; looking up a label must not merge hundreds of keys.
+    private static let localizedTables: [AppLanguage: [String: String]] = Dictionary(uniqueKeysWithValues:
+        AppLanguage.supported.map { language in
+            (language, baseTable(for: language).merging(MetricExplanationCatalog.table(for: language)) { _, explanation in explanation })
+        })
+
+    private static func baseTable(for language: AppLanguage) -> [String: String] {
         switch language.effectiveLanguage {
-        case .system, .en: return english
+        case .system, .en: return baseEnglish
         case .ru: return russian
         case .de: return LocalizationDE.strings
         case .fr: return LocalizationFR.strings
@@ -23,7 +33,9 @@ enum Localizer {
         }
     }
 
-    static let english: [String: String] = [
+    static let english = baseEnglish.merging(MetricExplanationCatalog.table(for: .en)) { _, explanation in explanation }
+
+    private static let baseEnglish: [String: String] = [
         "widget.summary.minimum": "Keep at least one measurement selected.",
         "widget.summary.hint": "Only selected measurements with available readings appear. Widget size limits how many fit.",
         "widget.summary.primary": "Preferred main measurement",
