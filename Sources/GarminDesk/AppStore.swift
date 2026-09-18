@@ -77,7 +77,7 @@ final class AppStore: ObservableObject {
         webPolicy = SyncPolicy(configuration: .init(refreshInterval: preferences.refreshInterval), checkpoint: checkpoint)
         let groupURL = supportDirectory.appendingPathComponent("metric-groups.json")
         webCache = (try? Data(contentsOf: groupURL)).flatMap { try? AppJSON.decoder.decode(GarminWebCache.self, from: $0) } ?? .init()
-        if webCache.version != 1 { webCache = .init() }
+        if webCache.version != 1 || webCache.accountDisplayName?.isEmpty != false { webCache = .init() }
         // Either cache file may be the last successful write from an account
         // switch. Discard both sides of a conflict before an error handler can
         // republish an unverified group's values without a profile response.
@@ -489,12 +489,14 @@ final class AppStore: ObservableObject {
                             if self.historicalRecoveryEnabled, values.isEmpty,
                                GarminHistoricalRecovery.eligibleGroups.contains(group),
                                !self.webCache.hasOwnedReading(for: group, snapshot: self.snapshot) {
-                                if self.webCache.historicalRecovery?.sourceDay != day {
+                                if self.webCache.historicalRecovery == nil || day > self.webCache.historicalRecovery!.sourceDay {
                                     self.webCache.historicalRecovery = .init(sourceDay: day, startedAt: self.syncMoment())
                                 }
                                 // Expiry does not reset the generation on the same
                                 // day. Attempts remain consumed until date/account change.
-                                self.webCache.historicalRecovery?.queued.insert(group)
+                                if self.webCache.historicalRecovery?.sourceDay == day {
+                                    self.webCache.historicalRecovery?.queued.insert(group)
+                                }
                             }
                         }
                         successful.insert(group)
