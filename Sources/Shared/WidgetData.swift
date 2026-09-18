@@ -67,7 +67,7 @@ enum WidgetDataStore {
                 let status = getpwuid_r(userID, &record, memory.baseAddress, memory.count, &result)
                 guard status == 0, result != nil, record.pw_uid == userID,
                       let directory = record.pw_dir else { return (status, nil) }
-                return (status, String(validatingCString: directory))
+                return (status, String(validatingUTF8: directory))
             }
             if response.0 == ERANGE { size *= 2; continue }
             guard response.0 == 0, let path = response.1,
