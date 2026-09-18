@@ -145,7 +145,7 @@ struct LocalizationTests {
                                "English fallback is not translation coverage: \(language), \(metric.id)")
                 }
             }
-            var snapshot = GarminSnapshot(fetchedAt: now, sourceDate: "2026-09-16", devices: [],
+            var snapshot = GarminSnapshot(fetchedAt: now, sourceDate: SyncPolicy.sourceDay(for: now, timeZone: .current), devices: [],
                 metrics: ["trainingLoad": .init(value: 525), "hrv": .init(value: 32), "spo2": .init(value: 97),
                           "steps": .init(value: 6000), "stepGoal": .init(value: 10000)])
             for code in trainingCodes {
