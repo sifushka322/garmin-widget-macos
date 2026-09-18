@@ -32,6 +32,7 @@ final class AppStore: ObservableObject {
     private let clock: (() -> SyncPolicy.Moment)?
     private let sourceTimeZone: () -> TimeZone
     private let automaticScheduling: Bool
+    private let historicalRecoveryEnabled: Bool
     private let writesWidgetData: Bool
     private let widgetPublisher: ((WidgetData) throws -> Void)?
     private var webDisplayName: String?
@@ -50,6 +51,7 @@ final class AppStore: ObservableObject {
          defaults: UserDefaults = .standard, clock: (() -> SyncPolicy.Moment)? = nil,
          sourceTimeZone: @escaping () -> TimeZone = { .autoupdatingCurrent },
          automaticScheduling: Bool = true, writesWidgetData: Bool = true,
+         historicalRecoveryEnabled: Bool = true,
          initialWidgetSharingAvailable: Bool = false,
          widgetPublisher: ((WidgetData) throws -> Void)? = nil) {
         self.supportDirectory = supportDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("GarminDesk", isDirectory: true)
@@ -58,6 +60,7 @@ final class AppStore: ObservableObject {
         self.clock = clock
         self.sourceTimeZone = sourceTimeZone
         self.automaticScheduling = automaticScheduling
+        self.historicalRecoveryEnabled = historicalRecoveryEnabled
         self.writesWidgetData = writesWidgetData
         self.widgetPublisher = widgetPublisher
         self.widgetSharingAvailable = initialWidgetSharingAvailable
@@ -207,7 +210,13 @@ final class AppStore: ObservableObject {
     }
 
     private func requestedWebGroups(for preferences: AppPreferences) -> Set<SyncPolicy.Group> {
-        GarminWebAPI.requiredGroups(metricIDs: WidgetSlot.requiredMetricIDs(in: preferences), includeTraining: true)
+        var groups = GarminWebAPI.requiredGroups(metricIDs: WidgetSlot.requiredMetricIDs(in: preferences), includeTraining: true)
+        let moment = syncMoment()
+        let day = SyncPolicy.sourceDay(for: moment.wallTime, timeZone: sourceTimeZone())
+        if historicalRecoveryEnabled, webCache.historicalRecovery?.pending(sourceDay: day, at: moment).isEmpty == false {
+            groups.insert(.historicalRecovery)
+        }
+        return groups
     }
 
     private func webDecision(policy: inout SyncPolicy, trigger: SyncPolicy.Trigger,
@@ -319,7 +328,7 @@ final class AppStore: ObservableObject {
                 }
                 guard let name = self.webDisplayName else { throw GarminWebError.signInRequired }
                 let order: [SyncPolicy.Group] = [.stats, .bodyBattery, .sleep, .heart, .hrv, .readiness,
-                    .respiration, .spo2, .vo2Max, .training, .weight, .hydration, .devices, .activities, .plannedWorkouts]
+                    .respiration, .spo2, .vo2Max, .training, .weight, .hydration, .devices, .activities, .plannedWorkouts, .historicalRecovery]
                 for group in order where active.groups.contains(group) {
                     try Task.checkCancellation()
                     guard self.webRunID == runID else { return }
@@ -330,6 +339,56 @@ final class AppStore: ObservableObject {
                         break
                     }
                     attemptedGroup = group
+                    if group == .historicalRecovery {
+                        // Recovery was queued by an earlier successful current-day
+                        // batch. Never delay publication of today's first readings.
+                        let recoveryNow = self.syncMoment()
+                        let pending = self.webCache.historicalRecovery?.pending(sourceDay: day, at: recoveryNow) ?? []
+                        guard let previousDay = GarminHistoricalRecovery.previousDay(for: day) else {
+                            successful.insert(group); continue
+                        }
+                        for recoveredGroup in pending {
+                            try Task.checkCancellation()
+                            guard self.webRunID == runID else { return }
+                            guard self.webCache.historicalRecovery?.pending(sourceDay: day, at: self.syncMoment()).contains(recoveredGroup) == true else { continue }
+                            if self.syncMoment().monotonicSeconds - batchStarted >= 90 {
+                                deferred.insert(group); break
+                            }
+                            self.webCache.historicalRecovery?.attempted.insert(recoveredGroup)
+                            // Persist the consumed attempt before GET. A failed disk
+                            // write skips network I/O, preserving the cross-launch cap.
+                            do { try self.writePrivate(AppJSON.encoder.encode(self.webCache), name: "metric-groups.json") }
+                            catch {
+                                warnings.append("storage.historical_recovery")
+                                self.lastErrorKey = "error.storage"
+                                continue
+                            }
+                            if self.webCache.hasOwnedReading(for: recoveredGroup, snapshot: self.snapshot) { continue }
+                            guard let path = GarminWebAPI.path(group: recoveredGroup, sourceDay: previousDay, displayName: name) else { continue }
+                            do {
+                                let payload = try await self.webSession.get(path: path, stage: "historical." + recoveredGroup.rawValue)
+                                try Task.checkCancellation()
+                                guard self.webRunID == runID else { return }
+                                guard GarminPayloadNormalizer.isRecognizedPayload(group: recoveredGroup.rawValue, payload: payload),
+                                      let recordDay = GarminPayloadNormalizer.historicalSourceDay(group: recoveredGroup.rawValue, payload: payload, requestedDay: previousDay) else {
+                                    throw GarminWebError.invalidResponse
+                                }
+                                let retrievedAt = self.syncMoment().wallTime
+                                let values = GarminPayloadNormalizer.normalize(group: recoveredGroup.rawValue, payload: payload, asOf: retrievedAt)
+                                self.webCache.remember(group: .init(sourceDay: recordDay, retrievedAt: retrievedAt, metrics: values))
+                                // No current-group stamp, projection, personal ranges
+                                // or countdown is attached to a historical reading.
+                            } catch GarminWebError.invalidResponse {
+                                warnings.append("schema_mismatch.historical." + recoveredGroup.rawValue)
+                            } catch GarminWebError.network {
+                                warnings.append("network.historical." + recoveredGroup.rawValue)
+                            }
+                        }
+                        if self.webCache.historicalRecovery?.pending(sourceDay: day, at: self.syncMoment()).isEmpty != false {
+                            successful.insert(group)
+                        }
+                        continue
+                    }
                     if group == .plannedWorkouts {
                         let requests = GarminWebAPI.calendarRequests(sourceDay: day)
                         guard !requests.isEmpty else { throw GarminWebError.invalidResponse }
@@ -423,7 +482,20 @@ final class AppStore: ObservableObject {
                             var cached = GarminMetricGroupCache(sourceDay: day, retrievedAt: retrievedAt, metrics: values)
                             cached.bodyBatteryProjection = projection
                             cached.metricContext = GarminPayloadNormalizer.metricContext(group: group.rawValue, payload: payload)
+                            // Preserve the previous owned value before replacing
+                            // this endpoint with a successful empty response.
+                            if let old = self.webCache.groups[group.rawValue] { self.webCache.remember(group: old) }
                             self.webCache.groups[group.rawValue] = cached
+                            if self.historicalRecoveryEnabled, values.isEmpty,
+                               GarminHistoricalRecovery.eligibleGroups.contains(group),
+                               !self.webCache.hasOwnedReading(for: group, snapshot: self.snapshot) {
+                                if self.webCache.historicalRecovery?.sourceDay != day {
+                                    self.webCache.historicalRecovery = .init(sourceDay: day, startedAt: self.syncMoment())
+                                }
+                                // Expiry does not reset the generation on the same
+                                // day. Attempts remain consumed until date/account change.
+                                self.webCache.historicalRecovery?.queued.insert(group)
+                            }
                         }
                         successful.insert(group)
                         // Fast batches still publish once. Slow batches expose
@@ -476,6 +548,7 @@ final class AppStore: ObservableObject {
     }
 
     private func commitWebCache(sourceDay: String, warnings: [String]) {
+        webCache.remember(snapshot: snapshot)
         let current = webCache.snapshot(sourceDay: sourceDay, fallback: snapshot, warnings: warnings)
         guard !current.isDemo else { return }
         snapshot = current

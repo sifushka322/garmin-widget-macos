@@ -77,6 +77,34 @@ enum GarminPayloadNormalizer {
         }
     }
 
+    /// A requested historical day is only a fallback label. Preserve explicit
+    /// older record dates (notably VO2 max), and reject future or malformed labels.
+    /// Never derive a Garmin calendar day from a UTC measurement timestamp.
+    static func historicalSourceDay(group: String, payload: Any, requestedDay: String) -> String? {
+        guard GarminHistoricalRecovery.eligibleGroups.contains(where: { $0.rawValue == group }),
+              GarminWebAPI.validDay(requestedDay) else { return nil }
+        let object = dictionary(payload)
+        let labels: [Any?]
+        switch group {
+        case "sleep": labels = [dictionary(object["dailySleepDTO"])["calendarDate"]]
+        case "hrv": labels = [dictionary(object["hrvSummary"])["calendarDate"]]
+        case "respiration": labels = [object["calendarDate"]]
+        case "readiness": labels = records(payload).map { $0["calendarDate"] }
+        case "training": labels = [trainingEntry(object)?["calendarDate"]]
+        case "vo2_max":
+            let entries = payload is [String: Any] ? [object] : records(payload)
+            labels = entries.map { dictionary($0["generic"])["calendarDate"] }
+        default: return nil
+        }
+        var days: [String] = []
+        for raw in labels {
+            guard let raw, !(raw is NSNull) else { continue }
+            guard let day = raw as? String, GarminWebAPI.validDay(day), day <= requestedDay else { return nil }
+            days.append(day)
+        }
+        return days.max() ?? requestedDay
+    }
+
     static func normalize(group: String, payload: Any, asOf: Date? = nil) -> [String: MetricReading] {
         var result: [String: MetricReading] = [:]
         let object = dictionary(payload)
