@@ -183,8 +183,7 @@ struct RenderWidgets {
         let view = widget.padding(16).frame(width: size.width, height: size.height).background(widget.background)
             .environment(\.colorScheme, data.preferences.widgetAppearance == .light ? .light : .dark)
             .clipShape(RoundedRectangle(cornerRadius: 24))
-        let renderer = ImageRenderer(content: view); renderer.scale = 2
-        guard let image = renderer.cgImage, let bytes = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { fatalError("Unable to render fixed widget") }
+        let bytes = FixtureBitmapRenderer.png(view, size: size)
         try bytes.write(to: output.appendingPathComponent(name + ".png"))
     }
 }

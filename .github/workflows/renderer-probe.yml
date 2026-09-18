@@ -1,0 +1,63 @@
+name: Probe fixture bitmap renderer
+on:
+  push:
+    branches: [codex/audit-bitmap-renderer-060]
+permissions:
+  contents: read
+jobs:
+  render:
+    name: Full bitmap fixtures on ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+            os_major: '14'
+          - runner: macos-15-intel
+            arch: x86_64
+            os_major: '15'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Compile and render the complete widget and calendar matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = '${{ matrix.arch }}'
+          test "$(sw_vers -productVersion | cut -d. -f1)" = '${{ matrix.os_major }}'
+          xcrun swiftc --version
+          mkdir -p build/audit build/module-cache
+          options=(-parse-as-library -swift-version 5 -target "${{ matrix.arch }}-apple-macos14.0" -module-cache-path build/module-cache)
+          shared=(Sources/Shared/*.swift Sources/GarminDesk/Localization.swift)
+          frameworks=(-framework SwiftUI -framework AppKit -framework WidgetKit -framework WebKit -framework Security -framework ServiceManagement)
+          xcrun swiftc "${options[@]}" -module-name RenderWidgets "${shared[@]}" Tests/RenderWidgets.swift Tests/FixtureBitmapRenderer.swift "${frameworks[@]}" -o build/audit/render-widgets
+          build/audit/render-widgets build/audit/widgets
+          xcrun swiftc "${options[@]}" -module-name RenderTrainingCalendar "${shared[@]}" Tests/RenderTrainingCalendar.swift Tests/FixtureBitmapRenderer.swift "${frameworks[@]}" -o build/audit/render-calendar
+          build/audit/render-calendar build/audit/calendar
+          python3 - <<'PY'
+          from pathlib import Path
+          for kind in ("widgets", "calendar"):
+              paths = list(Path("build/audit", kind).glob("*.png"))
+              assert paths, kind
+              print(f"PASS: full {kind} matrix: {len(paths)} PNG fixtures")
+          PY
+      - name: Upload compact renderer comparison
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bitmap-review-${{ matrix.runner }}
+          path: |
+            build/audit/widgets/fixed-ru-light-overview-small.png
+            build/audit/widgets/fixed-ru-dark-sport-large.png
+            build/audit/widgets/stress-ru-old-load-network-small-light.png
+            build/audit/widgets/stress-de-old-hrv-disconnected-small-light.png
+            build/audit/widgets/stress-pl-old-load-network-small-light.png
+            build/audit/widgets/stress-ru-dense-old-load-large-light.png
+            build/audit/calendar/calendar-ru-filled-large.png
+            build/audit/calendar/calendar-de-partial-medium.png
+          if-no-files-found: warn
+          retention-days: 3
