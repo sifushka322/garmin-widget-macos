@@ -569,6 +569,8 @@ struct AppStoreSyncTests {
             try testIndependentCacheWriteRecovery()
             try await testWidgetPublicationCount()
             try await testTransientCalendarMonthDoesNotStarveNextMonth()
+            try await testSlowCalendarResumesAcrossBatchesAndRestart()
+            try await testCalendarProgressExpiryAndPayloadValidation()
             try await testWrongDayPayloadCannotBecomeCurrent()
             try await testBodyBatteryRefreshAndRegression()
             try await testEmptyUnchangedAndRecovery()
@@ -806,6 +808,73 @@ struct AppStoreSyncTests {
                    "Partial calendar is not marked fully fresh")
     }
 
+
+
+    static func testSlowCalendarResumesAcrossBatchesAndRestart() async throws {
+        let rig = try Rig(); defer { rig.clean() }
+        let day = SyncPolicy.sourceDay(for: rig.clock.moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!)
+        let months = GarminWebAPI.calendarRequests(sourceDay: day)
+        let stages = months.map { "planned_workouts." + $0.month }
+        for stage in stages { rig.web.payloads[stage] = ["calendarItems": [Any]()] }
+        rig.web.onGet = { stage in if stage.hasPrefix("planned_workouts.") { rig.clock.advance(95) } }
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(rig.web.calls.filter { $0.hasPrefix("planned_workouts.") } == [stages[0]],
+                   "A successful slow first month leaves the second month for the next bounded batch")
+        try expect(rig.store.nextSyncAt == rig.clock.moment.wallTime,
+                   "An unfinished calendar refresh stays due without retrying a completed page")
+        let cacheURL = rig.directory.appendingPathComponent("metric-groups.json")
+        let partial = try AppJSON.decoder.decode(GarminWebCache.self, from: Data(contentsOf: cacheURL))
+        try expect(Set(partial.calendarRefreshProgress?.completedMonths.keys.map { $0 } ?? []) == [months[0].month],
+                   "Progress is persisted atomically beside its successful month payload")
+
+        let restoredWeb = MockWeb()
+        for stage in stages { restoredWeb.payloads[stage] = ["calendarItems": [Any]()] }
+        restoredWeb.onGet = { stage in if stage.hasPrefix("planned_workouts.") { rig.clock.advance(95) } }
+        let restored = AppStore(supportDirectory: rig.directory, webSession: restoredWeb, defaults: rig.defaults,
+                                clock: { rig.clock.moment }, sourceTimeZone: { TimeZone(secondsFromGMT: 0)! },
+                                automaticScheduling: false, writesWidgetData: false)
+        defer { restored.cancelLogin(resumeAutomatic: false) }
+        restored.sync(trigger: .automatic); try await settled(restored)
+        try expect(restoredWeb.calls.filter { $0.hasPrefix("planned_workouts.") } == [stages[1]],
+                   "A relaunched batch resumes the remaining page instead of repeatedly fetching month one")
+        try expect(restored.trainingTimeline?.futureCoveredMonths == months.map(\.month) &&
+                   (try rig.checkpoint()).successfulGroups[.plannedWorkouts] != nil,
+                   "Two individually slow pages complete one calendar refresh in finite batches")
+        let complete = try AppJSON.decoder.decode(GarminWebCache.self, from: Data(contentsOf: cacheURL))
+        try expect(complete.calendarRefreshProgress == nil && restored.nextSyncAt! > rig.clock.moment.wallTime,
+                   "A completed generation clears progress and returns to ordinary cadence")
+        let before = restoredWeb.calls.count
+        rig.clock.advance(31)
+        restored.sync(); try await settled(restored)
+        let manual = Array(restoredWeb.calls.dropFirst(before)).filter { $0.hasPrefix("planned_workouts.") }
+        try expect(manual == [stages[0]],
+                   "A later explicit refresh starts a new cycle, so completed old pages are fetched again")
+    }
+
+    static func testCalendarProgressExpiryAndPayloadValidation() async throws {
+        let clock = TestClock()
+        let day = SyncPolicy.sourceDay(for: clock.moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!)
+        var progress = GarminCalendarRefreshProgress(sourceDay: day, startedAt: clock.moment)
+        clock.advance(100, wallAdjustment: 100000)
+        try expect(progress.isCurrent(sourceDay: day, at: clock.moment, maximumAge: 3600),
+                   "A forward wall-clock change cannot prematurely discard an active same-boot refresh")
+        clock.advance(3500, wallAdjustment: -200000)
+        try expect(!progress.isCurrent(sourceDay: day, at: clock.moment, maximumAge: 3600),
+                   "Continuous expiry bounds a pending refresh even after a backward wall-clock change")
+        try expect(!progress.isCurrent(sourceDay: "2026-09-16", at: progress.startedAt, maximumAge: 3600),
+                   "A previous day's refresh cannot skip the current day's pages")
+
+        let months = GarminWebAPI.calendarRequests(sourceDay: day)
+        progress.completedMonths[months[0].month] = progress.startedAt.wallTime
+        var cache = GarminWebCache(accountDisplayName: "fixture-user")
+        cache.calendarRefreshProgress = progress
+        // Marker exists, but its payload is absent: it cannot prove coverage.
+        let rig = try Rig(groups: cache); defer { rig.clean() }
+        for month in months { rig.web.payloads["planned_workouts." + month.month] = ["calendarItems": [Any]()] }
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(rig.web.calls.filter { $0.hasPrefix("planned_workouts.") } == months.map { "planned_workouts." + $0.month },
+                   "Missing month bytes invalidate a saved marker and force both pages to be fetched")
+    }
 
     static func testWrongDayPayloadCannotBecomeCurrent() async throws {
         let rig = try Rig(); defer { rig.clean() }
