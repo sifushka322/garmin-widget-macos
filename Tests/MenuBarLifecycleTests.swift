@@ -76,6 +76,11 @@ struct MenuBarLifecycleTests {
         try expect(NSApp.sendAction(target.action!, to: target.target, from: target), "Menu action must dispatch: " + action)
     }
 
+    private static func displayVisibilityView(in view: NSView) -> MetricWindowVisibilityView? {
+        if let visibility = view as? MetricWindowVisibilityView { return visibility }
+        return view.subviews.lazy.compactMap { displayVisibilityView(in: $0) }.first
+    }
+
     private static func pulse() async { try? await Task.sleep(nanoseconds: 100_000_000) }
 
     private static func settle(_ store: AppStore) async throws {
@@ -92,6 +97,11 @@ struct MenuBarLifecycleTests {
         guard let store = state.store, let window = state.window, let status = state.status else {
             throw Failure(description: "Launch must create store, main window, and status item")
         }
+        guard let content = window.contentView, let visibility = displayVisibilityView(in: content) else {
+            throw Failure(description: "Production main window must observe display visibility")
+        }
+        try expect(visibility.activity.allowsDisplayUpdates == (window.isVisible && !window.isMiniaturized && window.occlusionState.contains(.visible) && !NSApp.isHidden),
+                   "Metric clock activity must follow actual window visibility")
         try expect(NSApp.activationPolicy() == .accessory, "Application must stay out of Dock")
         try expect(window.isVisible, "Explicit launch must show its main window")
         try expect(status.isVisible && status.button?.image?.isTemplate == true, "Visible status icon must be a template image")
@@ -107,6 +117,7 @@ struct MenuBarLifecycleTests {
         await pulse()
         try expect(!window.isVisible && !delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp), "Closing the window must preserve the background application")
         try expect(status.isVisible, "Closing the window must preserve the status item")
+        try expect(!visibility.activity.allowsDisplayUpdates, "Retaining a closed main window must not retain an active metric timeline")
         try invoke("showSettings", in: state.menu)
         await pulse()
         try expect(window.isVisible && delegate.lifecycleTestState.navigation.section == .general, "Settings must reopen the window on General")
@@ -114,6 +125,7 @@ struct MenuBarLifecycleTests {
 
         window.miniaturize(nil)
         await pulse()
+        try expect(!visibility.activity.allowsDisplayUpdates, "Minimizing suspends all metric display schedules")
         _ = delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
         await pulse()
         try expect(window.isVisible && !window.isMiniaturized, "Finder reopen must restore a minimized window")
@@ -121,6 +133,12 @@ struct MenuBarLifecycleTests {
         try invoke("showMainWindow", in: state.menu)
         await pulse()
         try expect(window.isVisible, "Open must restore a closed window")
+        try expect(visibility.activity.allowsDisplayUpdates == window.occlusionState.contains(.visible), "Reopening restores the clock only for a visible window")
+        window.orderOut(nil)
+        await pulse()
+        try expect(!visibility.activity.allowsDisplayUpdates, "Ordering out a retained window stops its display clock")
+        try invoke("showMainWindow", in: state.menu)
+        await pulse()
         let link = WidgetLink(slot: .sport).url!
         window.close()
         delegate.application(NSApp, open: [link])

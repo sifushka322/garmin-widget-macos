@@ -16,7 +16,7 @@ struct GarminTimelineProvider: TimelineProvider {
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<GarminEntry>) -> Void) {
         let now = Date(), data = WidgetDataStore.read()
-        let dates = WidgetTimelineSchedule.dates(data: data, slot: slot, from: now)
+        let dates = WidgetTimelineSchedule.dates(data: data, slot: slot, family: context.family, from: now)
         completion(Timeline(entries: dates.map { entry(date: $0, data: data) },
             policy: .after(now.addingTimeInterval(Double(max(15, data?.preferences.refreshMinutes ?? 15)) * 60))))
     }
