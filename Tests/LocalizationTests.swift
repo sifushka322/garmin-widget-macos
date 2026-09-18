@@ -169,16 +169,29 @@ struct LocalizationTests {
                 let formatter = MetricFormatter(snapshot: snapshot, language: language, now: now)
                 let explanation = formatter.interpretation("hrv")!
                 try expect(explanation.status == table["explanation.hrv." + suffix], "Localized weekly HRV label")
+                try expect(explanation.detail.contains(table["explanation.hrv.poor"]!) && !explanation.detail.contains("%@"),
+                           "The age-reference exception must name the localized Poor status")
                 try expect(formatter.accessibility("hrv").contains(explanation.supportingText!),
                            "VoiceOver must include weekly average and personal baseline")
                 try expect(formatter.help("hrv").contains(explanation.supportingText!), "Help must include HRV context")
                 try expect(explanation.supportingText!.contains("58") && explanation.supportingText!.contains("49")
                            && explanation.supportingText!.contains("72"), "HRV interpolation retains all three values")
             }
+
+            snapshot.metricContext = nil
+            snapshot.metrics.removeValue(forKey: "hrv")
+            snapshot.retainedMetrics["hrv"] = .init(reading: .init(value: 32), sourceDate: "2026-09-13",
+                retrievedAt: now, changedAt: now)
+            let retainedHRV = MetricFormatter(snapshot: snapshot, language: language, now: now)
+            try expect(retainedHRV.interpretation("hrv")?.supportingText == nil,
+                       "Retained nightly HRV must not acquire current weekly context")
+            try expect(retainedHRV.context("hrv")?.contains(TrainingPresentation(language: language).dayText("2026-09-13")!) == true,
+                       "The recorded night remains explicit for historical HRV")
+            let percentageFormatter = MetricFormatter(snapshot: snapshot, language: language, now: now)
             let percent = NumberFormatter()
             percent.locale = language.locale; percent.numberStyle = .percent
             percent.maximumFractionDigits = 0; percent.roundingMode = .halfUp
-            try expect(MetricFormatter(snapshot: snapshot, language: language, now: now).display("spo2")
+            try expect(percentageFormatter.display("spo2")
                        == percent.string(from: 0.97), "Percent spacing must follow the selected locale")
             let anchor = MetricReading(value: 60, measuredAt: now.addingTimeInterval(-1800))
             snapshot.metrics["bodyBattery"] = anchor

@@ -25,7 +25,7 @@ enum LocalizationExplanationDE {
         "explanation.hrv.insufficient": "Zu wenige aktuelle HFV-Daten",
         "explanation.hrv.weekly": "7-Tage-Durchschnitt: %1$@ %2$@",
         "explanation.hrv.baseline": "Dein Basisbereich: %1$@–%2$@ %3$@",
-        "explanation.hrv.detail": "Der Wert zeigt die durchschnittliche Schwankung der Herzschlagintervalle in der letzten Nacht. Der Garmin-HFV-Status vergleicht den 7-Tage-Durchschnitt mit deinem Basisbereich, für den etwa drei Wochen Schlafdaten nötig sind. Eine Nacht ist nicht der Wochenstatus; höher ist nicht immer besser.",
+        "explanation.hrv.detail": "Der Wert ist die mittlere Schwankung der Herzschlagintervalle der erfassten Nacht. Garmin vergleicht den 7-Tage-Durchschnitt mit deinem Basisbereich aus etwa drei Wochen Schlafdaten. „%@“ bezieht sich dagegen auf Werte weit unter dem altersbezogenen Referenzbereich. Eine Nacht ist nicht der Wochenstatus; höher ist nicht immer besser.",
         "explanation.readiness.prime": "Optimale Trainingsbereitschaft",
         "explanation.readiness.high": "Hohe Trainingsbereitschaft",
         "explanation.readiness.moderate": "Mäßige Trainingsbereitschaft",
@@ -96,7 +96,7 @@ enum LocalizationExplanationDE {
         "explanation.training.PEAKING.title": "Höchstform",
         "explanation.training.PEAKING.detail": "Die verringerte Belastung hat Erholung und eine kurzfristige Leistungsspitze ermöglicht.",
         "explanation.training.OVERREACHING.title": "Überbelastung",
-        "explanation.training.OVERREACHING.detail": "Die Trainingsbelastung übersteigt die Erholungskapazität und begrenzt Fortschritte.",
+        "explanation.training.OVERREACHING.detail": "Garmin stuft deine Trainingsbelastung als sehr hoch und kontraproduktiv ein.",
         "explanation.training.UNPRODUCTIVE.title": "Unproduktiv",
         "explanation.training.UNPRODUCTIVE.detail": "Die Fitness sinkt trotz ausreichender Belastung; Schlaf, Ernährung und Stress spielen ebenfalls eine Rolle.",
         "explanation.training.STRAINED.title": "Überbeansprucht",
@@ -107,7 +107,7 @@ enum LocalizationExplanationDE {
         "explanation.training.PAUSED.detail": "Die Bewertung des Trainingszustands ist in Garmin pausiert.",
         "explanation.help": "Was bedeutet dieser Wert?",
         "explanation.source": "Mehr bei Garmin erfahren",
-        "explanation.forecast": "Lineare Schätzung aus dem letzten Garmin-Trend. %@",
+        "explanation.forecast": "Lokale lineare Schätzung aus den letzten Garmin-Messwerten. %@",
         "explanation.labeledDetail": "%1$@: %2$@",
     ]
 }

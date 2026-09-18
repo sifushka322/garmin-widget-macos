@@ -25,7 +25,7 @@ enum LocalizationExplanationES {
         "explanation.hrv.insufficient": "Faltan datos recientes de VFC",
         "explanation.hrv.weekly": "Media de 7 días: %1$@ %2$@",
         "explanation.hrv.baseline": "Tu referencia: %1$@–%2$@ %3$@",
-        "explanation.hrv.detail": "El valor muestra la variación media entre latidos de la última noche. El estado de VFC de Garmin compara la media de 7 días con tu referencia personal, que requiere unas tres semanas de sueño. Una noche no es el estado semanal; más alto no siempre es mejor.",
+        "explanation.hrv.detail": "El valor es la variación media de los intervalos entre latidos de la noche registrada. Garmin compara la media de 7 días con tu referencia, establecida con unas tres semanas de sueño. «%@» indica, en cambio, una VFC muy por debajo del rango para tu edad. Una noche no es el estado semanal; más alto no siempre es mejor.",
         "explanation.readiness.prime": "Predisposición óptima",
         "explanation.readiness.high": "Predisposición alta",
         "explanation.readiness.moderate": "Predisposición moderada",
@@ -96,7 +96,7 @@ enum LocalizationExplanationES {
         "explanation.training.PEAKING.title": "Pico de forma",
         "explanation.training.PEAKING.detail": "La carga reducida ha favorecido la recuperación y un pico de rendimiento breve.",
         "explanation.training.OVERREACHING.title": "Sobreesfuerzo",
-        "explanation.training.OVERREACHING.detail": "Las exigencias superan la capacidad de recuperación y limitan el progreso.",
+        "explanation.training.OVERREACHING.detail": "Garmin clasifica tu carga de entrenamiento como muy alta y contraproducente.",
         "explanation.training.UNPRODUCTIVE.title": "No productivo",
         "explanation.training.UNPRODUCTIVE.detail": "La forma empeora pese a una carga suficiente; también influyen sueño, alimentación y estrés.",
         "explanation.training.STRAINED.title": "Sobrecarga",
@@ -107,7 +107,7 @@ enum LocalizationExplanationES {
         "explanation.training.PAUSED.detail": "La evaluación del estado de entrenamiento está pausada en Garmin.",
         "explanation.help": "Qué significa esta medida",
         "explanation.source": "Más información en Garmin",
-        "explanation.forecast": "Estimación lineal de la última tendencia Garmin. %@",
+        "explanation.forecast": "Estimación lineal local a partir de las últimas lecturas Garmin. %@",
         "explanation.labeledDetail": "%1$@: %2$@",
     ]
 }

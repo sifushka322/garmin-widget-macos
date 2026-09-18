@@ -25,7 +25,7 @@ enum LocalizationExplanationNL {
         "explanation.hrv.insufficient": "Te weinig recente HRV-gegevens",
         "explanation.hrv.weekly": "7-daags gemiddelde: %1$@ %2$@",
         "explanation.hrv.baseline": "Jouw basisbereik: %1$@–%2$@ %3$@",
-        "explanation.hrv.detail": "De waarde toont de gemiddelde variatie tussen hartslagen van afgelopen nacht. De Garmin-HRV-status vergelijkt het 7-daags gemiddelde met je persoonlijke basisbereik, waarvoor ongeveer drie weken slaapgegevens nodig zijn. Eén nacht is niet de weekstatus; hoger is niet altijd beter.",
+        "explanation.hrv.detail": "De waarde is de gemiddelde variatie van hartslagintervallen in de vastgelegde nacht. Garmin vergelijkt het 7-daags gemiddelde met je basisbereik uit ongeveer drie weken slaapgegevens. ‘%@’ verwijst juist naar HRV ver onder de leeftijdsgebonden referentie. Eén nacht is niet de weekstatus; hoger is niet altijd beter.",
         "explanation.readiness.prime": "Optimale trainingsbereidheid",
         "explanation.readiness.high": "Hoge trainingsbereidheid",
         "explanation.readiness.moderate": "Matige trainingsbereidheid",
@@ -96,7 +96,7 @@ enum LocalizationExplanationNL {
         "explanation.training.PEAKING.title": "Piekvorm",
         "explanation.training.PEAKING.detail": "Lagere belasting heeft herstel en een korte prestatiepiek mogelijk gemaakt.",
         "explanation.training.OVERREACHING.title": "Overbelasting",
-        "explanation.training.OVERREACHING.detail": "De training vraagt meer dan het herstelvermogen toelaat en beperkt vooruitgang.",
+        "explanation.training.OVERREACHING.detail": "Garmin beoordeelt je trainingsbelasting als zeer hoog en contraproductief.",
         "explanation.training.UNPRODUCTIVE.title": "Onproductief",
         "explanation.training.UNPRODUCTIVE.detail": "De conditie neemt af ondanks voldoende belasting; slaap, voeding en stress tellen ook mee.",
         "explanation.training.STRAINED.title": "Overbelast",
@@ -107,7 +107,7 @@ enum LocalizationExplanationNL {
         "explanation.training.PAUSED.detail": "De beoordeling van de trainingsstatus is in Garmin gepauzeerd.",
         "explanation.help": "Wat betekent dit?",
         "explanation.source": "Meer uitleg van Garmin",
-        "explanation.forecast": "Lineaire schatting uit de laatste Garmin-trend. %@",
+        "explanation.forecast": "Lokale lineaire schatting uit recente Garmin-metingen. %@",
         "explanation.labeledDetail": "%1$@: %2$@",
     ]
 }

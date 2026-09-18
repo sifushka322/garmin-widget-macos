@@ -25,7 +25,7 @@ enum LocalizationExplanationPL {
         "explanation.hrv.insufficient": "Za mało najnowszych danych HRV",
         "explanation.hrv.weekly": "Średnia z 7 dni: %1$@ %2$@",
         "explanation.hrv.baseline": "Twoja norma: %1$@–%2$@ %3$@",
-        "explanation.hrv.detail": "Wartość oznacza średnią zmienność odstępów między uderzeniami serca ostatniej nocy. Stan HRV Garmin porównuje średnią z 7 dni z osobistą normą, do której potrzeba około trzech tygodni danych snu. Jedna noc to nie stan tygodniowy; więcej nie zawsze znaczy lepiej.",
+        "explanation.hrv.detail": "Wartość to średnia zmienność odstępów między uderzeniami serca w zapisanej nocy. Garmin porównuje średnią z 7 dni z osobistą normą opartą na około trzech tygodniach snu. „%@” oznacza natomiast HRV znacznie poniżej zakresu dla wieku. Wynik nocy to nie stan tygodniowy; więcej nie zawsze znaczy lepiej.",
         "explanation.readiness.prime": "Najwyższa gotowość",
         "explanation.readiness.high": "Wysoka gotowość",
         "explanation.readiness.moderate": "Umiarkowana gotowość",
@@ -96,7 +96,7 @@ enum LocalizationExplanationPL {
         "explanation.training.PEAKING.title": "Szczytowa forma",
         "explanation.training.PEAKING.detail": "Mniejsze obciążenie wspomogło regenerację i krótkotrwały szczyt formy.",
         "explanation.training.OVERREACHING.title": "Nadmierny wysiłek",
-        "explanation.training.OVERREACHING.detail": "Trening przekracza zdolność regeneracji i ogranicza postępy.",
+        "explanation.training.OVERREACHING.detail": "Garmin ocenia obciążenie treningowe jako bardzo wysokie i nieproduktywne.",
         "explanation.training.UNPRODUCTIVE.title": "Nieproduktywny",
         "explanation.training.UNPRODUCTIVE.detail": "Kondycja spada mimo odpowiedniego obciążenia; ważne są też sen, odżywianie i stres.",
         "explanation.training.STRAINED.title": "Przeciążenie",
@@ -107,7 +107,7 @@ enum LocalizationExplanationPL {
         "explanation.training.PAUSED.detail": "Ocena stanu wytrenowania jest wstrzymana w Garmin.",
         "explanation.help": "Co oznacza ten pomiar",
         "explanation.source": "Więcej informacji od Garmin",
-        "explanation.forecast": "Oszacowanie liniowe z ostatniego trendu Garmin. %@",
+        "explanation.forecast": "Lokalne oszacowanie liniowe z ostatnich odczytów Garmin. %@",
         "explanation.labeledDetail": "%1$@: %2$@",
     ]
 }

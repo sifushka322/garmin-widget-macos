@@ -25,7 +25,7 @@ enum LocalizationExplanationJA {
         "explanation.hrv.insufficient": "最近のHRVデータが不足",
         "explanation.hrv.weekly": "7日間の平均：%1$@ %2$@",
         "explanation.hrv.baseline": "あなたの基準範囲：%1$@〜%2$@ %3$@",
-        "explanation.hrv.detail": "表示値は昨夜の心拍間隔の変動の平均です。GarminのHRVステータスは7日間の平均を個人のベースラインと比較します。基準の作成には約3週間の睡眠データが必要です。一晩の値は週間ステータスとは異なり、高ければよいとは限りません。",
+        "explanation.hrv.detail": "表示値は記録された夜の心拍間隔の変動の平均です。Garminは7日間の平均を、約3週間の睡眠データに基づく個人の基準範囲と比較します。一方、「%@」は年齢別の基準範囲を大きく下回るHRVを示します。一晩の値は週間ステータスとは異なり、高ければよいとは限りません。",
         "explanation.readiness.prime": "レディネスが最適",
         "explanation.readiness.high": "レディネスが高い",
         "explanation.readiness.moderate": "レディネスが中程度",
@@ -96,7 +96,7 @@ enum LocalizationExplanationJA {
         "explanation.training.PEAKING.title": "ピーキング",
         "explanation.training.PEAKING.detail": "負荷の軽減が回復を促し、短期的なパフォーマンスのピークにつながっています。",
         "explanation.training.OVERREACHING.title": "オーバーリーチ",
-        "explanation.training.OVERREACHING.detail": "トレーニングの負担が回復能力を超え、向上を妨げています。",
+        "explanation.training.OVERREACHING.detail": "Garminはトレーニング負荷を非常に高く、逆効果になっていると評価しています。",
         "explanation.training.UNPRODUCTIVE.title": "アンプロダクティブ",
         "explanation.training.UNPRODUCTIVE.detail": "十分な負荷でも体力が低下しています。睡眠、栄養、ストレスも関係します。",
         "explanation.training.STRAINED.title": "疲労",
@@ -107,7 +107,7 @@ enum LocalizationExplanationJA {
         "explanation.training.PAUSED.detail": "Garminのトレーニングステータス評価は一時停止中です。",
         "explanation.help": "この指標の意味",
         "explanation.source": "Garminの説明を見る",
-        "explanation.forecast": "最新のGarminの傾向に基づく線形推定です。%@",
+        "explanation.forecast": "最近のGarmin測定値からアプリ内で計算した線形推定です。%@",
         "explanation.labeledDetail": "%1$@：%2$@",
     ]
 }

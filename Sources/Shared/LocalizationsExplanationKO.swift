@@ -25,7 +25,7 @@ enum LocalizationExplanationKO {
         "explanation.hrv.insufficient": "최근 HRV 데이터 부족",
         "explanation.hrv.weekly": "7일 평균: %1$@ %2$@",
         "explanation.hrv.baseline": "개인 기준 범위: %1$@–%2$@ %3$@",
-        "explanation.hrv.detail": "표시값은 지난밤 심장 박동 간격 변화의 평균입니다. Garmin HRV 상태는 7일 평균을 개인 기준과 비교하며, 기준 설정에는 약 3주간의 수면 데이터가 필요합니다. 하루의 값과 주간 상태는 다르며 높다고 항상 좋은 것은 아닙니다.",
+        "explanation.hrv.detail": "표시값은 기록된 밤의 심장 박동 간격 변화의 평균입니다. Garmin은 7일 평균을 약 3주간의 수면 데이터로 만든 개인 기준과 비교합니다. 반면 ‘%@’는 연령별 기준 범위보다 훨씬 낮은 HRV를 나타냅니다. 한밤의 값과 주간 상태는 다르며 높다고 항상 좋은 것은 아닙니다.",
         "explanation.readiness.prime": "최상의 훈련 준비도",
         "explanation.readiness.high": "높은 훈련 준비도",
         "explanation.readiness.moderate": "보통 훈련 준비도",
@@ -96,7 +96,7 @@ enum LocalizationExplanationKO {
         "explanation.training.PEAKING.title": "최고 상태",
         "explanation.training.PEAKING.detail": "줄어든 부하가 회복과 단기적인 최고 성과에 도움이 되었습니다.",
         "explanation.training.OVERREACHING.title": "과도한 훈련",
-        "explanation.training.OVERREACHING.detail": "훈련 요구가 회복 능력을 초과하여 발전을 제한합니다.",
+        "explanation.training.OVERREACHING.detail": "Garmin은 훈련 부하가 매우 높아 역효과를 낸다고 평가합니다.",
         "explanation.training.UNPRODUCTIVE.title": "비생산적",
         "explanation.training.UNPRODUCTIVE.detail": "적절한 부하에도 체력이 떨어지고 있습니다. 수면, 영양, 스트레스도 영향을 줍니다.",
         "explanation.training.STRAINED.title": "부담 누적",
@@ -107,7 +107,7 @@ enum LocalizationExplanationKO {
         "explanation.training.PAUSED.detail": "Garmin의 훈련 상태 평가가 일시 중지되어 있습니다.",
         "explanation.help": "이 지표의 의미",
         "explanation.source": "Garmin에서 자세히 보기",
-        "explanation.forecast": "최근 Garmin 추세에 따른 선형 추정입니다. %@",
+        "explanation.forecast": "최근 Garmin 측정값으로 앱에서 계산한 선형 추정입니다. %@",
         "explanation.labeledDetail": "%1$@: %2$@",
     ]
 }

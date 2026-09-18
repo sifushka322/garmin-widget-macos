@@ -25,7 +25,7 @@ enum LocalizationExplanationFR {
         "explanation.hrv.insufficient": "Données VFC récentes insuffisantes",
         "explanation.hrv.weekly": "Moyenne sur 7 jours : %1$@ %2$@",
         "explanation.hrv.baseline": "Votre référence : %1$@–%2$@ %3$@",
-        "explanation.hrv.detail": "La valeur indique la variation moyenne entre les battements de la nuit passée. Le statut VFC Garmin compare la moyenne sur 7 jours à votre plage de référence, établie avec environ trois semaines de sommeil. Une nuit n'est pas le statut hebdomadaire ; plus haut ne signifie pas toujours mieux.",
+        "explanation.hrv.detail": "La valeur est la variation moyenne des intervalles entre battements de la nuit enregistrée. Garmin compare la moyenne sur 7 jours à votre référence, établie avec environ trois semaines de sommeil. « %@ » indique plutôt une VFC bien en dessous de la plage liée à l'âge. Une nuit n'est pas le statut hebdomadaire ; plus haut n'est pas toujours mieux.",
         "explanation.readiness.prime": "Préparation optimale",
         "explanation.readiness.high": "Préparation élevée",
         "explanation.readiness.moderate": "Préparation modérée",
@@ -96,7 +96,7 @@ enum LocalizationExplanationFR {
         "explanation.training.PEAKING.title": "Pic de forme",
         "explanation.training.PEAKING.detail": "La baisse de charge a permis la récupération et un pic de performance temporaire.",
         "explanation.training.OVERREACHING.title": "Effort excessif",
-        "explanation.training.OVERREACHING.detail": "L'entraînement dépasse la capacité de récupération et limite la progression.",
+        "explanation.training.OVERREACHING.detail": "Garmin classe votre charge d'entraînement comme très élevée et contre-productive.",
         "explanation.training.UNPRODUCTIVE.title": "Non productif",
         "explanation.training.UNPRODUCTIVE.detail": "La forme baisse malgré une charge suffisante ; sommeil, alimentation et stress comptent aussi.",
         "explanation.training.STRAINED.title": "Sous tension",
@@ -107,7 +107,7 @@ enum LocalizationExplanationFR {
         "explanation.training.PAUSED.detail": "L'évaluation du statut d'entraînement est suspendue dans Garmin.",
         "explanation.help": "Que signifie cette mesure ?",
         "explanation.source": "En savoir plus avec Garmin",
-        "explanation.forecast": "Estimation linéaire selon la dernière tendance Garmin. %@",
+        "explanation.forecast": "Estimation linéaire locale à partir des dernières mesures Garmin. %@",
         "explanation.labeledDetail": "%1$@ : %2$@",
     ]
 }

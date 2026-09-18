@@ -25,7 +25,7 @@ enum LocalizationExplanationRU {
         "explanation.hrv.insufficient": "Недостаточно свежих данных HRV",
         "explanation.hrv.weekly": "Среднее за 7 дней: %1$@ %2$@",
         "explanation.hrv.baseline": "Ваша норма: %1$@–%2$@ %3$@",
-        "explanation.hrv.detail": "Число на карточке — средняя вариабельность интервалов между ударами сердца за последнюю ночь. Статус HRV Garmin сравнивает среднее за 7 дней с вашей личной нормой, для которой нужно около трёх недель данных сна. Значение за ночь и недельный статус — разные показатели; больше не всегда лучше.",
+        "explanation.hrv.detail": "Число — средняя вариабельность интервалов между ударами сердца за указанную ночь. Garmin сравнивает среднее за 7 дней с личной нормой, для которой нужно около трёх недель данных сна. Статус «%@» означает HRV значительно ниже возрастного диапазона. Значение за ночь и недельный статус различаются; больше не всегда лучше.",
         "explanation.readiness.prime": "Отличная готовность",
         "explanation.readiness.high": "Высокая готовность",
         "explanation.readiness.moderate": "Умеренная готовность",
@@ -96,7 +96,7 @@ enum LocalizationExplanationRU {
         "explanation.training.PEAKING.title": "Пик формы",
         "explanation.training.PEAKING.detail": "Снижение нагрузки помогло восстановиться и выйти на кратковременный пик формы.",
         "explanation.training.OVERREACHING.title": "Чрезмерная нагрузка",
-        "explanation.training.OVERREACHING.detail": "Нагрузка превышает возможности восстановления и мешает прогрессу.",
+        "explanation.training.OVERREACHING.detail": "Garmin оценивает тренировочную нагрузку как очень высокую и непродуктивную.",
         "explanation.training.UNPRODUCTIVE.title": "Непродуктивность",
         "explanation.training.UNPRODUCTIVE.detail": "Несмотря на достаточную нагрузку, Garmin видит снижение формы; важны сон, питание и стресс.",
         "explanation.training.STRAINED.title": "Напряжение",
@@ -107,7 +107,7 @@ enum LocalizationExplanationRU {
         "explanation.training.PAUSED.detail": "Расчёт тренировочного статуса приостановлен в Garmin.",
         "explanation.help": "Что означает показатель",
         "explanation.source": "Подробнее у Garmin",
-        "explanation.forecast": "Линейная оценка по последнему тренду Garmin. %@",
+        "explanation.forecast": "Локальная линейная оценка по последним измерениям Garmin. %@",
         "explanation.labeledDetail": "%1$@: %2$@",
     ]
 }
