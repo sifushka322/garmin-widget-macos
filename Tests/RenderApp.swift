@@ -74,7 +74,7 @@ import SwiftUI
         }
         let now = Date()
         navigation.section = .dashboard
-        for language in [AppLanguage.ru, .en] {
+        for language in AppLanguage.supported {
             store.preferences.language = language
             for dark in [false, true] {
                 for state in ["waiting", "retained", "unchanged", "network", "checking", "fresh", "stable-records", "sport-context", "sport-low-load", "hrv-context", "sport-ratio", "body-battery-estimated", "body-battery-expired"] {
@@ -142,7 +142,7 @@ import SwiftUI
                     store.snapshot = snapshot
                     try render(store, navigation: navigation, dark: dark, size: CGSize(width: 780, height: 760),
                                name: "state-\(state)-\(language.rawValue)-\(dark ? "dark" : "light")", output: output)
-                    if state == "fresh" || state == "stable-records" {
+                    if state == "fresh" || state == "stable-records" || state == "sport-context" || state == "hrv-context" {
                         try render(store, navigation: navigation, dark: dark, size: CGSize(width: 1100, height: 800),
                                    name: "wide-\(state)-\(language.rawValue)-\(dark ? "dark" : "light")", output: output)
                     }
@@ -161,6 +161,24 @@ import SwiftUI
                 }
             }
         }
+        // Every supported metric gets a real translated information panel. The
+        // state matrix above covers both themes and long text at minimum width.
+        var explanationSnapshot = GarminSnapshot.demo
+        explanationSnapshot.isDemo = false
+        explanationSnapshot.sourceDate = SyncPolicy.sourceDay(for: now, timeZone: .current)
+        explanationSnapshot.metricContext = GarminMetricContext(trainingLoadLower: 350, trainingLoadUpper: 780,
+            trainingStatus: "DETRAINING", hrvStatus: "BALANCED", hrvWeeklyAverage: 58,
+            hrvBaselineLow: 49, hrvBaselineHigh: 72, trainingLoadStatus: "OPTIMAL", trainingLoadRatio: 1.2)
+        for language in AppLanguage.supported {
+            for metric in MetricDefinition.catalog {
+                guard let explanation = MetricExplanation.make(metricID: metric.id, snapshot: explanationSnapshot,
+                                                               language: language, now: now) else {
+                    fatalError("Missing synthetic explanation for \(metric.id) in \(language.rawValue)")
+                }
+                try renderExplanation(explanation, metricID: metric.id, language: language, dark: false,
+                    name: "explanation-all-\(metric.id)-\(language.rawValue)-light", output: output)
+            }
+        }
         store.isSyncing = false
         store.cancelLogin(resumeAutomatic: false)
         print("PASS: synthetic app renders cover all supported languages; no website or system-widget access")
@@ -170,8 +188,11 @@ import SwiftUI
                                           scrollOffset: CGFloat = 0) throws {
         // This command-line renderer has no NSApplication event-cycle pool.
         try autoreleasepool {
+            var cardFrames: [String: CGRect] = [:]
             let view = MainWindowView(store: store, navigation: navigation)
                 .environment(\.colorScheme, dark ? .dark : .light)
+                .environment(\.metricCardGeometryReporting, true)
+                .onPreferenceChange(MetricCardFramesKey.self) { cardFrames = $0 }
             let host = NSHostingView(rootView: view)
             let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -194,6 +215,12 @@ import SwiftUI
                 scroll.reflectScrolledClipView(scroll.contentView)
                 host.layoutSubtreeIfNeeded()
             }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.03))
+            host.layoutSubtreeIfNeeded()
+            if navigation.section == .dashboard && store.snapshot.hasMeasurements && navigation.widgetSlot != .training {
+                guard !cardFrames.isEmpty else { fatalError("Data fixture must report actual metric-card geometry: \(name)") }
+                verifyCardGeometry(cardFrames, width: size.width, fixture: name)
+            }
             guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { fatalError("No bitmap") }
             host.cacheDisplay(in: host.bounds, to: bitmap)
             guard let bytes = bitmap.representation(using: .png, properties: [:]) else { fatalError("No PNG") }
@@ -203,6 +230,40 @@ import SwiftUI
         if renderedFrames.isMultiple(of: 12) {
             let progress = "Rendered \(renderedFrames) app frames (latest: \(name))\n"
             FileHandle.standardOutput.write(Data(progress.utf8))
+        }
+    }
+
+    @MainActor private static func verifyCardGeometry(_ frames: [String: CGRect], width: CGFloat, fixture: String) {
+        let cards = frames.filter { $0.key.hasPrefix("secondary:") }.map(\.value)
+        for (id, frame) in frames {
+            guard frame.width > 0, frame.height > 0, frame.minX >= -1, frame.maxX <= width + 1 else {
+                fatalError("Metric card exceeds the available width (\(fixture), \(id)): \(frame)")
+            }
+        }
+        for card in cards {
+            guard abs(card.height - 220) < 1 || abs(card.height - 200) < 1 else {
+                fatalError("Metric card must use one of the two uniform density heights (\(fixture)): \(card)")
+            }
+        }
+        for first in cards.indices {
+            for second in cards.indices where second > first {
+                let a = cards[first], b = cards[second]
+                guard abs(a.height - b.height) < 1, abs(a.width - b.width) < 1 else {
+                    fatalError("Cards in one dashboard must have equal dimensions (\(fixture)): \(a), \(b)")
+                }
+                let verticalOverlap = min(a.maxY, b.maxY) - max(a.minY, b.minY)
+                if verticalOverlap > 1 {
+                    let left = a.minX < b.minX ? a : b, right = a.minX < b.minX ? b : a
+                    guard abs(a.minY - b.minY) < 1, right.minX >= left.maxX + 11 else {
+                        fatalError("Cards in a row must align at the top and remain separated (\(fixture)): \(a), \(b)")
+                    }
+                } else if abs(a.minX - b.minX) < 1 {
+                    let top = a.minY < b.minY ? a : b, bottom = a.minY < b.minY ? b : a
+                    guard bottom.minY >= top.maxY + 11 else {
+                        fatalError("Metric rows must keep consistent spacing (\(fixture)): \(a), \(b)")
+                    }
+                }
+            }
         }
     }
 

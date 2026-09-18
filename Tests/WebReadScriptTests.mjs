@@ -49,9 +49,22 @@ check(!JSON.stringify(value).includes('synthetic-csrf-for-test'), 'CSRF value ne
 check(lastSignal.aborted, 'completed request releases stream resources');
 
 value = await run(response({status:429, body:'{"error":{"status-code":429}}',extraHeaders:{'retry-after':'1800','cf-mitigated':'challenge'}}));
-check(value.status === 429 && value.body.error['status-code'] === 429, 'HTTP and JSON rate limits survive unchanged');
+check(value.status === 429 && value.body === null, 'HTTP rate limits are identified before reading their optional body');
 check(value.retryAfter === '1800' && value.challenge === true, 'server wait and challenge metadata survive');
 check(fetchCalls === 1, 'transport does not retry a rate limit');
+value = await run(response({status:200, body:'{"error":{"status-code":429}}'}));
+check(value.body.error['status-code'] === 429, 'JSON rate limits inside HTTP 200 remain available to the native classifier');
+for (const status of [401, 403, 429]) {
+    const terminal = response({status, extraHeaders:{'content-length':'4000001','retry-after':'7200'}});
+    terminal.body = {getReader() { throw new Error('A terminal response body must not be read'); }};
+    value = await run(terminal);
+    check(value.status === status && value.retryAfter === '7200' && value.body === null,
+          'Terminal status and Retry-After survive an oversized or unreadable body');
+}
+const challenged = response({status:200, extraHeaders:{'cf-mitigated':'challenge'}});
+challenged.body = {getReader() { throw new Error('Challenge body must not be read'); }};
+value = await run(challenged);
+check(value.challenge, 'Challenge metadata wins over body parsing');
 
 value = await run(response({status:403,body:'<html>PRIVATE CONTENT</html>',type:'text/html',extraHeaders:{'cf-mitigated':'challenge'}}));
 check(value.body === null && value.kind === 'html', 'HTML content is not returned to native code');
@@ -59,6 +72,14 @@ check(value.challenge && value.status === 403, 'challenge is not disguised as mi
 
 value = await run(response({status:200,body:'<html>Sign in</html>',type:'text/html',redirected:true,url:'https://sso.garmin.com/portal/sign-in'}));
 check(value.signInRedirect, 'normal login redirect is identified');
+for (const url of ['https://connect.garmin.com/signin', 'https://connect.garmin.com/modern/sign-in', 'https://connect.garmin.com/login']) {
+    value = await run(response({type:'text/html', redirected:true, url}));
+    check(value.signInRedirect, 'Connect authentication redirects require sign-in instead of endless schema retries');
+}
+for (const url of ['https://connect.garmin.com/help', 'https://evil.example/signin', 'https://connect.garmin.com.evil.example/login']) {
+    value = await run(response({type:'text/html', redirected:true, url}));
+    check(!value.signInRedirect, 'Unrelated HTML and external lookalikes are not classified as Garmin sign-in');
+}
 value = await run(response({body:'invalid json'}));
 check(value.body === null && value.jsonValid === false, 'malformed JSON is distinct from valid absence');
 value = await run(response({body:'null'}));
@@ -93,6 +114,13 @@ globalThis.location = {origin:'https://sso.garmin.com'};
 await assert.rejects(run(response()), /Invalid source/); count++;
 check(fetchCalls === 0, 'API script cannot run on the sign-in origin');
 globalThis.location = {origin:'https://connect.garmin.com'};
+
+const readyDocument = globalThis.document;
+globalThis.document = {querySelector: () => null};
+value = await run(response());
+check(value.sessionNotReady === true && value.status === 0 && fetchCalls === 0,
+      'A disappeared CSRF element requests bounded document renewal without making an API request');
+globalThis.document = readyDocument;
 
 let signal;
 globalThis.fetch = async (_, options) => {

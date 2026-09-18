@@ -36,14 +36,16 @@ private final class MockWeb: GarminWebTransport {
     var disconnectWaiter: CheckedContinuation<Void, Never>?
     var calls: [String] = []
     var paths: [String] = []
+    var onGet: ((String) -> Void)?
     var holdStage: String?
     var pending: CheckedContinuation<Void, Never>?
     func beginBatch() { batches += 1 }
     func openSignIn(title: String) { opens += 1 }
-    func closeSignIn() { onSignInClosed?() }
+    func closeSignIn() {} // Programmatic orderOut does not emit the user's window-close callback.
     func prepare(forceReload: Bool) async throws { prepares += 1; if let prepareError { throw prepareError } }
     func get(path: String, stage: String) async throws -> Any {
         calls.append(stage); paths.append(path)
+        onGet?(stage)
         if holdStage == stage {
             holdStage = nil
             await withCheckedContinuation { pending = $0 }
@@ -69,7 +71,7 @@ private final class Rig {
     let store: AppStore
     init(state: SyncPolicy.SessionState = .available, connected: Bool = true,
          checkpoint: SyncPolicy.Checkpoint? = nil, previous: GarminSnapshot? = nil,
-         groups: GarminWebCache? = nil) throws {
+         groups: GarminWebCache? = nil, widgetPublisher: ((WidgetData) throws -> Void)? = nil) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("GarminDeskHostTests-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let preferences = AppPreferences()
@@ -82,7 +84,8 @@ private final class Rig {
         let clock = self.clock
         store = AppStore(supportDirectory: directory, webSession: web, defaults: defaults,
                          clock: { clock.moment }, sourceTimeZone: { TimeZone(secondsFromGMT: 0)! },
-                         automaticScheduling: false, writesWidgetData: false)
+                         automaticScheduling: false, writesWidgetData: widgetPublisher != nil,
+                         widgetPublisher: widgetPublisher)
     }
     func checkpoint() throws -> SyncPolicy.Checkpoint {
         try AppJSON.decoder.decode(SyncPolicy.Checkpoint.self, from: Data(contentsOf: directory.appendingPathComponent("sync-policy.json")))
@@ -560,6 +563,13 @@ struct AppStoreSyncTests {
     static func main() async {
         do {
             try await testTransientEndpointDoesNotStarveOtherGroups()
+            try await testBoundedBatchAndIncrementalProgress()
+            try await testSameAccountVerificationPreservesReadings()
+            try await testInteractiveCloseCancelsVerification()
+            try testIndependentCacheWriteRecovery()
+            try await testWidgetPublicationCount()
+            try await testTransientCalendarMonthDoesNotStarveNextMonth()
+            try await testWrongDayPayloadCannotBecomeCurrent()
             try await testBodyBatteryRefreshAndRegression()
             try await testEmptyUnchangedAndRecovery()
             try await testAccountOwnershipAcrossRestart()
@@ -674,6 +684,144 @@ struct AppStoreSyncTests {
         let widgetText = String(decoding: widgetBytes, as: UTF8.self)
         try expect(!widgetText.contains("accountDisplayName") && !widgetText.contains("fixture-user") && !widgetText.contains("previous-account"),
                    "Private snapshot ownership must never be serialized into the widget payload")
+    }
+
+
+    static func testBoundedBatchAndIncrementalProgress() async throws {
+        let slow = try Rig(); defer { slow.clean() }
+        slow.web.errors["stats"] = .network
+        slow.web.onGet = { _ in slow.clock.advance(30, wallAdjustment: -30) }
+        slow.store.sync(trigger: .automatic); try await settled(slow.store)
+        try expect(slow.web.calls == ["profile", "stats", "body_battery"],
+                   "Continuous budget stops a batch after 90 seconds even when wall time does not move")
+        try expect(slow.store.nextSyncAt == slow.clock.moment.wallTime,
+                   "Unattempted groups remain due immediately without a global error gate")
+        let count = slow.web.calls.count
+        slow.store.sync(trigger: .automatic); try await settled(slow.store)
+        let next = Array(slow.web.calls.dropFirst(count))
+        try expect(next.first == "sleep" && !next.contains("stats"),
+                   "Budget follow-up progresses to unattempted groups while failed stats respects its own retry gate")
+        try expect(slow.store.snapshot.metrics["sleepDuration"]?.value == 300,
+                   "A bad early endpoint cannot hold sleep indefinitely")
+
+        let staged = try Rig(); defer { staged.clean() }
+        let now = staged.clock.moment.wallTime
+        staged.web.payloads["body_battery"] = [["bodyBatteryValuesArray": [[now.timeIntervalSince1970 * 1000, 72.0]]]]
+        staged.web.onGet = { stage in if stage == "body_battery" { staged.clock.advance(11) } }
+        staged.web.holdStage = "sleep"
+        staged.store.sync(trigger: .automatic); try await held(staged.web)
+        try expect(staged.store.isSyncing && staged.store.snapshot.metrics["bodyBattery"]?.value == 72,
+                   "A slow batch publishes finished Body Battery before a later endpoint completes")
+        staged.web.release(); try await settled(staged.store)
+    }
+
+    static func testSameAccountVerificationPreservesReadings() async throws {
+        let rig = try Rig(); defer { rig.clean() }
+        rig.store.sync(); try await settled(rig.store)
+        rig.web.payloads["sleep"] = NSNull()
+        rig.clock.advance(60)
+        rig.web.onConnectPageReady?(); try await settled(rig.store)
+        try expect(rig.store.snapshot.metrics["sleepDuration"] == nil &&
+                   rig.store.snapshot.retainedMetrics["sleepDuration"]?.reading.value == 300,
+                   "Reauthentication to the verified same owner preserves last known readings after valid absence")
+        rig.web.payloads["profile"] = ["displayName": "different-fixture-owner"]
+        rig.clock.advance(60)
+        rig.web.onConnectPageReady?(); try await settled(rig.store)
+        try expect(rig.store.snapshot.visibleReading("sleepDuration") == nil,
+                   "A different verified owner still clears current and retained data")
+    }
+
+    static func testInteractiveCloseCancelsVerification() async throws {
+        let rig = try Rig(); defer { rig.clean() }
+        rig.web.holdStage = "profile"
+        rig.store.connectGarmin()
+        rig.web.onConnectPageReady?(); try await held(rig.web)
+        rig.web.onSignInClosed?()
+        try expect(!rig.store.isSyncing, "Closing the sign-in window cancels the waiting verification")
+        rig.web.release()
+        for _ in 0..<100 { await Task.yield() }
+        try expect(rig.store.snapshot.metrics.isEmpty && rig.web.calls == ["profile"],
+                   "A late verification reply cannot restart hidden requests after interactive close")
+    }
+
+    static func testIndependentCacheWriteRecovery() throws {
+        let now = TestClock().moment.wallTime
+        let day = SyncPolicy.sourceDay(for: now, timeZone: TimeZone(secondsFromGMT: 0)!)
+        var old = GarminWebCache(accountDisplayName: "fixture-user")
+        old.groups["stats"] = .init(sourceDay: day, retrievedAt: now, metrics: ["steps": .init(value: 100)])
+        old.groups["sleep"] = .init(sourceDay: day, retrievedAt: now, metrics: ["sleepDuration": .init(value: 300)])
+        let oldSnapshot = old.snapshot(sourceDay: day, warnings: [])
+        let oldBytes = try PrivateSnapshotStore.encode(oldSnapshot, accountDisplayName: "fixture-user")
+        var current = old
+        current.groups["stats"] = .init(sourceDay: day, retrievedAt: now.addingTimeInterval(60), metrics: ["steps": .init(value: 200)])
+        let currentSnapshot = current.snapshot(sourceDay: day, fallback: oldSnapshot, warnings: [])
+        let currentBytes = try PrivateSnapshotStore.encode(currentSnapshot, accountDisplayName: "fixture-user")
+        try expect(PrivateSnapshotStore.restore(oldBytes, cache: current, sourceDay: day).metrics["steps"]?.value == 200,
+                   "Newer owned groups repair an older snapshot after snapshot write failure")
+        let restored = PrivateSnapshotStore.restore(currentBytes, cache: old, sourceDay: day)
+        try expect(restored.metrics["steps"]?.value == 200, "Newer snapshot survives an older group file after group write failure")
+        let restoredCache = PrivateSnapshotStore.restoreCache(currentBytes, cache: old, sourceDay: day)
+        try expect(restoredCache.snapshot(sourceDay: day, fallback: restored, warnings: ["network.stats"]).metrics["steps"]?.value == 200,
+                   "The next failed request cannot republish a group rolled back during restore")
+        var mixed = old
+        mixed.groups["sleep"] = .init(sourceDay: day, retrievedAt: now.addingTimeInterval(120), metrics: ["sleepDuration": .init(value: 500)])
+        let reconciled = PrivateSnapshotStore.restore(currentBytes, cache: mixed, sourceDay: day)
+        try expect(reconciled.metrics["steps"]?.value == 200 && reconciled.metrics["sleepDuration"]?.value == 500,
+                   "Recovery compares each group independently instead of trusting either whole file")
+        current.groups["stats"] = .init(sourceDay: day, retrievedAt: now.addingTimeInterval(180), metrics: [:])
+        let absent = PrivateSnapshotStore.restore(currentBytes, cache: current, sourceDay: day)
+        try expect(absent.metrics["steps"] == nil && absent.retainedMetrics["steps"]?.reading.value == 200,
+                   "A newer explicit absence keeps only the previous real reading as retained")
+    }
+
+    static func testWidgetPublicationCount() async throws {
+        var publications: [WidgetData] = []
+        let rig = try Rig(widgetPublisher: { publications.append($0) }); defer { rig.clean() }
+        rig.store.sync(); try await settled(rig.store)
+        publications = []
+        rig.clock.advance(60)
+        rig.web.payloads["stats"] = ["totalSteps": 456]
+        rig.store.sync(); try await settled(rig.store)
+        try expect(publications.count == 1 && publications[0].snapshot.metrics["steps"]?.value == 456,
+                   "A fast connected sync writes one final widget snapshot without an old-value reload")
+        publications = []
+        rig.store.hasSession = true
+        try expect(publications.isEmpty, "Assigning the same connection flag publishes nothing")
+        rig.store.disconnect()
+        try expect(publications.last?.isConnected == false && publications.last?.snapshot.hasMeasurements == false,
+                   "The last disconnect publication is empty and disconnected")
+    }
+
+    static func testTransientCalendarMonthDoesNotStarveNextMonth() async throws {
+        let rig = try Rig(); defer { rig.clean() }
+        let day = SyncPolicy.sourceDay(for: rig.clock.moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!)
+        let months = GarminWebAPI.calendarRequests(sourceDay: day)
+        rig.web.errors["planned_workouts." + months[0].month] = .network
+        rig.web.payloads["planned_workouts." + months[1].month] = ["calendarItems": [Any]()]
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(rig.store.trainingTimeline?.futureCoveredMonths == [months[1].month] &&
+                   rig.store.trainingTimeline?.futureIssue == "network",
+                   "One failed calendar month does not discard the next month's verified coverage")
+        try expect(try rig.checkpoint().successfulGroups[.plannedWorkouts] == nil,
+                   "Partial calendar is not marked fully fresh")
+    }
+
+
+    static func testWrongDayPayloadCannotBecomeCurrent() async throws {
+        let rig = try Rig(); defer { rig.clean() }
+        let firstDay = SyncPolicy.sourceDay(for: rig.clock.moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!)
+        rig.store.sync(); try await settled(rig.store)
+        rig.clock.advance(86400)
+        let currentDay = SyncPolicy.sourceDay(for: rig.clock.moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!)
+        rig.web.payloads["stats"] = ["calendarDate": firstDay, "totalSteps": 999]
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(rig.store.snapshot.sourceDate == currentDay && rig.store.snapshot.metrics["steps"] == nil,
+                   "Yesterday's explicit day label cannot become today's fresh step total")
+        try expect(rig.store.snapshot.retainedMetrics["steps"]?.reading.value == 123 &&
+                   rig.store.snapshot.retainedMetrics["steps"]?.sourceDate == firstDay,
+                   "A wrong-day reply preserves the original reading and day as retained")
+        try expect(try rig.checkpoint().successfulGroups[.stats]?.sourceDay == firstDay,
+                   "A wrong-day payload cannot earn current-day freshness")
     }
 
     static func testBodyBatteryRefreshAndRegression() async throws {

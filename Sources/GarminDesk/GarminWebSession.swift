@@ -80,7 +80,7 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
     private var processGeneration = 0
     private var activeFetchID: String?
     private var attemptedRenewal = false
-    private enum SessionFailure: Error { case unauthorized }
+    private enum SessionFailure: Error { case unauthorized, documentNotReady }
     private let connectHost = "connect.garmin.com"
     private let startURL = URL(string: "https://connect.garmin.com/app/home")!
 
@@ -130,6 +130,7 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
 
     func windowWillClose(_ notification: Notification) {
         isShowingSignIn = false
+        cancelNavigation()
         onSignInClosed?()
     }
 
@@ -175,12 +176,12 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
     /// WebKit attaches its own HttpOnly cookies; native code never reads them.
     func get(path: String, stage: String) async throws -> Any {
         do { return try await performGet(path: path, stage: stage) }
-        catch SessionFailure.unauthorized {
+        catch is SessionFailure {
             guard !attemptedRenewal else { throw GarminWebError.signInRequired }
             attemptedRenewal = true
             try await prepare(forceReload: true)
             do { return try await performGet(path: path, stage: stage) }
-            catch SessionFailure.unauthorized { throw GarminWebError.signInRequired }
+            catch is SessionFailure { throw GarminWebError.signInRequired }
         }
     }
 
@@ -213,6 +214,10 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
         try Task.checkCancellation()
         guard process == processGeneration else { throw GarminWebError.network }
         guard let response = result as? [String: Any], let status = response["status"] as? Int else { throw GarminWebError.invalidResponse }
+        if response["sessionNotReady"] as? Bool == true {
+            hasReadyConnectDocument = false
+            throw SessionFailure.documentNotReady
+        }
         requestCount += 1
         let apiError = ((response["body"] as? [String: Any])?["error"] as? [String: Any])?["status-code"]
         let apiStatus = (apiError as? Int) ?? (apiError as? String).flatMap(Int.init)
@@ -273,7 +278,17 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
     private func cancelNavigation(requestID: UUID? = nil) {
         if let requestID, requestID != navigationRequestID { return }
         stopReadinessCheck()
-        finishNavigation(.failure(GarminWebError.cancelled), requestID: requestID, stopLoading: true)
+        if navigationWaiter != nil {
+            finishNavigation(.failure(GarminWebError.cancelled), requestID: requestID, stopLoading: true)
+        } else {
+            // Interactive openSignIn loads have no prepare() continuation.
+            // They still need their document, readiness probe and load retired.
+            navigationTimeout?.cancel(); navigationTimeout = nil
+            retireCurrentNavigation()
+            currentNavigation = nil; expectedNavigation = nil; navigationRequestID = nil
+            hasLiveDocument = false; hasReadyConnectDocument = false
+            webView.stopLoading()
+        }
     }
     private func finishNavigation(_ result: Result<Void, Error>, requestID: UUID? = nil, navigation: WKNavigation? = nil, stopLoading: Bool = false) {
         if let requestID, requestID != navigationRequestID { return }
@@ -449,12 +464,24 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
         // calls. Keep it entirely inside WebKit; never return or persist it.
         const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
         if (typeof csrf !== 'string' || !csrf || csrf.length > 4096 || /[\r\n]/.test(csrf)) {
-            throw new Error('Garmin page session is not ready');
+            return {status:0, sessionNotReady:true, body:null, jsonValid:false, kind:'other'};
         }
         const response = await fetch(target.href, {method:'GET', credentials:'same-origin', cache:'no-store',
             headers:{'Accept':'application/json', 'NK':'NT', 'connect-csrf-token':csrf}, signal:controller.signal});
         const contentType = response.headers.get('content-type') || '';
         const kind = contentType.includes('json') ? 'json' : (contentType.includes('html') ? 'html' : 'other');
+        const responseURL = new URL(response.url);
+        const garminHost = responseURL.hostname === 'garmin.com' || responseURL.hostname.endsWith('.garmin.com');
+        const authenticationPath = /(?:^|\/)(?:sign-in|signin|login)(?:\/|$)/i.test(responseURL.pathname);
+        const metadata = {status:response.status, kind, retryAfter:response.headers.get('retry-after'),
+            challenge:response.headers.get('cf-mitigated') === 'challenge',
+            signInRedirect:response.redirected && responseURL.protocol === 'https:' && garminHost &&
+                (responseURL.hostname === 'sso.garmin.com' || authenticationPath)};
+        // A broken, huge or stalled error body cannot conceal a server pause,
+        // challenge or sign-in result. Do not read its body before acting.
+        if ([401,403,429].includes(response.status) || metadata.challenge || metadata.signInRedirect) {
+            return {...metadata, body:null, jsonValid:false};
+        }
         const length = Number(response.headers.get('content-length') || 0);
         if (length > 4000000) throw new Error('Response too large');
         reader = response.body?.getReader();
@@ -472,9 +499,7 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
         }
         let body = null, jsonValid = false;
         if (kind === 'json' && text) { try { body = JSON.parse(text); jsonValid = true; } catch {} }
-        return {status:response.status, body, jsonValid, kind, retryAfter:response.headers.get('retry-after'),
-            challenge:response.headers.get('cf-mitigated') === 'challenge',
-            signInRedirect:response.redirected && new URL(response.url).hostname === 'sso.garmin.com'};
+        return {...metadata, body, jsonValid};
     } finally {
         clearTimeout(timer);
         controller.abort();

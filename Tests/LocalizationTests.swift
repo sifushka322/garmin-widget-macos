@@ -106,6 +106,94 @@ struct LocalizationTests {
         }
     }
 
+
+    /// Exercise every translated surface, not only the original settings catalog.
+    static func explanationCoverage() throws {
+        let expected = Set(MetricExplanationCatalog.table(for: .en).keys)
+        try expect(expected.count == 106, "All explanation, help and forecast messages belong to the catalog")
+        let now = Date(timeIntervalSince1970: 1_789_473_600)
+        let trainingCodes = ["DETRAINING", "RECOVERY", "MAINTAINING", "PRODUCTIVE", "PEAKING",
+                             "OVERREACHING", "UNPRODUCTIVE", "STRAINED", "NO_STATUS", "PAUSED"]
+        let hrvCodes = ["BALANCED": "balanced", "UNBALANCED": "unbalanced", "LOW": "low",
+                        "POOR": "poor", "NO_STATUS": "insufficient", "NONE": "insufficient"]
+        for language in AppLanguage.supported {
+            let table = MetricExplanationCatalog.table(for: language)
+            try expect(Set(table.keys) == expected, "Explanation catalog must be complete without fallback: \(language)")
+            try expect(MetricExplanation.helpLabel(language: language) == table["explanation.help"],
+                       "Info-button accessibility must use the selected language")
+            try expect(MetricExplanation.sourceLabel(language: language) == table["explanation.source"],
+                       "Source link must use the selected language")
+            for key in expected {
+                let template = table[key]!
+                let tokens = placeholders(template)
+                guard !tokens.isEmpty else { continue }
+                let arguments: [CVarArg] = (1...tokens.count).map { "ARG\($0)" }
+                let formatted = String(format: template, locale: language.locale, arguments: arguments)
+                try expect(!formatted.contains("%@") && !formatted.contains("$@"),
+                           "Unresolved explanation placeholder: \(language), \(key)")
+                for index in 1...tokens.count {
+                    try expect(formatted.contains("ARG\(index)"), "Lost/repeated argument: \(language), \(key)")
+                }
+            }
+            for metric in MetricDefinition.catalog {
+                let explanation = MetricExplanation.make(metricID: metric.id, snapshot: .demo, language: language)!
+                try expect(!explanation.status.isEmpty && !explanation.detail.isEmpty,
+                           "Every metric needs a translated explanation: \(language), \(metric.id)")
+                if language != .en {
+                    let english = MetricExplanation.make(metricID: metric.id, snapshot: .demo, language: .en)!
+                    try expect(explanation.detail != english.detail,
+                               "English fallback is not translation coverage: \(language), \(metric.id)")
+                }
+            }
+            var snapshot = GarminSnapshot(fetchedAt: now, sourceDate: SyncPolicy.sourceDay(for: now, timeZone: .current), devices: [],
+                metrics: ["trainingLoad": .init(value: 525), "hrv": .init(value: 32), "spo2": .init(value: 97),
+                          "steps": .init(value: 6000), "stepGoal": .init(value: 10000)])
+            for code in trainingCodes {
+                snapshot.metricContext = .init(trainingStatus: code, trainingLoadStatus: "OPTIMAL", trainingLoadRatio: 1.2)
+                let formatter = MetricFormatter(snapshot: snapshot, language: language, now: now)
+                let explanation = formatter.interpretation("trainingLoad")!
+                let title = table["explanation.training." + code + ".title"]!
+                try expect(explanation.supportingText?.contains(title) == true, "Garmin code must map to a localized title")
+                try expect(explanation.detail.contains(table["explanation.training." + code + ".detail"]!),
+                           "Garmin code must map to a localized detail")
+                try expect(formatter.accessibility("trainingLoad").contains(title),
+                           "VoiceOver must include the separate training status")
+                try expect(formatter.help("trainingLoad").contains(title), "Widget help must retain training status")
+                try expect(snapshot.metricContext?.trainingStatus == code, "Localization cannot alter Garmin status codes")
+            }
+            snapshot.metricContext = .init(trainingStatus: "UNRECOGNIZED_PRIVATE_VALUE")
+            try expect(MetricExplanation.make(metricID: "trainingLoad", snapshot: snapshot, language: language)?.supportingText == nil,
+                       "Unknown raw statuses must never leak into translated text")
+            for (code, suffix) in hrvCodes {
+                snapshot.metricContext = .init(hrvStatus: code, hrvWeeklyAverage: 58, hrvBaselineLow: 49, hrvBaselineHigh: 72)
+                let formatter = MetricFormatter(snapshot: snapshot, language: language, now: now)
+                let explanation = formatter.interpretation("hrv")!
+                try expect(explanation.status == table["explanation.hrv." + suffix], "Localized weekly HRV label")
+                try expect(formatter.accessibility("hrv").contains(explanation.supportingText!),
+                           "VoiceOver must include weekly average and personal baseline")
+                try expect(formatter.help("hrv").contains(explanation.supportingText!), "Help must include HRV context")
+                try expect(explanation.supportingText!.contains("58") && explanation.supportingText!.contains("49")
+                           && explanation.supportingText!.contains("72"), "HRV interpolation retains all three values")
+            }
+            let percent = NumberFormatter()
+            percent.locale = language.locale; percent.numberStyle = .percent
+            percent.maximumFractionDigits = 0; percent.roundingMode = .halfUp
+            try expect(MetricFormatter(snapshot: snapshot, language: language, now: now).display("spo2")
+                       == percent.string(from: 0.97), "Percent spacing must follow the selected locale")
+            let anchor = MetricReading(value: 60, measuredAt: now.addingTimeInterval(-1800))
+            snapshot.metrics["bodyBattery"] = anchor
+            snapshot.bodyBatteryProjection = .init(anchor: anchor, pointsPerHour: -12,
+                validUntil: anchor.measuredAt!.addingTimeInterval(3600))
+            let formatter = MetricFormatter(snapshot: snapshot, language: language, now: now)
+            let measured = DateFormatter()
+            measured.locale = language.locale; measured.dateStyle = .short; measured.timeStyle = .short
+            let measurement = Localizer.text("data.measured", language: language) + " " + measured.string(from: anchor.measuredAt!)
+            let expectedForecast = String(format: table["explanation.forecast"]!, locale: language.locale, measurement)
+            try expect(formatter.context("bodyBattery") == expectedForecast, "Forecast must be localized with its measurement date")
+            try expect(formatter.accessibility("bodyBattery").contains(expectedForecast), "VoiceOver must identify estimated readings")
+        }
+    }
+
     static func bundledLanguages() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
         let expected = Set(AppLanguage.supported.map(\.rawValue))
@@ -127,6 +215,7 @@ struct LocalizationTests {
         try preferenceSelection()
         try catalogParity()
         try formatting()
+        try explanationCoverage()
         try bundledLanguages()
         print("PASS: \(checks) localization checks across twelve languages")
     }

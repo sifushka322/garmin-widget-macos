@@ -73,7 +73,7 @@ private struct DataStatusView: View {
                   systemImage: store.needsWebSignIn ? "person.crop.circle.badge.exclamationmark" : "link")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-        } else if needsAttention || store.isSyncing || (!connectionOnly && (!statusSnapshot.hasMeasurements || statusSnapshot.hasRetainedTimeSensitiveMetrics || isStale || !statusSnapshot.warnings.isEmpty)) {
+        } else if needsAttention || (!connectionOnly && !statusSnapshot.hasMeasurements) {
             HStack(alignment: .top, spacing: 10) {
                 if store.isSyncing {
                     ProgressView().controlSize(.small)
@@ -145,6 +145,163 @@ private struct ErrorNotice: View {
     }
 }
 
+fileprivate struct MetricDisplayContext: Equatable {
+    var isVisible = false
+    var revision = 0
+}
+
+private struct MetricDisplayContextKey: EnvironmentKey {
+    static let defaultValue = MetricDisplayContext()
+}
+
+private extension EnvironmentValues {
+    var metricDisplayContext: MetricDisplayContext {
+        get { self[MetricDisplayContextKey.self] }
+        set { self[MetricDisplayContextKey.self] = newValue }
+    }
+}
+
+/// Only window notifications change this state; there is no background timer.
+final class MetricDisplayActivity: ObservableObject {
+    @Published fileprivate var context = MetricDisplayContext()
+    var allowsDisplayUpdates: Bool { context.isVisible }
+
+    fileprivate func update(isVisible: Bool, clockChanged: Bool = false) {
+        guard context.isVisible != isVisible || clockChanged else { return }
+        context = MetricDisplayContext(isVisible: isVisible, revision: context.revision &+ 1)
+    }
+}
+
+/// The retained settings window must not retain an active metric clock while
+/// closed, minimized, hidden, or fully occluded. Reopening starts from real time.
+final class MetricWindowVisibilityView: NSView {
+    let activity: MetricDisplayActivity
+    private var observers: [(NotificationCenter, NSObjectProtocol)] = []
+
+    init(activity: MetricDisplayActivity) {
+        self.activity = activity
+        super.init(frame: .zero)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        removeObservers()
+        guard let window else { publishVisibility(forcedHidden: true); return }
+        for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
+                     NSWindow.didDeminiaturizeNotification, NSWindow.willCloseNotification] {
+            observe(name, center: .default, object: window, forcedHidden: name == NSWindow.willCloseNotification)
+        }
+        observe(NSApplication.didHideNotification, center: .default, forcedHidden: true)
+        observe(NSApplication.didUnhideNotification, center: .default)
+        for name in [Notification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange, .NSCalendarDayChanged] {
+            observe(name, center: .default, clockChanged: true)
+        }
+        observe(NSWorkspace.didWakeNotification, center: NSWorkspace.shared.notificationCenter, clockChanged: true)
+        publishVisibility()
+    }
+
+    private func observe(_ name: Notification.Name, center: NotificationCenter, object: Any? = nil,
+                         forcedHidden: Bool = false, clockChanged: Bool = false) {
+        let observer = center.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
+            // Also avoid publishing during an AppKit/SwiftUI view-tree update.
+            DispatchQueue.main.async { self?.publishVisibility(forcedHidden: forcedHidden, clockChanged: clockChanged) }
+        }
+        observers.append((center, observer))
+    }
+
+    private func publishVisibility(forcedHidden: Bool = false, clockChanged: Bool = false) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let visible = !forcedHidden && self.window.map {
+                $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) && !NSApp.isHidden
+            } == true
+            self.activity.update(isVisible: visible, clockChanged: clockChanged)
+        }
+    }
+
+    private func removeObservers() {
+        for (center, observer) in observers { center.removeObserver(observer) }
+        observers.removeAll()
+    }
+    deinit { for (center, observer) in observers { center.removeObserver(observer) } }
+}
+
+private struct MetricWindowVisibilityReader: NSViewRepresentable {
+    let activity: MetricDisplayActivity
+    func makeNSView(context: Context) -> MetricWindowVisibilityView { MetricWindowVisibilityView(activity: activity) }
+    func updateNSView(_ view: MetricWindowVisibilityView, context: Context) {}
+}
+
+private struct MetricDisplayClock<Content: View>: View {
+    let snapshot: GarminSnapshot
+    let metricID: String
+    let content: (Date) -> Content
+    @Environment(\.metricDisplayContext) private var displayContext
+    @State private var isPresented = false
+
+    var body: some View {
+        let now = Date()
+        let dates = BodyBatteryDisplaySchedule.dates(snapshot: snapshot, metricID: metricID,
+            isVisible: displayContext.isVisible && isPresented, from: now)
+        Group {
+            if dates.count > 1 {
+                TimelineView(.explicit(dates)) { context in content(context.date) }
+            } else {
+                content(now)
+            }
+        }
+        .id(displayContext.revision)
+        .onAppear { isPresented = true }
+        .onDisappear { isPresented = false }
+    }
+}
+
+/// Geometry is reported only by the synthetic render harness, never by normal UI.
+struct MetricCardFramesKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, newest in newest })
+    }
+}
+private struct MetricCardGeometryReportingKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var metricCardGeometryReporting: Bool {
+        get { self[MetricCardGeometryReportingKey.self] }
+        set { self[MetricCardGeometryReportingKey.self] = newValue }
+    }
+}
+private struct MetricCardGeometry: ViewModifier {
+    let id: String
+    @Environment(\.metricCardGeometryReporting) private var reportsGeometry
+    func body(content: Content) -> some View {
+        content.background {
+            if reportsGeometry {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: MetricCardFramesKey.self, value: [id: proxy.frame(in: .global)])
+                }
+            }
+        }
+    }
+}
+
+private func metricCardContext(_ id: String, formatter: MetricFormatter) -> String? {
+    if id == "bodyBattery", let measured = formatter.snapshot.visibleReading(id)?.measuredAt {
+        let date = DateFormatter(); date.locale = formatter.language.locale
+        date.dateStyle = Calendar.autoupdatingCurrent.isDate(measured, inSameDayAs: formatter.now) ? .none : .short
+        date.timeStyle = .short
+        return formatter.text("data.measured") + " " + date.string(from: measured)
+    }
+    let scope = MetricDefinition.find(id).timeScope
+    if scope == .progress, formatter.snapshot.retainedMetrics[id] == nil,
+       formatter.snapshot.sourceDate != SyncPolicy.sourceDay(for: formatter.now, timeZone: .autoupdatingCurrent),
+       let day = TrainingPresentation(language: formatter.language).dayText(formatter.snapshot.sourceDate) {
+        return formatter.text("data.day") + " " + day
+    }
+    guard formatter.snapshot.retainedMetrics[id] != nil || scope != .progress else { return nil }
+    return formatter.context(id)
+}
+
 private struct MainMetricView: View {
     @ObservedObject var store: AppStore
     var metricID: String
@@ -154,8 +311,8 @@ private struct MainMetricView: View {
     private var theme: DeskMetricTheme { .metric(metricID, style: style) }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
-            content(at: context.date)
+        MetricDisplayClock(snapshot: store.snapshot, metricID: metricID) { now in
+            content(at: now)
         }
     }
 
@@ -171,7 +328,7 @@ private struct MainMetricView: View {
                         .lineLimit(2)
                     if let explanation {
                         MetricInfoButton(explanation: explanation, title: store.text(definition.titleKey),
-                                         language: store.preferences.language)
+                                         language: store.preferences.language, context: formatter.context(metricID))
                             .foregroundStyle(theme.secondaryInk)
                     }
                 }
@@ -181,12 +338,8 @@ private struct MainMetricView: View {
                 if let explanation {
                     Text(explanation.status).font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(theme.ink).fixedSize(horizontal: false, vertical: true)
-                    if let supporting = explanation.supportingText {
-                        Text(supporting).font(.system(size: 11)).foregroundStyle(theme.secondaryInk)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
                 }
-                if let context = formatter.context(metricID) {
+                if let context = metricCardContext(metricID, formatter: formatter) {
                     Text(context).font(.system(size: 11, weight: .medium)).foregroundStyle(theme.secondaryInk)
                 } else if formatter.value(metricID) == nil {
                     Text(store.text("data.empty")).font(.caption).foregroundStyle(theme.secondaryInk)
@@ -212,6 +365,9 @@ private struct MainMetricView: View {
         .background(theme.background, in: RoundedRectangle(cornerRadius: 24))
         .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(theme.ink.opacity(0.10)))
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(formatter.accessibility(metricID))
+        .accessibilityHint(formatter.help(metricID))
+        .modifier(MetricCardGeometry(id: "primary:" + metricID))
     }
 }
 
@@ -226,8 +382,8 @@ private struct SmallMetricView: View {
     private var accent: Color { colorScheme == .dark ? theme.highlight : theme.top }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
-            content(at: context.date)
+        MetricDisplayClock(snapshot: store.snapshot, metricID: metricID) { now in
+            content(at: now)
         }
     }
 
@@ -235,39 +391,46 @@ private struct SmallMetricView: View {
         let formatter = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language, now: now)
         let explanation = MetricExplanation.make(metricID: metricID, snapshot: store.snapshot,
                                                    language: store.preferences.language, now: now)
-        return VStack(alignment: .leading, spacing: 12) {
+        let context = metricCardContext(metricID, formatter: formatter)
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 8) {
                 Image(systemName: definition.symbol).font(.system(size: 13, weight: .medium))
                     .foregroundStyle(accent).frame(width: 28, height: 28)
                     .background(accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 9))
                     .accessibilityHidden(true)
                 Text(store.text(definition.titleKey)).font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(.secondary).lineLimit(2).minimumScaleFactor(0.85)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 if let explanation {
                     MetricInfoButton(explanation: explanation, title: store.text(definition.titleKey),
-                                     language: store.preferences.language).foregroundStyle(.secondary)
+                                     language: store.preferences.language, context: formatter.context(metricID))
+                        .foregroundStyle(.secondary)
                 }
             }
+            .frame(height: 34, alignment: .leading)
             MetricValueLabel(value: formatter.display(metricID), size: compact ? 28 : 32)
                 .foregroundStyle(.primary)
-            if let explanation {
-                Text(explanation.status).font(.system(size: 11, weight: .medium)).foregroundStyle(accent)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let supporting = explanation.supportingText {
-                    Text(supporting).font(.system(size: 10)).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            if let context = formatter.context(metricID) {
-                Text(context).font(.system(size: 10)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                .frame(height: 42, alignment: .leading)
+            Text(explanation?.status ?? " ")
+                .font(.system(size: 12, weight: .medium)).foregroundStyle(accent)
+                .lineLimit(2).minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity, minHeight: 32, maxHeight: 32, alignment: .topLeading)
+                .accessibilityHidden(explanation == nil)
+            Spacer(minLength: 0)
+            Text(context ?? " ").font(.system(size: 10)).foregroundStyle(.secondary)
+                .lineLimit(1).minimumScaleFactor(0.75)
+                .frame(height: 14, alignment: .leading)
+                .accessibilityHidden(context == nil)
         }
-        .frame(maxWidth: .infinity, minHeight: compact ? 82 : 100, alignment: .leading)
-        .padding(compact ? 16 : 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: compact ? 168 : 180, alignment: .topLeading)
+        .padding(compact ? 16 : 20)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 20))
         .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(accent.opacity(0.10)))
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(formatter.accessibility(metricID))
+        .accessibilityHint(formatter.help(metricID))
+        .modifier(MetricCardGeometry(id: "secondary:" + metricID))
     }
 }
 
@@ -275,6 +438,7 @@ private struct MetricInfoButton: View {
     let explanation: MetricExplanation
     let title: String
     let language: AppLanguage
+    var context: String? = nil
     @State private var isPresented = false
 
     var body: some View {
@@ -285,8 +449,9 @@ private struct MetricInfoButton: View {
         .buttonStyle(.plain)
         .help(MetricExplanation.helpLabel(language: language))
         .accessibilityLabel(title + ": " + MetricExplanation.helpLabel(language: language))
+        .accessibilityHint([explanation.supportingText, context].compactMap { $0 }.joined(separator: ". "))
         .popover(isPresented: $isPresented) {
-            MetricExplanationPanel(explanation: explanation, title: title, language: language)
+            MetricExplanationPanel(explanation: explanation, title: title, language: language, context: context)
         }
     }
 }
@@ -296,6 +461,7 @@ struct MetricExplanationPanel: View {
     let explanation: MetricExplanation
     let title: String
     let language: AppLanguage
+    var context: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -303,6 +469,10 @@ struct MetricExplanationPanel: View {
             Text(explanation.status).font(.subheadline.weight(.semibold))
             if let supporting = explanation.supportingText {
                 Text(supporting).font(.callout).foregroundStyle(.secondary)
+            }
+            if let context {
+                Text(context).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Text(explanation.detail).font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
@@ -353,7 +523,11 @@ struct DashboardView: View {
                     .buttonStyle(DeskButtonStyle()).help(store.text("dashboard.configure"))
                     .accessibilityLabel(store.text("dashboard.configure"))
                     Button { store.sync() } label: {
-                        Label(store.text("action.sync"), systemImage: "arrow.clockwise")
+                        HStack(spacing: 6) {
+                            if store.isSyncing { ProgressView().controlSize(.mini) }
+                            else { Image(systemName: "arrow.clockwise") }
+                            Text(store.text(store.isSyncing ? "data.syncing" : "action.sync"))
+                        }
                     }
                     .buttonStyle(DeskButtonStyle(prominent: true))
                     .help(store.snapshot.hasMeasurements ? store.updatedText : store.text("action.sync"))
@@ -414,7 +588,7 @@ struct DashboardView: View {
                             if let primary = selectedMetrics.first {
                                 MainMetricView(store: store, metricID: primary, style: profile.style,
                                                compact: profile.density == .compact)
-                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 175), spacing: 12, alignment: .leading)], spacing: 12) {
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 12, alignment: .topLeading)], spacing: 12) {
                                     ForEach(Array(selectedMetrics.dropFirst()), id: \.self) { id in
                                         SmallMetricView(store: store, metricID: id, style: profile.style,
                                                         compact: profile.density == .compact)
@@ -574,6 +748,7 @@ private struct FixedWidgetPreview: View {
 struct MainWindowView: View {
     @ObservedObject var store: AppStore
     @ObservedObject var navigation: MainWindowNavigation
+    @StateObject private var displayActivity = MetricDisplayActivity()
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -627,6 +802,8 @@ struct MainWindowView: View {
         }
         .frame(minWidth: 780, minHeight: 620)
         .background(colorScheme == .dark ? DeskMetricTheme.color(0x13191F) : DeskMetricTheme.color(0xF3F5F4))
+        .background(MetricWindowVisibilityReader(activity: displayActivity).allowsHitTesting(false))
+        .environment(\.metricDisplayContext, displayActivity.context)
         .environment(\.locale, store.preferences.language.locale)
     }
 

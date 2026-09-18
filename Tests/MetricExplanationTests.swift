@@ -65,7 +65,9 @@ struct MetricExplanationTests {
         check(reading("hrv", -1) == nil, "negative values have no assessment")
         check(reading("unknown", 50) == nil, "unknown metric never falls back to Body Battery")
         check(reading("trainingLoad", 400, context: range, language: .ru)?.supportingText?.contains("Детренированность") == true, "Russian status explanation")
-        check(reading("sleepScore", 85, language: .de) == reading("sleepScore", 85, language: .en), "untranslated explanations have explicit English fallback")
+        check(reading("sleepScore", 85, language: .de)?.status == "Guter Schlaf", "German explanations use their own catalog")
+        check(reading("sleepScore", 85, language: .de)?.detail != reading("sleepScore", 85, language: .en)?.detail,
+              "English fallback must not count as translation coverage")
         let oldContext = try AppJSON.decoder.decode(GarminMetricContext.self, from: Data("{}".utf8))
         check(oldContext == GarminMetricContext(), "optional context fields remain backward compatible")
         let ratioContext = GarminMetricContext(trainingStatus: "DETRAINING", trainingLoadStatus: "OPTIMAL", trainingLoadRatio: 1.2)

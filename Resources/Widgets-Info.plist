@@ -10,7 +10,7 @@
     <key>CFBundleName</key><string>GarminDeskWidgets</string>
     <key>CFBundlePackageType</key><string>XPC!</string>
     <key>CFBundleShortVersionString</key><string>0.6.0</string>
-    <key>CFBundleVersion</key><string>12</string>
+    <key>CFBundleVersion</key><string>13</string>
     <key>CFBundleLocalizations</key>
     <array>
         <string>en</string><string>ru</string><string>de</string><string>fr</string>

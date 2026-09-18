@@ -29,7 +29,7 @@ struct RenderWidgets {
                 }
             }
         }
-        for language in [AppLanguage.en, .ru] {
+        for language in AppLanguage.supported {
             for state in ["optimal-detraining", "low-load", "high-load", "hrv-balanced-low-night", "context-missing", "garmin-ratio"] {
                 var data = sample(language: language, now: now)
                 data.snapshot.metricContext = GarminMetricContext(trainingLoadLower: 350, trainingLoadUpper: 780,
@@ -57,6 +57,8 @@ struct RenderWidgets {
                     }
                 }
             }
+            // Remaining legacy state permutations are already covered in EN/RU.
+            if ![AppLanguage.en, .ru].contains(language) { continue }
             for customization in ["chosen", "zero", "unavailable"] {
                 var data = sample(language: language, now: now)
                 data.preferences.summaryMetrics = ["steps", "sleepDuration", "hrv", "vo2Max"]

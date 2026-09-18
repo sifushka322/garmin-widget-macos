@@ -41,6 +41,18 @@ Sources/Shared/GarminWebAPI.swift
 Sources/Shared/GarminWidgetView.swift
 Sources/Shared/LocalizationsDE.swift
 Sources/Shared/LocalizationsES.swift
+Sources/Shared/LocalizationsExplanationDE.swift
+Sources/Shared/LocalizationsExplanationEN.swift
+Sources/Shared/LocalizationsExplanationES.swift
+Sources/Shared/LocalizationsExplanationFR.swift
+Sources/Shared/LocalizationsExplanationIT.swift
+Sources/Shared/LocalizationsExplanationJA.swift
+Sources/Shared/LocalizationsExplanationKO.swift
+Sources/Shared/LocalizationsExplanationNL.swift
+Sources/Shared/LocalizationsExplanationPL.swift
+Sources/Shared/LocalizationsExplanationPTBR.swift
+Sources/Shared/LocalizationsExplanationRU.swift
+Sources/Shared/LocalizationsExplanationZHHans.swift
 Sources/Shared/LocalizationsFR.swift
 Sources/Shared/LocalizationsIT.swift
 Sources/Shared/LocalizationsJA.swift
@@ -50,6 +62,7 @@ Sources/Shared/LocalizationsPL.swift
 Sources/Shared/LocalizationsPTBR.swift
 Sources/Shared/LocalizationsZHHans.swift
 Sources/Shared/MetricExplanation.swift
+Sources/Shared/MetricExplanationCatalog.swift
 Sources/Shared/MetricFormatter.swift
 Sources/Shared/MetricFreshness.swift
 Sources/Shared/Models.swift

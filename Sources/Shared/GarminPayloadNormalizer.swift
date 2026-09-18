@@ -63,6 +63,20 @@ enum GarminPayloadNormalizer {
         }
     }
 
+    /// Validate only explicit day labels with established daily semantics.
+    /// Overnight/historical measurements must not infer a local day from UTC.
+    static func matchesSourceDay(group: String, payload: Any, sourceDay: String) -> Bool {
+        func matches(_ value: Any?) -> Bool {
+            guard let value, !(value is NSNull) else { return true }
+            return (value as? String) == sourceDay
+        }
+        switch group {
+        case "stats", "hydration": return matches(dictionary(payload)["calendarDate"])
+        case "body_battery": return records(payload).allSatisfy { matches($0["date"]) }
+        default: return true
+        }
+    }
+
     static func normalize(group: String, payload: Any, asOf: Date? = nil) -> [String: MetricReading] {
         var result: [String: MetricReading] = [:]
         let object = dictionary(payload)
