@@ -67,6 +67,28 @@ import Foundation
             try expect(WidgetMetricPolicy.inlineStatus(for: id, formatter: formatter) == nil, "Generic descriptions belong in details: " + id)
             try expect(formatter.interpretation(id) != nil && !formatter.help(id).isEmpty, "Removing an inline phrase preserves full help: " + id)
         }
+        for language in AppLanguage.supported {
+            var dailySteps = interpreted
+            dailySteps.metrics["stepGoal"] = .init(value: 10_000)
+            let number = NumberFormatter()
+            number.locale = language.locale; number.numberStyle = .decimal; number.maximumFractionDigits = 0
+            let target = String(format: Localizer.text("explanation.steps.goal", language: language),
+                                locale: language.locale, number.string(from: 10_000)!)
+            for value in [6_842.0, 10_000, 12_000] {
+                dailySteps.metrics["steps"] = .init(value: value)
+                let stepFormatter = MetricFormatter(snapshot: dailySteps, language: language, now: date)
+                let actual = WidgetMetricPolicy.inlineStatus(for: "steps", formatter: stepFormatter)
+                if value < 10_000 {
+                    try expect(actual == target,
+                               "Below-goal steps show the concrete localized target: \(language)")
+                    try expect(actual != Localizer.text("explanation.steps.progress", language: language),
+                               "The generic progress phrase must not replace the actual target")
+                } else {
+                    try expect(actual == Localizer.text("explanation.steps.reached", language: language),
+                               "At/above-goal steps retain the localized achievement state: \(language), \(value)")
+                }
+            }
+        }
         interpreted.metrics["stepGoal"] = nil
         try expect(WidgetMetricPolicy.inlineStatus(for: "steps", formatter: .init(snapshot: interpreted, language: .en, now: date)) == nil,
                    "Steps without a goal do not show a generic inline phrase")

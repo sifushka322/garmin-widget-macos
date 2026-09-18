@@ -31,7 +31,12 @@ enum WidgetMetricPolicy {
             guard snapshot.retainedMetrics["steps"] == nil, snapshot.retainedMetrics["stepGoal"] == nil,
                   stepDay == goalDay,
                   stepDay == SyncPolicy.sourceDay(for: formatter.now, timeZone: .autoupdatingCurrent),
-                  let goal = formatter.value("stepGoal"), goal > 0 else { return nil }
+                  let goal = formatter.value("stepGoal"), goal > 0,
+                  let steps = formatter.value("steps"),
+                  let explanation = formatter.interpretation(id) else { return nil }
+            // Before completion, the actual target adds context that a generic
+            // progress phrase cannot. Reuse the localized goal and reached labels.
+            return steps < goal ? explanation.supportingText : explanation.status
         }
         return formatter.interpretation(id)?.status
     }
