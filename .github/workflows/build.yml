@@ -39,9 +39,11 @@ jobs:
         run: python3 scripts/release-version.py >> "$GITHUB_OUTPUT"
       - name: Check packaging and publishing script syntax
         run: |
-          for script in scripts/build-app.sh scripts/build-widgets.sh scripts/package-release.sh scripts/publish-release.sh; do
+          for script in scripts/build-app.sh scripts/build-widgets.sh scripts/package-release.sh scripts/publish-release.sh scripts/ci-runtime-smoke.sh; do
             bash -n "$script"
           done
+      - name: Verify runtime compatibility gates and artifact validation
+        run: python3 Tests/RuntimeCompatibilityTests.py
       - name: Verify release preparation stays in draft
         run: python3 Tests/ReleaseDraftTests.py
 
@@ -151,9 +153,67 @@ jobs:
           retention-days: 14
           compression-level: 0
 
+  runtime-compat:
+    name: Runtime macOS ${{ matrix.os_major }} ${{ matrix.arch }}
+    needs: [version, build]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    env:
+      APP_VERSION: ${{ needs.version.outputs.version }}
+      APP_BUILD: ${{ needs.version.outputs.build }}
+      GARMIN_RUNTIME_ARCH: ${{ matrix.arch }}
+      GARMIN_RUNTIME_OS_MAJOR: ${{ matrix.os_major }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Standard hosted runners only. macOS 14 reaches runner retirement
+          # on 2026-11-02; replace this lane before then, never silently skip it.
+          - runner: macos-14
+            os_major: '14'
+            arch: arm64
+          - runner: macos-15-intel
+            os_major: '15'
+            arch: x86_64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download this run's exact macOS 26 package
+        run: |
+          gh run download "$GITHUB_RUN_ID" \
+            --name "GarminDesk-$APP_VERSION-build$APP_BUILD-$GARMIN_RUNTIME_ARCH-development" \
+            --dir runtime-packages
+      - name: Verify and start the packaged application on the older runtime
+        run: bash scripts/ci-runtime-smoke.sh runtime-packages
+      - name: Run native contracts, lifecycle checks and visual fixtures on the older OS
+        run: |
+          xcrun swiftc --version
+          xcrun --sdk macosx --show-sdk-version
+          bash scripts/test-offline.sh
+      - name: Verify read-only widget sharing on the older OS
+        run: bash scripts/test-widget-sandbox.sh
+      - name: Upload runtime evidence and synthetic visual fixtures
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: runtime-audit-${{ matrix.runner }}-${{ matrix.arch }}
+          path: |
+            build/audit/runtime/*
+            build/audit/app/*.png
+            build/audit/widgets/*.png
+            build/audit/calendar/*.png
+          if-no-files-found: warn
+          retention-days: 14
+
   release:
     name: Prepare verified release draft
-    needs: [version, protocol, build]
+    needs: [version, protocol, build, runtime-compat]
     if: >-
       github.ref == 'refs/heads/main' &&
       ((github.event_name == 'push' && github.event.head_commit.message == format('release: v{0}', needs.version.outputs.version)) ||
