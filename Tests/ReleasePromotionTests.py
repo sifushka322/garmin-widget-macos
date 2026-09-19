@@ -199,8 +199,11 @@ class ReleasePromotionTests(unittest.TestCase):
 
     def test_informed_override_can_link_the_exact_public_audit_record(self):
         self.make_override()
+        self.report += b"\nAutomated checks: PASS.\n"
+        self.approval["report_sha256"] = digest(self.report)
         self.notes = ("# GarminDesk 0.5.0\n\nFinal release with completed product changes.\n\n"
-                      "[Validation report](https://github.com/fixture/repo/blob/main/" + self.report_path + ")\n").encode()
+                      "[Validation report](https://github.com/fixture/repo/blob/main/" + self.report_path + ")\n"
+                      "Automated checks: PASS.\n").encode()
         self.approval["release_notes_sha256"] = digest(self.notes)
         self.save_approval()
         with contextlib.redirect_stdout(io.StringIO()):
@@ -218,6 +221,49 @@ class ReleasePromotionTests(unittest.TestCase):
                 self.approval["release_notes_sha256"] = digest(self.notes)
                 self.save_approval()
                 self.reject()
+
+    def test_override_report_rejects_pass_claims_despite_markdown_or_spacing(self):
+        self.make_override()
+        original_report = self.report
+        claims = (
+            "**Normal upgrade: PASS**",
+            "- **Normal upgrade validation:** **PASS**",
+            "normal \tupgrade :\n pass",
+            "**Overall result: PASS**",
+            "- Overall result: __PASS__",
+            "overall\tRESULT \t:\n\tpAsS",
+        )
+        for claim in claims:
+            with self.subTest(claim=claim):
+                self.report = original_report + ("\n" + claim + "\n").encode()
+                self.approval["report_sha256"] = digest(self.report)
+                self.save_approval()
+                self.reject()
+
+    def test_override_notes_reject_pass_claims_despite_markdown_or_spacing(self):
+        self.make_override()
+        disclosures = (
+            self.notes,
+            ("# GarminDesk 0.5.0\n\nFinal release with completed product changes.\n\n"
+             "[Validation report](https://github.com/fixture/repo/blob/main/" + self.report_path + ")\n").encode(),
+        )
+        claims = (
+            "Normal upgrade: PASS",
+            "**Normal upgrade: PASS**",
+            "**Normal upgrade:** **PASS**",
+            "- Normal upgrade: PASS",
+            "- **Normal upgrade validation:** **PASS**",
+            "normal UPGRADE validation: pAsS",
+            "Normal\tupgrade  validation \t: \n\tPASS",
+            "Normal upgrade: __PASS__",
+        )
+        for disclosure in disclosures:
+            for claim in claims:
+                with self.subTest(disclosure=disclosure, claim=claim):
+                    self.notes = disclosure + ("\n" + claim + "\n").encode()
+                    self.approval["release_notes_sha256"] = digest(self.notes)
+                    self.save_approval()
+                    self.reject()
 
     def test_not_run_without_explicit_owner_override_is_rejected(self):
         self.make_override(); self.approval["owner_override"] = False

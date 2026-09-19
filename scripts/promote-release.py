@@ -122,6 +122,16 @@ def validate_approval(value, version, build):
     require(all(isinstance(x, str) and re.fullmatch(r"[a-f0-9]{64}", x) for x in hashes.values()), "Invalid approved asset digest")
 
 
+def has_pass_outcome(text, include_overall=False):
+    """Detect explicit outcome labels despite Markdown styling and spacing."""
+    outcome_text = re.sub(r"[*_`]", "", text)
+    labels = r"normal\s+upgrade(?:\s+validation)?"
+    if include_overall:
+        labels += r"|overall\s+result"
+    return re.search(r"\b(?:" + labels + r")\s*:\s*pass\b",
+                     outcome_text, flags=re.IGNORECASE) is not None
+
+
 def validate_report(data, approval):
     require(sha256(data) == approval["report_sha256"], "Upgrade report digest differs")
     text = data.decode("utf-8")
@@ -138,7 +148,7 @@ def validate_report(data, approval):
         required |= {"Overall result: NOT RUN", "Normal upgrade: NOT RUN", "Owner override: explicit release request after disclosure",
                      "Override reason: " + approval["override_reason"]}
         require(any(line.startswith("Unverified coverage: ") and len(line) > 40 for line in lines), "Override report must document unchecked coverage")
-        require("Overall result: PASS" not in lines and "Normal upgrade: PASS" not in lines, "An untested report must not claim a pass")
+        require(not has_pass_outcome(text, include_overall=True), "An untested report must not claim a pass")
     require(required <= lines, "Report lacks matching identity or required upgrade outcome evidence")
     sanitized_text(text)
 
@@ -161,7 +171,7 @@ def validate_public_notes(data, approval, repository):
         linked_disclosure = re.search(r"\[[^\]\n]+\]\(" + re.escape(report_url) + r"\)", text) is not None
         require(inline_disclosure or linked_disclosure,
                 "Public notes must disclose the informed exception or link its exact audit report")
-        require(not {"Normal upgrade validation: PASS", "Normal upgrade: PASS"}.intersection(text.splitlines()),
+        require(not has_pass_outcome(text),
                 "Public notes must not claim an unperformed normal upgrade passed")
 
 
