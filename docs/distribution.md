@@ -2,20 +2,20 @@
 
 GarminDesk is distributed through [GitHub Releases](https://github.com/sifushka322/garmin-widget-macos/releases) as a ready-to-use app. Users do not need Python, Homebrew, Xcode, or additional libraries.
 
-## Version 0.5.0
+## Version 0.6.0
 
 Apple Silicon (`arm64`) packages are listed below. Equivalent Intel packages use the `x86_64` suffix:
 
-- `GarminDesk-0.5.0-arm64.dmg` — the app, an Applications shortcut, and installation instructions.
-- `GarminDesk-0.5.0-arm64.zip` — an alternative archive of the same app.
-- `GarminDesk-0.5.0-arm64-SHA256.txt` — archive checksums.
+- `GarminDesk-0.6.0-arm64.dmg` — the app, an Applications shortcut, and installation instructions.
+- `GarminDesk-0.6.0-arm64.zip` — an alternative archive of the same app.
+- `GarminDesk-0.6.0-arm64-SHA256.txt` — archive checksums.
 
-The target is macOS 14+. Validation of **0.5.0 build 11** is recorded in the [release notes](releases/0.5.0.md). Normal upgrades with existing desktop widgets and live Garmin sign-in remain unverified. Validation does not cover every macOS version and architecture combination.
+Packages target macOS 14+. The exact build, package checks, CI results and on-device observations are recorded in the [final validation report](releases/validation/0.6.0-final-audit.md).
 
 ## Installation without a paid signing certificate
 
 1. Open the DMG, drag GarminDesk.app onto Applications, then eject the disk. For a ZIP, extract the archive and move the app to Applications.
-2. Open GarminDesk. It is a regular app with a window and a Dock icon.
+2. Open GarminDesk. It runs from a monochrome watch icon in the menu bar, without a Dock icon. Use this menu for refresh, settings and Quit.
 3. Sign in to Garmin Connect under **Garmin account**. Under **Widgets**, choose Colorful, Light, or Dark and preview the five widget types. No profile setup is needed.
 4. Right-click the desktop → **Edit Widgets → GarminDesk**. Add the kind and size you want.
 
@@ -45,9 +45,7 @@ bash scripts/package-release.sh
 
 `build-app.sh` builds the app and extension, generates the icon, applies ad-hoc signatures, and verifies the bundle. `package-release.sh` packages the built app into ZIP/DMG files with SHA-256 checksums; it does not install the app or publish a release.
 
-Current source builds the [0.6.0 candidate](releases/0.6.0.md). It runs in the menu
-bar without a Dock icon; use its watch icon for settings, refresh and Quit. The
-0.5.0 installation description above refers to the existing published release.
+The current source and published release are **0.6.0 build 15**.
 
 | Variable | Purpose |
 | --- | --- |
@@ -64,7 +62,7 @@ The workflow in `.github/workflows/build.yml` reads the version from `Resources/
 
 ## Before publication
 
-Version 0.5.0 was published with the [documented validation exception](releases/0.5.0.md#validation-and-release-limits). The following remains the standard validation process.
+Release evidence and the owner's publication authorization are recorded in the [validation report](releases/validation/0.6.0-final-audit.md). The following is the standard validation process.
 
 Verify the exact app and archives being released: versions, nested signatures, architecture, system dependencies, checksums, and absence of private runtime files. Then download the packages from the draft and complete the [upgrade validation from the previous release](widget-upgrade-validation.md) on a Mac with a graphical session, including existing widgets and the gallery. A separate test machine can be used; the owner's Mac does not need to be changed. Only after validation succeeds should the same draft be published and marked `latest`; a rebuild requires another validation run. Details: [publication checklist](publication-checklist.md), [source file list](source-publication-files.txt).
 

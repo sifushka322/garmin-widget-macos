@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "version": "0.6.0",
+  "build": "15",
+  "commit": "f58ce174a38189d37039e6b9d825314c2481eee8",
+  "build_run_id": 35408728239,
+  "upgrade_result": "not_run",
+  "owner_override": true,
+  "override_reason": "The owner explicitly requested publication after being told that the computer-use plugin could not inspect existing desktop widgets or open the system widget gallery, and that normal system-widget upgrade validation therefore remained unverified.",
+  "report": "docs/releases/validation/0.6.0-final-audit.md",
+  "report_sha256": "06b930939927d98fbc88f64de89a8b87b252d575cbc4fc2f426c596754067a7b",
+  "release_notes_path": "docs/releases/0.6.0.md",
+  "release_notes_sha256": "5863adfe5a5b709fb0a3d796cfe32944aab354de89dcba839827938b8c2cb8d0",
+  "asset_sha256": {
+    "GarminDesk-0.6.0-arm64-SHA256.txt": "e2bd7c6af54cdfa50212ffed36193e7896a41b8d7480393d7dbadfaa43edfd2f",
+    "GarminDesk-0.6.0-arm64.dmg": "94e80b1a9aafdf8c47bf220450b11e8f3d549a019b7c071eeb8b69d3d53093c2",
+    "GarminDesk-0.6.0-arm64.zip": "4c0698ff61158cc530f1267a88a3238f0d693be3b995623cb972335ea0c35a3e",
+    "GarminDesk-0.6.0-x86_64-SHA256.txt": "a2b652de9aec7e2f2f2d351206fc5fc09bb4de188800887407c9dea6272e790e",
+    "GarminDesk-0.6.0-x86_64.dmg": "4fc3a1f8f28c4ccf00e426de5dd3ba940c8e0c459a27305013ff5387b2fac7a6",
+    "GarminDesk-0.6.0-x86_64.zip": "bf98bcb652552411e7af5fd1209d892918f009d91b5363b334e3897e7d2dfe4a"
+  }
+}
