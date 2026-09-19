@@ -19,9 +19,9 @@ struct SyncPolicy {
         case stats, heart, bodyBattery = "body_battery", sleep, hrv, spo2, respiration
         case readiness, vo2Max = "vo2_max", training, weight, hydration, profile, devices
         // Opt-in: only request these after the selected connector supports them.
-        case activities, plannedWorkouts = "planned_workouts"
+        case activities, plannedWorkouts = "planned_workouts", historicalRecovery = "historical_recovery"
 
-        static let currentMetrics = Set(allCases.filter { $0 != .activities && $0 != .plannedWorkouts })
+        static let currentMetrics = Set(allCases.filter { $0 != .activities && $0 != .plannedWorkouts && $0 != .historicalRecovery })
         var isDaily: Bool { self != .profile && self != .devices }
     }
 
@@ -53,6 +53,7 @@ struct SyncPolicy {
             case .sleep, .hrv, .spo2, .respiration, .readiness, .training: return max(base, 30 * 60)
             case .vo2Max, .weight, .plannedWorkouts: return max(base, 60 * 60)
             case .profile, .devices: return max(base, 24 * 60 * 60)
+            case .historicalRecovery: return 30
             }
         }
     }

@@ -77,6 +77,34 @@ enum GarminPayloadNormalizer {
         }
     }
 
+    /// A requested historical day is only a fallback label. Preserve explicit
+    /// older record dates (notably VO2 max), and reject future or malformed labels.
+    /// Never derive a Garmin calendar day from a UTC measurement timestamp.
+    static func historicalSourceDay(group: String, payload: Any, requestedDay: String) -> String? {
+        guard GarminHistoricalRecovery.eligibleGroups.contains(where: { $0.rawValue == group }),
+              GarminWebAPI.validDay(requestedDay) else { return nil }
+        let object = dictionary(payload)
+        let labels: [Any?]
+        switch group {
+        case "sleep": labels = [dictionary(object["dailySleepDTO"])["calendarDate"]]
+        case "hrv": labels = [dictionary(object["hrvSummary"])["calendarDate"]]
+        case "respiration": labels = [object["calendarDate"]]
+        case "readiness": labels = [selectedReadinessEntry(payload)?["calendarDate"]]
+        case "training": labels = [trainingEntry(object)?["calendarDate"]]
+        case "vo2_max":
+            let entries = payload is [String: Any] ? [object] : records(payload)
+            labels = entries.map { dictionary($0["generic"])["calendarDate"] }
+        default: return nil
+        }
+        var days: [String] = []
+        for raw in labels {
+            guard let raw, !(raw is NSNull) else { continue }
+            guard let day = raw as? String, GarminWebAPI.validDay(day), day <= requestedDay else { return nil }
+            days.append(day)
+        }
+        return days.max() ?? requestedDay
+    }
+
     static func normalize(group: String, payload: Any, asOf: Date? = nil) -> [String: MetricReading] {
         var result: [String: MetricReading] = [:]
         let object = dictionary(payload)
@@ -139,18 +167,8 @@ enum GarminPayloadNormalizer {
         case "respiration":
             put("respiration", object["avgSleepRespirationValue"], positive: true)
         case "readiness":
-            let entries = records(payload)
-            let dated = entries.compactMap { entry -> (date: Date, entry: [String: Any])? in
-                guard let date = timestamp(entry["timestamp"], knownUTC: true) else { return nil }
-                return (date, entry)
-            }
-            let selected: [String: Any]
-            let measuredAt: Date?
-            if let latest = dated.max(by: { $0.date < $1.date }) {
-                selected = latest.entry; measuredAt = latest.date
-            } else if entries.count == 1 {
-                selected = entries[0]; measuredAt = nil
-            } else { return [:] }
+            guard let selected = selectedReadinessEntry(payload) else { return [:] }
+            let measuredAt = timestamp(selected["timestamp"], knownUTC: true)
             put("trainingReadiness", selected["score"], measuredAt: measuredAt, maximum: 100)
             let recovery: Any? = selected["recoveryTimeChangePhrase"] as? String == "REACHED_ZERO"
                 ? 0 : selected["recoveryTime"]
@@ -233,6 +251,16 @@ enum GarminPayloadNormalizer {
         default: return nil
         }
         return result == GarminMetricContext() ? nil : result
+    }
+
+    private static func selectedReadinessEntry(_ payload: Any) -> [String: Any]? {
+        let entries = records(payload)
+        let dated = entries.compactMap { entry -> (date: Date, entry: [String: Any])? in
+            guard let date = timestamp(entry["timestamp"], knownUTC: true) else { return nil }
+            return (date, entry)
+        }
+        if let latest = dated.max(by: { $0.date < $1.date }) { return latest.entry }
+        return entries.count == 1 ? entries[0] : nil
     }
 
     private static func trainingEntry(_ object: [String: Any]) -> [String: Any]? {

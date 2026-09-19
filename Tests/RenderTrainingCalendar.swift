@@ -26,8 +26,7 @@ struct RenderTrainingCalendar {
                     let view = GarminWidgetView(entry: .init(date: date, data: data, slot: .training, isGalleryPreview: state == "gallery"), previewFamily: family)
                     let content = view.padding(16).frame(width: size.width, height: size.height).background(view.background)
                         .environment(\.colorScheme, .dark).clipShape(RoundedRectangle(cornerRadius: 24))
-                    let renderer = ImageRenderer(content: content); renderer.scale = 2
-                    guard let cg = renderer.cgImage, let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { fatalError("Render failed") }
+                    let png = FixtureBitmapRenderer.png(content, size: size)
                     try png.write(to: output.appendingPathComponent("calendar-\(language.rawValue)-\(state)-\(name).png"))
                 }
             }

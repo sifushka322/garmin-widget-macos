@@ -71,7 +71,7 @@ private final class Rig {
     let store: AppStore
     init(state: SyncPolicy.SessionState = .available, connected: Bool = true,
          checkpoint: SyncPolicy.Checkpoint? = nil, previous: GarminSnapshot? = nil,
-         groups: GarminWebCache? = nil, widgetPublisher: ((WidgetData) throws -> Void)? = nil) throws {
+         groups: GarminWebCache? = nil, historicalRecoveryEnabled: Bool = false, widgetPublisher: ((WidgetData) throws -> Void)? = nil) throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("GarminDeskHostTests-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let preferences = AppPreferences()
@@ -85,7 +85,7 @@ private final class Rig {
         store = AppStore(supportDirectory: directory, webSession: web, defaults: defaults,
                          clock: { clock.moment }, sourceTimeZone: { TimeZone(secondsFromGMT: 0)! },
                          automaticScheduling: false, writesWidgetData: widgetPublisher != nil,
-                         widgetPublisher: widgetPublisher)
+                         historicalRecoveryEnabled: historicalRecoveryEnabled, widgetPublisher: widgetPublisher)
     }
     func checkpoint() throws -> SyncPolicy.Checkpoint {
         try AppJSON.decoder.decode(SyncPolicy.Checkpoint.self, from: Data(contentsOf: directory.appendingPathComponent("sync-policy.json")))
@@ -562,6 +562,12 @@ struct AppStoreSyncTests {
 
     static func main() async {
         do {
+            try testHistoricalCalendarAndProvenance()
+            try await testHistoricalMigrationRecovery()
+            try await testHistoricalEmptyAndExpiry()
+            try await testHistoricalBudgetRestartAndOwnedSkip()
+            try await testHistoricalFailureAndStorageBound()
+            try await testHistoricalAccountChange()
             try await testTransientEndpointDoesNotStarveOtherGroups()
             try await testBoundedBatchAndIncrementalProgress()
             try await testSameAccountVerificationPreservesReadings()
@@ -597,6 +603,242 @@ struct AppStoreSyncTests {
             try await testTrainingFirstPageRateLimitStops()
             print("PASS: \(checks) host lifecycle and cache checks")
         } catch { fputs("FAIL: \(error)\n", stderr); exit(1) }
+    }
+
+
+    static func testHistoricalCalendarAndProvenance() throws {
+        for (day, expected) in ["2026-01-01": "2025-12-31", "2024-03-01": "2024-02-29",
+                                "2026-03-01": "2026-02-28", "2026-03-09": "2026-03-08",
+                                "2026-11-02": "2026-11-01"] {
+            try expect(GarminHistoricalRecovery.previousDay(for: day) == expected,
+                       "Historical calendar arithmetic must survive year, leap-day and DST boundaries")
+        }
+        for invalid in ["", "2026-02-30", "2026-13-01", "0001-01-01"] {
+            try expect(GarminHistoricalRecovery.previousDay(for: invalid) == nil, "Invalid or underflowing days cannot form a history request")
+        }
+        let moment = TestClock().moment
+        let day = SyncPolicy.sourceDay(for: moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!)
+        let recovery = GarminHistoricalRecovery(sourceDay: day, startedAt: moment, queued: Set(GarminHistoricalRecovery.eligibleGroups))
+        var now = moment; now.wallTime.addTimeInterval(-7200); now.monotonicSeconds += 30
+        try expect(recovery.pending(sourceDay: day, at: now).count == 6, "Same-boot recovery expiry follows continuous time across a wall rollback")
+        now.monotonicSeconds = moment.monotonicSeconds + 3600
+        try expect(recovery.pending(sourceDay: day, at: now).isEmpty, "Recovery expires after one continuous hour")
+        now.bootID = "new-boot"; now.wallTime = moment.wallTime.addingTimeInterval(3600)
+        try expect(recovery.pending(sourceDay: day, at: now).isEmpty, "Cross-boot recovery expiry uses its persisted wall deadline")
+        let yesterday = GarminHistoricalRecovery.previousDay(for: day)!
+        let older = GarminHistoricalRecovery.previousDay(for: yesterday)!
+        let readiness: [[String: Any]] = [
+            ["calendarDate": older, "timestamp": "2026-09-01T11:00:00Z", "score": 10],
+            ["timestamp": "2026-09-01T12:00:00Z", "score": 80]]
+        try expect(GarminPayloadNormalizer.historicalSourceDay(group: "readiness", payload: readiness, requestedDay: yesterday) == yesterday &&
+                   GarminPayloadNormalizer.normalize(group: "readiness", payload: readiness)["trainingReadiness"]?.value == 80,
+                   "A selected undated readiness row uses the requested day, never another row's date")
+        let vo2: [[String: Any]] = [["generic": ["calendarDate": older, "vo2MaxValue": 45]]]
+        try expect(GarminPayloadNormalizer.historicalSourceDay(group: "vo2_max", payload: vo2, requestedDay: yesterday) == older,
+                   "An explicitly older completed VO2 record preserves its source date")
+        try expect(!SyncPolicy.Group.currentMetrics.contains(.historicalRecovery) &&
+                   !GarminHistoricalRecovery.eligibleGroups.contains(.bodyBattery),
+                   "Historical recovery is opt-in scheduler work and can never project Body Battery")
+    }
+
+    private static func emptyRecoveryGroups(_ web: MockWeb) {
+        for group in GarminHistoricalRecovery.eligibleGroups { web.payloads[group.rawValue] = NSNull() }
+    }
+
+    private static func cachedWebState(_ rig: Rig) throws -> GarminWebCache {
+        try AppJSON.decoder.decode(GarminWebCache.self, from: Data(contentsOf: rig.directory.appendingPathComponent("metric-groups.json")))
+    }
+
+    static func testHistoricalMigrationRecovery() async throws {
+        let now = TestClock().moment.wallTime
+        let day = SyncPolicy.sourceDay(for: now, timeZone: TimeZone(secondsFromGMT: 0)!)
+        let yesterday = GarminHistoricalRecovery.previousDay(for: day)!
+        var legacy = GarminSnapshot(fetchedAt: now, sourceDate: yesterday, devices: [],
+                                   metrics: ["trainingReadiness": .init(value: 999)])
+        legacy.retainedMetrics["bodyBattery"] = .init(reading: .init(value: 999), sourceDate: yesterday, retrievedAt: now, changedAt: now)
+        var cache = GarminWebCache(accountDisplayName: "fixture-user")
+        for group in GarminHistoricalRecovery.eligibleGroups {
+            cache.groups[group.rawValue] = .init(sourceDay: day, retrievedAt: now, metrics: [:])
+        }
+        let rig = try Rig(previous: legacy, groups: cache, historicalRecoveryEnabled: true); defer { rig.clean() }
+        emptyRecoveryGroups(rig.web)
+        rig.web.payloads["historical.sleep"] = ["dailySleepDTO": ["calendarDate": yesterday, "sleepTimeSeconds": 21600]]
+        rig.web.payloads["historical.hrv"] = ["hrvSummary": ["calendarDate": yesterday, "lastNightAvg": 48, "status": "BALANCED",
+            "baseline": ["balancedLow": 40, "balancedUpper": 60]]]
+        rig.web.payloads["historical.readiness"] = [
+            ["calendarDate": yesterday, "timestamp": "2026-09-01T12:00:00Z", "score": 42, "recoveryTime": 90],
+            ["calendarDate": day, "timestamp": "2026-09-01T11:00:00Z", "score": 99, "recoveryTime": 999]]
+        rig.web.payloads["historical.respiration"] = ["calendarDate": yesterday, "avgSleepRespirationValue": 14]
+        rig.web.payloads["historical.vo2_max"] = [["generic": ["calendarDate": yesterday, "vo2MaxValue": 45]]]
+        rig.web.payloads["historical.training"] = ["mostRecentTrainingStatus": ["latestTrainingStatusData": [
+            "device": ["calendarDate": yesterday, "acuteTrainingLoadDTO": ["dailyTrainingLoadAcute": 123, "acwrStatus": "OPTIMAL"]]]]]
+        try expect(rig.store.snapshot.visibleReading("trainingReadiness") == nil, "Bare legacy values remain untrusted before verified recovery")
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(rig.store.snapshot.metrics["steps"]?.value == 123 && rig.store.snapshot.visibleReading("trainingReadiness") == nil,
+                   "Current readings publish before any history lookup")
+        try expect(!rig.web.calls.contains(where: { $0.hasPrefix("historical.") }), "First current-day batch never waits for historical requests")
+        let currentStamps = rig.store.snapshot.groupUpdatedAt
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        let historicalCalls = rig.web.calls.filter { $0.hasPrefix("historical.") }
+        try expect(historicalCalls == GarminHistoricalRecovery.eligibleGroups.map { "historical." + $0.rawValue }, "Recovery reads only the six eligible groups once")
+        let historicalPaths = zip(rig.web.calls, rig.web.paths).filter { $0.0.hasPrefix("historical.") }.map { $0.1 }
+        try expect(historicalPaths.allSatisfy { $0.contains(yesterday) }, "Every history lookup uses the previous calendar day")
+        try expect(rig.store.snapshot.metrics["trainingReadiness"] == nil && rig.store.snapshot.retainedMetrics["trainingReadiness"]?.reading.value == 42,
+                   "Verified historical readiness is retained, never today's measurement")
+        try expect(rig.store.snapshot.retainedMetrics["recoveryTime"]?.sourceDate == yesterday &&
+                   rig.store.snapshot.retainedMetrics["sleepDuration"]?.reading.value == 360 &&
+                   rig.store.snapshot.retainedMetrics["hrv"]?.reading.value == 48,
+                   "Completed readings retain their original day and normalized units")
+        try expect(rig.store.snapshot.groupUpdatedAt == currentStamps, "Historical requests cannot advance current-group freshness")
+        try expect(rig.store.snapshot.metricContext == nil && rig.store.snapshot.bodyBatteryProjection == nil &&
+                   rig.store.snapshot.visibleReading("bodyBattery") == nil, "History cannot import old personal bounds, estimates or legacy Body Battery")
+        rig.clock.advance(60)
+        rig.web.payloads["readiness"] = [["score": 55, "recoveryTime": 0]]
+        rig.store.sync(); try await settled(rig.store)
+        try expect(rig.store.snapshot.metrics["trainingReadiness"]?.value == 55 && rig.store.snapshot.retainedMetrics["trainingReadiness"] == nil,
+                   "A current real reading supersedes the recovered one")
+        try expect(rig.web.calls.filter { $0.hasPrefix("historical.") }.count == 6, "Manual refresh never starts another recovery cycle that day")
+    }
+
+    static func testHistoricalEmptyAndExpiry() async throws {
+        let rig = try Rig(historicalRecoveryEnabled: true); defer { rig.clean() }
+        emptyRecoveryGroups(rig.web)
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(rig.web.calls.filter { $0.hasPrefix("historical.") }.count == 6, "A verified empty yesterday is a completed one-shot lookup")
+        let calls = rig.web.calls.count
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(rig.web.calls.count == calls, "Completed history must not leave an immediate polling timer")
+        rig.clock.advance(3601)
+        rig.store.sync(); try await settled(rig.store)
+        try expect(rig.web.calls.filter { $0.hasPrefix("historical.") }.count == 6, "Queue expiry cannot reset the same day's consumed attempts")
+        let expired = try Rig(historicalRecoveryEnabled: true); defer { expired.clean() }
+        emptyRecoveryGroups(expired.web)
+        expired.store.sync(trigger: .automatic); try await settled(expired.store)
+        expired.clock.advance(3601)
+        expired.store.sync(); try await settled(expired.store)
+        try expect(!expired.web.calls.contains(where: { $0.hasPrefix("historical.") }), "Unstarted expired recovery is abandoned, not recreated by another empty response")
+        try expect(expired.store.nextSyncAt! > expired.clock.moment.wallTime, "Expired history cannot create a busy scheduling loop")
+        let originalDay = try cachedWebState(rig).historicalRecovery!.sourceDay
+        rig.clock.advance(86400)
+        rig.store.sync(); try await settled(rig.store)
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        let futureDay = try cachedWebState(rig).historicalRecovery!.sourceDay
+        let probes = rig.web.calls.filter { $0.hasPrefix("historical.") }.count
+        rig.clock.advance(60, wallAdjustment: -86400)
+        rig.store.sync(); try await settled(rig.store)
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        let rolledBack = try cachedWebState(rig)
+        try expect(originalDay < futureDay && rolledBack.historicalRecovery?.sourceDay == futureDay &&
+                   rig.web.calls.filter { $0.hasPrefix("historical.") }.count == probes,
+                   "Date rollback cannot recreate an older day's six consumed attempts")
+    }
+
+    static func testHistoricalBudgetRestartAndOwnedSkip() async throws {
+        let rig = try Rig(historicalRecoveryEnabled: true); defer { rig.clean() }
+        emptyRecoveryGroups(rig.web)
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        rig.web.payloads["historical.sleep"] = ["dailySleepDTO": ["sleepTimeSeconds": 18000]]
+        rig.web.onGet = { if $0.hasPrefix("historical.") { rig.clock.advance(90) } }
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(rig.web.calls.filter { $0.hasPrefix("historical.") } == ["historical.sleep"],
+                   "A slow history request consumes one batch budget, leaving the other groups pending")
+        let saved = try cachedWebState(rig)
+        try expect(saved.historicalRecovery?.attempted == [.sleep] && saved.lastKnownMetrics?["sleepDuration"]?.reading.value == 300,
+                   "Attempt marker and recovered reading persist together before restart")
+        rig.store.cancelLogin(resumeAutomatic: false)
+        let web = MockWeb()
+        let restored = AppStore(supportDirectory: rig.directory, webSession: web, defaults: rig.defaults,
+                                clock: { rig.clock.moment }, sourceTimeZone: { TimeZone(secondsFromGMT: 0)! },
+                                automaticScheduling: false, writesWidgetData: false)
+        defer { restored.cancelLogin(resumeAutomatic: false) }
+        web.onGet = { if $0.hasPrefix("historical.") { rig.clock.advance(90) } }
+        for _ in 0..<5 { restored.sync(trigger: .automatic); try await settled(restored) }
+        try expect(web.calls.filter { $0.hasPrefix("historical.") }.count == 5 && !web.calls.contains("historical.sleep"),
+                   "Slow requests finish in six finite batches across restart without repeating a consumed group")
+        try expect(restored.snapshot.retainedMetrics["sleepDuration"]?.reading.value == 300, "Recovered values survive account-owned cache restoration")
+        let before = web.calls.count
+        restored.sync(trigger: .automatic); try await settled(restored)
+        try expect(web.calls.count == before, "Finishing the slow recovery removes its scheduler demand")
+
+        var owned = GarminWebCache(accountDisplayName: "fixture-user")
+        let day = SyncPolicy.sourceDay(for: rig.clock.moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!)
+        owned.groups["sleep"] = .init(sourceDay: GarminHistoricalRecovery.previousDay(for: day)!,
+            retrievedAt: rig.clock.moment.wallTime, metrics: ["sleepDuration": .init(value: 280)])
+        let skipped = try Rig(groups: owned, historicalRecoveryEnabled: true); defer { skipped.clean() }
+        emptyRecoveryGroups(skipped.web)
+        skipped.store.sync(trigger: .automatic); try await settled(skipped.store)
+        skipped.store.sync(trigger: .automatic); try await settled(skipped.store)
+        try expect(!skipped.web.calls.contains("historical.sleep") && skipped.store.snapshot.retainedMetrics["sleepDuration"]?.reading.value == 280,
+                   "An existing owned completed record is retained without an extra Garmin lookup")
+        try FileManager.default.removeItem(at: skipped.directory.appendingPathComponent("snapshot.json"))
+        let rebuilt = PrivateSnapshotStore.restore(nil, cache: try cachedWebState(skipped), sourceDay: day)
+        try expect(rebuilt.retainedMetrics["sleepDuration"]?.reading.value == 280, "Owned last-known cache recovers an empty group even when the separate snapshot is lost")
+    }
+
+    static func testHistoricalFailureAndStorageBound() async throws {
+        let rig = try Rig(historicalRecoveryEnabled: true); defer { rig.clean() }
+        emptyRecoveryGroups(rig.web)
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        rig.web.errors["historical.sleep"] = .network
+        rig.web.payloads["historical.hrv"] = ["hrvSummary": ["calendarDate": "9999-01-01", "lastNightAvg": 99]]
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(rig.web.calls.filter { $0.hasPrefix("historical.") }.count == 6 && rig.store.snapshot.retainedMetrics["hrv"] == nil,
+                   "A transient lookup cannot starve later groups and future-labeled historical data is rejected")
+        rig.clock.advance(900)
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(rig.web.calls.filter { $0 == "stats" }.count == 2 &&
+                   rig.web.calls.filter { $0 == "historical.sleep" }.count == 1, "Recovery failure never postpones live refresh or repeats that day's probe")
+
+        let limited = try Rig(historicalRecoveryEnabled: true); defer { limited.clean() }
+        emptyRecoveryGroups(limited.web)
+        limited.store.sync(trigger: .automatic); try await settled(limited.store)
+        limited.web.errors["historical.sleep"] = .rateLimited(retryAfter: 1800)
+        limited.store.sync(trigger: .automatic); try await settled(limited.store)
+        let limitedCheckpoint = try limited.checkpoint()
+        try expect(limited.web.calls.filter { $0.hasPrefix("historical.") } == ["historical.sleep"] &&
+                   limitedCheckpoint.gate?.reason == .rateLimit, "Historical HTTP429 stops all remaining probes and preserves the server pause")
+
+        let disk = try Rig(historicalRecoveryEnabled: true); defer { disk.clean() }
+        emptyRecoveryGroups(disk.web)
+        disk.store.sync(trigger: .automatic); try await settled(disk.store)
+        let path = disk.directory.appendingPathComponent("metric-groups.json")
+        try FileManager.default.removeItem(at: path)
+        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: false)
+        disk.store.sync(trigger: .automatic); try await settled(disk.store)
+        try expect(!disk.web.calls.contains(where: { $0.hasPrefix("historical.") }),
+                   "No history GET is allowed when its durable consumed-attempt marker cannot be written")
+    }
+
+    static func testHistoricalAccountChange() async throws {
+        for owner in [nil, ""] as [String?] {
+            var unowned = GarminWebCache(accountDisplayName: owner)
+            unowned.lastKnownMetrics = ["hrv": .init(reading: .init(value: 999), sourceDate: "2026-09-01",
+                retrievedAt: TestClock().moment.wallTime, changedAt: TestClock().moment.wallTime)]
+            let denied = try Rig(groups: unowned, historicalRecoveryEnabled: true); defer { denied.clean() }
+            denied.web.prepareError = .network
+            denied.store.sync(trigger: .automatic); try await settled(denied.store)
+            try expect(!denied.store.snapshot.hasMeasurements,
+                       "An ownerless decoded history cache cannot leak through a bootstrap-error publication")
+        }
+        let clock = TestClock()
+        let day = SyncPolicy.sourceDay(for: clock.moment.wallTime, timeZone: TimeZone(secondsFromGMT: 0)!)
+        var foreign = GarminWebCache(accountDisplayName: "previous-account")
+        foreign.lastKnownMetrics = ["hrv": .init(reading: .init(value: 999), sourceDate: day,
+                                               retrievedAt: clock.moment.wallTime, changedAt: clock.moment.wallTime)]
+        foreign.historicalRecovery = .init(sourceDay: day, startedAt: clock.moment,
+                                           queued: [.hrv], attempted: [.hrv])
+        let rig = try Rig(groups: foreign, historicalRecoveryEnabled: true); defer { rig.clean() }
+        emptyRecoveryGroups(rig.web)
+        rig.web.payloads["historical.hrv"] = ["hrvSummary": ["lastNightAvg": 44]]
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        let cleared = try cachedWebState(rig)
+        try expect(rig.store.snapshot.visibleReading("hrv") == nil && cleared.historicalRecovery?.attempted.isEmpty == true,
+                   "Verified account change clears both foreign history and consumed-attempt markers")
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        let recovered = try cachedWebState(rig)
+        try expect(rig.store.snapshot.retainedMetrics["hrv"]?.reading.value == 44 &&
+                   recovered.accountDisplayName == "fixture-user", "Only the newly verified account supplies recovered records")
     }
 
     static func testAccountOwnershipAcrossRestart() async throws {

@@ -46,6 +46,8 @@ jobs:
         run: python3 Tests/RuntimeCompatibilityTests.py
       - name: Verify release preparation stays in draft
         run: python3 Tests/ReleaseDraftTests.py
+      - name: Verify exact-candidate publication gates
+        run: python3 Tests/ReleasePromotionTests.py
 
   protocol:
     name: Offline JavaScript and Python contracts
@@ -179,6 +181,72 @@ jobs:
           retention-days: 14
           compression-level: 0
 
+  native-compat:
+    name: Native macOS ${{ matrix.os_major }} ${{ matrix.arch }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      APP_VERSION: ${{ needs.version.outputs.version }}
+      APP_BUILD: ${{ needs.version.outputs.build }}
+      GARMIN_RUNTIME_ARCH: ${{ matrix.arch }}
+      GARMIN_RUNTIME_OS_MAJOR: ${{ matrix.os_major }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Standard hosted runners only. macOS 14 reaches runner retirement
+          # on 2026-11-02; replace this lane before then, never silently skip it.
+          - runner: macos-14
+            os_major: '14'
+            arch: arm64
+          - runner: macos-15-intel
+            os_major: '15'
+            arch: x86_64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify native test OS and architecture
+        run: |
+          test "$(uname -m)" = "$GARMIN_RUNTIME_ARCH"
+          test "$(sw_vers -productVersion | cut -d. -f1)" = "$GARMIN_RUNTIME_OS_MAJOR"
+      - name: Run native contracts, lifecycle checks and visual fixtures on the older OS
+        run: |
+          xcrun swiftc --version
+          xcrun --sdk macosx --show-sdk-version
+          bash scripts/test-offline.sh
+      - name: Verify read-only widget sharing on the older OS
+        run: bash scripts/test-widget-sandbox.sh
+      - name: Upload older-OS compact visual review
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-audit-${{ matrix.runner }}-${{ matrix.arch }}
+          path: |
+            build/audit/app/state-fresh-ru-light.png
+            build/audit/app/state-fresh-ru-dark.png
+            build/audit/app/minimum-sport-context-ru-light.png
+            build/audit/app/minimum-sport-context-ru-dark.png
+            build/audit/app/minimum-hrv-context-ru-light.png
+            build/audit/app/default-sport-context-ru-light.png
+            build/audit/app/state-fresh-de-light.png
+            build/audit/app/minimum-sport-context-de-light.png
+            build/audit/app/minimum-sport-context-pl-light.png
+            build/audit/widgets/stress-ru-old-load-network-small-light.png
+            build/audit/widgets/stress-ru-old-load-network-small-dark.png
+            build/audit/widgets/stress-de-old-load-network-small-light.png
+            build/audit/widgets/stress-pl-old-load-network-small-light.png
+            build/audit/widgets/stress-ru-old-hrv-disconnected-small-light.png
+            build/audit/widgets/stress-de-old-hrv-disconnected-small-light.png
+            build/audit/widgets/stress-pl-old-hrv-disconnected-small-light.png
+            build/audit/widgets/stress-ru-dense-old-load-large-light.png
+            build/audit/widgets/stress-de-old-load-network-large-light.png
+          if-no-files-found: warn
+          retention-days: 7
+
   runtime-compat:
     name: Runtime macOS ${{ matrix.os_major }} ${{ matrix.arch }}
     needs: [version, build]
@@ -217,44 +285,18 @@ jobs:
             --dir runtime-packages
       - name: Verify and start the packaged application on the older runtime
         run: bash scripts/ci-runtime-smoke.sh runtime-packages
-      - name: Run native contracts, lifecycle checks and visual fixtures on the older OS
-        run: |
-          xcrun swiftc --version
-          xcrun --sdk macosx --show-sdk-version
-          bash scripts/test-offline.sh
-      - name: Verify read-only widget sharing on the older OS
-        run: bash scripts/test-widget-sandbox.sh
-      - name: Upload runtime evidence and compact visual review
+      - name: Upload runtime evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: runtime-audit-${{ matrix.runner }}-${{ matrix.arch }}
-          path: |
-            build/audit/runtime/*
-            build/audit/app/state-fresh-ru-light.png
-            build/audit/app/state-fresh-ru-dark.png
-            build/audit/app/minimum-sport-context-ru-light.png
-            build/audit/app/minimum-sport-context-ru-dark.png
-            build/audit/app/minimum-hrv-context-ru-light.png
-            build/audit/app/default-sport-context-ru-light.png
-            build/audit/app/state-fresh-de-light.png
-            build/audit/app/minimum-sport-context-de-light.png
-            build/audit/app/minimum-sport-context-pl-light.png
-            build/audit/widgets/stress-ru-old-load-network-small-light.png
-            build/audit/widgets/stress-ru-old-load-network-small-dark.png
-            build/audit/widgets/stress-de-old-load-network-small-light.png
-            build/audit/widgets/stress-pl-old-load-network-small-light.png
-            build/audit/widgets/stress-ru-old-hrv-disconnected-small-light.png
-            build/audit/widgets/stress-de-old-hrv-disconnected-small-light.png
-            build/audit/widgets/stress-pl-old-hrv-disconnected-small-light.png
-            build/audit/widgets/stress-ru-dense-old-load-large-light.png
-            build/audit/widgets/stress-de-old-load-network-large-light.png
+          path: build/audit/runtime/*
           if-no-files-found: warn
           retention-days: 7
 
   release:
     name: Prepare verified release draft
-    needs: [version, protocol, build, runtime-compat]
+    needs: [version, protocol, build, native-compat, runtime-compat]
     if: >-
       github.ref == 'refs/heads/main' &&
       ((github.event_name == 'push' && github.event.head_commit.message == format('release: v{0}', needs.version.outputs.version)) ||

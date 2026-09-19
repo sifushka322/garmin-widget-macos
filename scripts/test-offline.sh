@@ -50,7 +50,7 @@ for suite in SharedModelTests WidgetConfigurationTests WidgetMetricPolicyTests T
     "build/audit/$suite"
 done
 printf 'Compiling widget visual fixtures\n'
-xcrun swiftc "${options[@]}" -module-name RenderWidgets "${shared[@]}" Tests/RenderWidgets.swift "${frameworks[@]}" -o build/audit/render-widgets
+xcrun swiftc "${options[@]}" -module-name RenderWidgets "${shared[@]}" Tests/RenderWidgets.swift Tests/FixtureBitmapRenderer.swift "${frameworks[@]}" -o build/audit/render-widgets
 printf 'Rendering widget visual fixtures\n'
 build/audit/render-widgets build/audit/widgets
 printf 'Compiling app visual fixtures\n'
@@ -60,7 +60,7 @@ xcrun swiftc "${options[@]}" -module-name RenderApp "${shared[@]}" "${host[@]}" 
 printf 'Rendering app visual fixtures\n'
 build/audit/render-app build/audit/app
 printf 'Compiling calendar visual fixtures\n'
-xcrun swiftc "${options[@]}" -module-name RenderTrainingCalendar "${shared[@]}" Tests/RenderTrainingCalendar.swift \
+xcrun swiftc "${options[@]}" -module-name RenderTrainingCalendar "${shared[@]}" Tests/RenderTrainingCalendar.swift Tests/FixtureBitmapRenderer.swift \
     "${frameworks[@]}" -o build/audit/render-training-calendar
 printf 'Rendering calendar visual fixtures\n'
 build/audit/render-training-calendar build/audit/calendar

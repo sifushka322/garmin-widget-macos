@@ -21,8 +21,10 @@ substantive override_reason after an explicit, informed owner release request.
 That report instead uses Overall result: NOT RUN, Normal upgrade: NOT RUN,
 Owner override: explicit release request after disclosure, Override reason:
 <the exact reason>, and Unverified coverage: <the exact unchecked coverage>.
-Public notes must then include Normal upgrade validation: NOT RUN and the same
-reason. Failed/unknown results are never eligible for this exception.
+Public notes must then either state Normal upgrade validation: NOT RUN and the
+same reason, or link the exact repository audit report that records both. They
+must never claim the unperformed check passed. Failed/unknown results are never
+eligible for this exception.
 
 The report must document the environment and every check required by
 docs/widget-upgrade-validation.md. The workflow verifies the recorded approval
@@ -120,6 +122,16 @@ def validate_approval(value, version, build):
     require(all(isinstance(x, str) and re.fullmatch(r"[a-f0-9]{64}", x) for x in hashes.values()), "Invalid approved asset digest")
 
 
+def has_pass_outcome(text, include_overall=False):
+    """Detect explicit outcome labels despite Markdown styling and spacing."""
+    outcome_text = re.sub(r"[*_`]", "", text)
+    labels = r"normal\s+upgrade(?:\s+validation)?"
+    if include_overall:
+        labels += r"|overall\s+result"
+    return re.search(r"\b(?:" + labels + r")\s*:\s*pass\b",
+                     outcome_text, flags=re.IGNORECASE) is not None
+
+
 def validate_report(data, approval):
     require(sha256(data) == approval["report_sha256"], "Upgrade report digest differs")
     text = data.decode("utf-8")
@@ -136,7 +148,7 @@ def validate_report(data, approval):
         required |= {"Overall result: NOT RUN", "Normal upgrade: NOT RUN", "Owner override: explicit release request after disclosure",
                      "Override reason: " + approval["override_reason"]}
         require(any(line.startswith("Unverified coverage: ") and len(line) > 40 for line in lines), "Override report must document unchecked coverage")
-        require("Overall result: PASS" not in lines and "Normal upgrade: PASS" not in lines, "An untested report must not claim a pass")
+        require(not has_pass_outcome(text, include_overall=True), "An untested report must not claim a pass")
     require(required <= lines, "Report lacks matching identity or required upgrade outcome evidence")
     sanitized_text(text)
 
@@ -147,15 +159,19 @@ def sanitized_text(text):
     require(not re.search(forbidden, text), "Report contains a private path, address, or credential-shaped literal")
 
 
-def validate_public_notes(data, approval):
+def validate_public_notes(data, approval, repository):
     require(sha256(data) == approval["release_notes_sha256"], "Public notes digest differs")
     text = data.decode("utf-8")
     require(approval["version"] in text and len(text.strip()) >= 80, "Public notes lack release identity or content")
     sanitized_text(text)
     if approval["upgrade_result"] == "not_run":
-        require("Normal upgrade validation: NOT RUN" in text.splitlines() and approval["override_reason"] in text,
-                "Public notes must explicitly disclose unverified normal upgrade and the informed owner override")
-        require(not {"Normal upgrade validation: PASS", "Normal upgrade: PASS"}.intersection(text.splitlines()),
+        inline_disclosure = ("Normal upgrade validation: NOT RUN" in text.splitlines()
+                             and approval["override_reason"] in text)
+        report_url = f"https://github.com/{repository}/blob/main/{approval['report']}"
+        linked_disclosure = re.search(r"\[[^\]\n]+\]\(" + re.escape(report_url) + r"\)", text) is not None
+        require(inline_disclosure or linked_disclosure,
+                "Public notes must disclose the informed exception or link its exact audit report")
+        require(not has_pass_outcome(text),
                 "Public notes must not claim an unperformed normal upgrade passed")
 
 
@@ -166,7 +182,7 @@ def validate_run(run, workflow, jobs, approval, repository):
     require(run.get("head_sha") == approval["commit"] and run.get("head_branch") == "main", "Build run did not test the exact main commit")
     require(run.get("event") in ("push", "workflow_dispatch"), "A pull-request run cannot authorize publication")
     require(run.get("repository", {}).get("full_name") == repository and run.get("head_repository", {}).get("full_name") == repository, "Build run repository differs")
-    required = {"Validate release version", "Offline JavaScript and Python contracts", "macOS arm64", "macOS x86_64", "Runtime macOS 14 arm64", "Runtime macOS 15 x86_64", "Prepare verified release draft"}
+    required = {"Validate release version", "Offline JavaScript and Python contracts", "macOS arm64", "macOS x86_64", "Native macOS 14 arm64", "Native macOS 15 x86_64", "Runtime macOS 14 arm64", "Runtime macOS 15 x86_64", "Prepare verified release draft"}
     for name in required:
         matches = [job for job in jobs if job.get("name") == name]
         require(len(matches) == 1 and matches[0].get("status") == "completed" and matches[0].get("conclusion") == "success", "A required build/draft job did not pass: " + name)
@@ -296,7 +312,7 @@ def promote(root, environment, github=None):
         require(git(root, "ls-tree", head, "--", path).decode().startswith("100644 blob "), "Approval/report must be ordinary tracked files")
     validate_report(git(root, "show", f"{head}:{approval['report']}"), approval)
     notes = git(root, "show", f"{head}:{approval['release_notes_path']}")
-    validate_public_notes(notes, approval)
+    validate_public_notes(notes, approval, repository)
 
     github = github or GitHub(repository)
     require(github.api("git/ref/heads/main")["object"]["sha"] == head, "Main advanced beyond the approval commit")

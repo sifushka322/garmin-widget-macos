@@ -6,7 +6,7 @@ Your Garmin Connect data in a native Mac app and desktop widgets. Five widget ty
 
 [Download](https://github.com/sifushka322/garmin-widget-macos/releases/tag/v0.5.0) · [Installation](docs/distribution.md) · [Version 0.5.0](docs/releases/0.5.0.md)
 
-The current source prepares **0.6.0 build 13**, adding a menu-bar app and metric
+The current source prepares **0.6.0 build 14**, adding a menu-bar app and metric
 interpretations. See the [0.6.0 notes](docs/releases/0.6.0.md) and
 [validation audit](docs/audit-0.6.0.md). The download above remains the published 0.5.0.
 
@@ -51,7 +51,7 @@ GarminDesk is an unofficial project and is not affiliated with Garmin. Metric av
 A Mac with compatible Swift tools and a macOS SDK is required. The standard app uses system frameworks; Swift Package Manager and Python are not required.
 
 ```bash
-APP_VERSION=0.6.0 APP_BUILD=13 CONFIGURATION=release bash scripts/build-app.sh
+APP_VERSION=0.6.0 APP_BUILD=14 CONFIGURATION=release bash scripts/build-app.sh
 bash scripts/package-release.sh
 ```
 

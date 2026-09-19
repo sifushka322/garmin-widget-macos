@@ -42,7 +42,7 @@ class FakeGitHub:
                     "head_sha": approval["commit"], "head_branch": "main", "event": "push",
                     "repository": {"full_name": "fixture/repo"}, "head_repository": {"full_name": "fixture/repo"}}
         self.jobs = [{"name": name, "status": "completed", "conclusion": "success"} for name in
-                     ("Validate release version", "Offline JavaScript and Python contracts", "macOS arm64", "macOS x86_64", "Runtime macOS 14 arm64", "Runtime macOS 15 x86_64", "Prepare verified release draft")]
+                     ("Validate release version", "Offline JavaScript and Python contracts", "macOS arm64", "macOS x86_64", "Native macOS 14 arm64", "Native macOS 15 x86_64", "Runtime macOS 14 arm64", "Runtime macOS 15 x86_64", "Prepare verified release draft")]
         self.release = {"id": 40, "tag_name": "v0.5.0", "target_commitish": approval["commit"], "draft": True, "prerelease": False}
         self.assets = [{"id": index + 1, "name": name, "size": len(data), "state": "uploaded", "digest": "sha256:" + digest(data)}
                        for index, (name, data) in enumerate(sorted(payloads.items()))]
@@ -197,6 +197,74 @@ class ReleasePromotionTests(unittest.TestCase):
         self.assertEqual(self.github.published, ["v0.5.0"])
         self.assertIn("Normal upgrade validation: NOT RUN", self.github.release["body"])
 
+    def test_informed_override_can_link_the_exact_public_audit_record(self):
+        self.make_override()
+        self.report += b"\nAutomated checks: PASS.\n"
+        self.approval["report_sha256"] = digest(self.report)
+        self.notes = ("# GarminDesk 0.5.0\n\nFinal release with completed product changes.\n\n"
+                      "[Validation report](https://github.com/fixture/repo/blob/main/" + self.report_path + ")\n"
+                      "Automated checks: PASS.\n").encode()
+        self.approval["release_notes_sha256"] = digest(self.notes)
+        self.save_approval()
+        with contextlib.redirect_stdout(io.StringIO()):
+            promotion.promote(self.root, self.environment, self.github)
+        self.assertEqual(self.github.published, ["v0.5.0"])
+        self.assertIn("Normal upgrade: NOT RUN", self.report.decode())
+
+    def test_linked_override_cannot_reference_another_repository_or_report(self):
+        self.make_override()
+        for target in ("https://github.com/other/repo/blob/main/" + self.report_path,
+                       "https://github.com/fixture/repo/blob/main/docs/unrelated.md"):
+            with self.subTest(target=target):
+                self.notes = ("# GarminDesk 0.5.0\n\nFinal release with product changes. "
+                              "See the [Validation report](" + target + ").\n").encode()
+                self.approval["release_notes_sha256"] = digest(self.notes)
+                self.save_approval()
+                self.reject()
+
+    def test_override_report_rejects_pass_claims_despite_markdown_or_spacing(self):
+        self.make_override()
+        original_report = self.report
+        claims = (
+            "**Normal upgrade: PASS**",
+            "- **Normal upgrade validation:** **PASS**",
+            "normal \tupgrade :\n pass",
+            "**Overall result: PASS**",
+            "- Overall result: __PASS__",
+            "overall\tRESULT \t:\n\tpAsS",
+        )
+        for claim in claims:
+            with self.subTest(claim=claim):
+                self.report = original_report + ("\n" + claim + "\n").encode()
+                self.approval["report_sha256"] = digest(self.report)
+                self.save_approval()
+                self.reject()
+
+    def test_override_notes_reject_pass_claims_despite_markdown_or_spacing(self):
+        self.make_override()
+        disclosures = (
+            self.notes,
+            ("# GarminDesk 0.5.0\n\nFinal release with completed product changes.\n\n"
+             "[Validation report](https://github.com/fixture/repo/blob/main/" + self.report_path + ")\n").encode(),
+        )
+        claims = (
+            "Normal upgrade: PASS",
+            "**Normal upgrade: PASS**",
+            "**Normal upgrade:** **PASS**",
+            "- Normal upgrade: PASS",
+            "- **Normal upgrade validation:** **PASS**",
+            "normal UPGRADE validation: pAsS",
+            "Normal\tupgrade  validation \t: \n\tPASS",
+            "Normal upgrade: __PASS__",
+        )
+        for disclosure in disclosures:
+            for claim in claims:
+                with self.subTest(disclosure=disclosure, claim=claim):
+                    self.notes = disclosure + ("\n" + claim + "\n").encode()
+                    self.approval["release_notes_sha256"] = digest(self.notes)
+                    self.save_approval()
+                    self.reject()
+
     def test_not_run_without_explicit_owner_override_is_rejected(self):
         self.make_override(); self.approval["owner_override"] = False
         self.save_approval(); self.reject()
@@ -292,7 +360,7 @@ class ReleasePromotionTests(unittest.TestCase):
                 job["conclusion"] = "skipped"; self.reject(); job["conclusion"] = "success"
 
     def test_missing_runtime_compatibility_job_prevents_publication(self):
-        for name in ("Runtime macOS 14 arm64", "Runtime macOS 15 x86_64"):
+        for name in ("Native macOS 14 arm64", "Native macOS 15 x86_64", "Runtime macOS 14 arm64", "Runtime macOS 15 x86_64"):
             with self.subTest(job=name):
                 original = self.github.jobs
                 self.github.jobs = [job for job in original if job["name"] != name]

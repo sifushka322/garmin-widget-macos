@@ -23,6 +23,7 @@ enum GarminWebAPI {
         case .weight: return base + "/weight-service/weight/dayview/\(sourceDay)?includeAll=true"
         case .hydration: return base + "/usersummary-service/usersummary/hydration/daily/\(sourceDay)"
         case .activities: return base + "/activitylist-service/activities/search/activities?start=0&limit=20"
+        case .historicalRecovery: return nil // Uses original group paths with yesterday's date.
         case .plannedWorkouts: return nil // A month-boundary request needs two explicit calendar paths.
         }
     }
@@ -134,6 +135,46 @@ struct GarminWebCache: Codable {
     var calendarMonths: [String: GarminCalendarMonthCache]?
     var calendarRefreshProgress: GarminCalendarRefreshProgress?
     var trainingIssues: [String: String]?
+    var historicalRecovery: GarminHistoricalRecovery?
+    var lastKnownMetrics: [String: RetainedMetricReading]?
+
+    mutating func remember(_ readings: [String: RetainedMetricReading]) {
+        guard accountDisplayName?.isEmpty == false else { return }
+        if lastKnownMetrics == nil { lastKnownMetrics = [:] }
+        for (id, retained) in readings {
+            let old = lastKnownMetrics?[id]
+            if old == nil || retained.sourceDate > old!.sourceDate ||
+                (retained.sourceDate == old!.sourceDate && retained.retrievedAt >= old!.retrievedAt) {
+                lastKnownMetrics?[id] = retained
+            }
+        }
+    }
+
+    mutating func remember(group: GarminMetricGroupCache) {
+        remember(group.metrics.mapValues {
+            .init(reading: $0, sourceDate: group.sourceDay, retrievedAt: group.retrievedAt, changedAt: group.retrievedAt)
+        })
+    }
+
+    mutating func remember(snapshot: GarminSnapshot) {
+        guard !snapshot.isDemo else { return }
+        remember(snapshot.retainedMetrics)
+        var readings: [String: RetainedMetricReading] = [:]
+        for (id, reading) in snapshot.metrics {
+            let retrieved = snapshot.metricUpdatedAt(id) ?? snapshot.fetchedAt
+            readings[id] = .init(reading: reading, sourceDate: snapshot.sourceDate,
+                                 retrievedAt: retrieved, changedAt: snapshot.metricChangedAt[id] ?? retrieved)
+        }
+        remember(readings)
+    }
+
+    func hasOwnedReading(for group: SyncPolicy.Group, snapshot: GarminSnapshot) -> Bool {
+        let keys = Set((lastKnownMetrics ?? [:]).keys)
+            .union(snapshot.isDemo ? [] : Array(snapshot.metrics.keys))
+            .union(snapshot.isDemo ? [] : Array(snapshot.retainedMetrics.keys))
+            .union(groups.values.flatMap { $0.metrics.keys })
+        return keys.contains { GarminWebAPI.requiredGroups(metricIDs: [$0]).contains(group) }
+    }
 
     func trainingTimeline(sourceDay: String) -> TrainingTimelineSnapshot? {
         let requests = GarminWebAPI.calendarRequests(sourceDay: sourceDay)
@@ -238,18 +279,30 @@ struct GarminWebCache: Codable {
         }
         // A successful empty response means no current reading, not permission
         // to erase the last real value. Keep its original day and timestamps.
-        var previous = fallback.isDemo ? [:] : fallback.retainedMetrics
+        var previous = lastKnownMetrics ?? [:]
+        if !fallback.isDemo {
+            for (id, retained) in fallback.retainedMetrics {
+                if previous[id] == nil || retained.sourceDate > previous[id]!.sourceDate ||
+                    (retained.sourceDate == previous[id]!.sourceDate && retained.retrievedAt > previous[id]!.retrievedAt) {
+                    previous[id] = retained
+                }
+            }
+        }
         if !fallback.isDemo {
             for (id, reading) in fallback.metrics {
                 let retrieved = fallback.metricUpdatedAt(id) ?? fallback.fetchedAt
-                previous[id] = .init(reading: reading, sourceDate: fallback.sourceDate,
-                                     retrievedAt: retrieved, changedAt: fallback.metricChangedAt[id] ?? retrieved)
+                if previous[id] == nil || fallback.sourceDate > previous[id]!.sourceDate ||
+                    (fallback.sourceDate == previous[id]!.sourceDate && retrieved >= previous[id]!.retrievedAt) {
+                    previous[id] = .init(reading: reading, sourceDate: fallback.sourceDate,
+                                         retrievedAt: retrieved, changedAt: fallback.metricChangedAt[id] ?? retrieved)
+                }
             }
         }
         // Recover last readings even if the standalone snapshot was lost.
         for group in groups.values {
             for (id, reading) in group.metrics where metrics[id] == nil {
-                if previous[id] == nil || group.retrievedAt > previous[id]!.retrievedAt {
+                if previous[id] == nil || group.sourceDay > previous[id]!.sourceDate ||
+                    (group.sourceDay == previous[id]!.sourceDate && group.retrievedAt > previous[id]!.retrievedAt) {
                     previous[id] = .init(reading: reading, sourceDate: group.sourceDay,
                                          retrievedAt: group.retrievedAt, changedAt: group.retrievedAt)
                 }

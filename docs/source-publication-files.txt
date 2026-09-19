@@ -36,6 +36,7 @@ Sources/Shared/BodyBatteryProjection.swift
 Sources/Shared/DeskVisualStyle.swift
 Sources/Shared/GarminDeskBrandGeometry.swift
 Sources/Shared/GarminDeskBrandMark.swift
+Sources/Shared/GarminHistoricalRecovery.swift
 Sources/Shared/GarminPayloadNormalizer.swift
 Sources/Shared/GarminWebAPI.swift
 Sources/Shared/GarminWidgetView.swift
@@ -82,6 +83,7 @@ Sources/Shared/WidgetTimelineSchedule.swift
 Tests/AppStoreSyncTests.swift
 Tests/BodyBatteryProjectionTests.swift
 Tests/BrandIconTests.swift
+Tests/FixtureBitmapRenderer.swift
 Tests/GarminPayloadNormalizerTests.swift
 Tests/GarminWebBoundaryTests.swift
 Tests/LocalizationTests.swift
