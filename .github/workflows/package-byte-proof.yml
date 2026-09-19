@@ -1,0 +1,112 @@
+name: Review exact build15 package bytes
+on:
+  push:
+    branches: [codex/package-byte-proof-build15]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect exact completed-run artifacts without extracting or executing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, io, json, os, plistlib, struct, urllib.error, urllib.request, zipfile
+          
+          REPO = "sifushka322/garmin-widget-macos"
+          RUN = 35408728239
+          HEAD = "f58ce174a38189d37039e6b9d825314c2481eee8"
+          BASE = "https://api.github.com/repos/" + REPO
+          MAX_ARCHIVE = 64 * 1024 * 1024
+          
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          
+          opener = urllib.request.build_opener(NoRedirect())
+          headers = {"Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                     "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+          
+          def metadata(path):
+              with opener.open(urllib.request.Request(BASE + path, headers=headers), timeout=60) as response:
+                  return json.load(response)
+          
+          def archive(artifact_id):
+              # Authenticate only to api.github.com. The signed storage redirect receives
+              # no GitHub token, and neither redirect URL nor authorization is printed.
+              try:
+                  response = opener.open(urllib.request.Request(BASE + "/actions/artifacts/" + str(artifact_id) + "/zip",
+                                                               headers=headers), timeout=60)
+              except urllib.error.HTTPError as error:
+                  assert error.code in (301, 302, 303, 307, 308), "Artifact redirect required"
+                  location = error.headers["Location"]
+                  assert location.startswith("https://"), "HTTPS artifact storage required"
+                  response = urllib.request.urlopen(urllib.request.Request(location), timeout=60)
+              with response:
+                  data = response.read(MAX_ARCHIVE + 1)
+              assert len(data) <= MAX_ARCHIVE, "Artifact exceeds bounded proof size"
+              return data
+          
+          run = metadata("/actions/runs/" + str(RUN))
+          assert run["id"] == RUN and run["head_sha"] == HEAD and run["head_branch"] == "main"
+          artifacts = metadata("/actions/runs/" + str(RUN) + "/artifacts?per_page=100")["artifacts"]
+          print("SOURCE", json.dumps({"run": RUN, "head_sha": HEAD}, sort_keys=True))
+          for arch, cpu in (("arm64", 0x0100000c), ("x86_64", 0x01000007)):
+              name = "GarminDesk-0.6.0-build15-" + arch + "-development"
+              matches = [item for item in artifacts if item["name"] == name]
+              assert len(matches) == 1, "Exactly one matching architecture artifact required"
+              item = matches[0]
+              assert not item["expired"] and item["workflow_run"]["id"] == RUN and item["workflow_run"]["head_sha"] == HEAD
+              digest = item.get("digest", "")
+              assert digest.startswith("sha256:") and len(digest) == 71
+              data = archive(item["id"])
+              assert "sha256:" + hashlib.sha256(data).hexdigest() == digest, "Outer artifact digest mismatch"
+              print("ARTIFACT", json.dumps({"id": item["id"], "name": name, "digest": digest, "size": len(data)}, sort_keys=True))
+              package = "GarminDesk-0.6.0-" + arch
+              expected = {package + suffix for suffix in (".zip", ".dmg", "-SHA256.txt")}
+              with zipfile.ZipFile(io.BytesIO(data)) as outer:
+                  files = [info for info in outer.infolist() if not info.is_dir()]
+                  assert len(files) == 3 and {info.filename for info in files} == expected
+                  assert sum(info.file_size for info in files) <= MAX_ARCHIVE
+                  payloads = {info.filename: outer.read(info) for info in files}
+              manifest = payloads[package + "-SHA256.txt"].decode("utf-8")
+              entries = {}
+              for line in manifest.splitlines():
+                  checksum, filename = line.split(None, 1)
+                  assert filename not in entries
+                  entries[filename] = checksum
+              assert set(entries) == {package + ".zip", package + ".dmg"}
+              for filename, checksum in entries.items():
+                  assert hashlib.sha256(payloads[filename]).hexdigest() == checksum, "Package manifest mismatch"
+              for filename in sorted(expected):
+                  content = payloads[filename]
+                  print("FILE", json.dumps({"name": filename, "sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}, sort_keys=True))
+              print("MANIFEST", package + "-SHA256.txt")
+              print(manifest.rstrip())
+              with zipfile.ZipFile(io.BytesIO(payloads[package + ".zip"])) as inner:
+                  def member(path):
+                      assert inner.namelist().count(path) == 1, "Unique inner app member required"
+                      info = inner.getinfo(path)
+                      assert info.file_size <= MAX_ARCHIVE
+                      return inner.read(path)
+                  for role, prefix, executable in (
+                          ("host", "GarminDesk.app/Contents/", "GarminDesk"),
+                          ("widget", "GarminDesk.app/Contents/PlugIns/GarminDeskWidgets.appex/Contents/", "GarminDeskWidgets")):
+                      info = plistlib.loads(member(prefix + "Info.plist"))
+                      assert info["CFBundleShortVersionString"] == "0.6.0" and str(info["CFBundleVersion"]) == "15"
+                      assert info["CFBundleExecutable"] == executable
+                      if role == "host":
+                          assert info.get("LSUIElement") is True and info["CFBundleIdentifier"] == "com.mikhail.garmindesk"
+                      binary = member(prefix + "MacOS/" + executable)
+                      magic, actual_cpu = struct.unpack("<II", binary[:8])
+                      assert magic == 0xfeedfacf and actual_cpu == cpu, "Thin Mach-O architecture mismatch"
+                      print("APP", json.dumps({"arch": arch, "role": role, "version": info["CFBundleShortVersionString"],
+                                              "build": str(info["CFBundleVersion"]), "bundle_id": info["CFBundleIdentifier"],
+                                              "LSUIElement": info.get("LSUIElement"), "minimum_os": info.get("LSMinimumSystemVersion"),
+                                              "MachO_cpu_type": hex(actual_cpu)}, sort_keys=True))
+          print("PASS: six exact artifact file hashes, manifests, app versions and Mach-O architectures; no extraction or execution")
+          PY
