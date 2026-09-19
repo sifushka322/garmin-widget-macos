@@ -38,7 +38,7 @@ App preferences store language, app appearance, widget appearance, Summary’s o
 A Mac with a compatible Swift compiler and macOS SDK is required. The script compiles native code directly using `xcrun swiftc`, without Swift Package Manager.
 
 ```bash
-APP_VERSION=0.6.0 APP_BUILD=14 CONFIGURATION=release bash scripts/build-app.sh
+APP_VERSION=0.6.0 APP_BUILD=15 CONFIGURATION=release bash scripts/build-app.sh
 bash scripts/verify-release.sh build/GarminDesk.app
 bash scripts/package-release.sh
 ```

@@ -793,7 +793,7 @@ struct AppStoreSyncTests {
         let limited = try Rig(historicalRecoveryEnabled: true); defer { limited.clean() }
         emptyRecoveryGroups(limited.web)
         limited.store.sync(trigger: .automatic); try await settled(limited.store)
-        limited.web.errors["historical.sleep"] = .rateLimited(retryAfter: 1800)
+        limited.web.errors["historical.sleep"] = .rateLimited(1800)
         limited.store.sync(trigger: .automatic); try await settled(limited.store)
         let limitedCheckpoint = try limited.checkpoint()
         try expect(limited.web.calls.filter { $0.hasPrefix("historical.") } == ["historical.sleep"] &&

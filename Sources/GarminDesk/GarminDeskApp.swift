@@ -62,15 +62,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async { self?.update() }
         }
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.store.sync(trigger: .wake) }
+            Task { @MainActor [weak self] in self?.store.sync(trigger: .wake) }
         })
         for name in [Notification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange, .NSCalendarDayChanged] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.store.sync(trigger: .wake) }
+                Task { @MainActor [weak self] in self?.store.sync(trigger: .wake) }
             })
         }
         observers.append(NotificationCenter.default.addObserver(forName: NSLocale.currentLocaleDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.store.objectWillChange.send(); self?.store.publishWidgetData(); self?.update() }
+            Task { @MainActor [weak self] in self?.store.objectWillChange.send(); self?.store.publishWidgetData(); self?.update() }
         })
         if let url = pendingURL {
             pendingURL = nil
