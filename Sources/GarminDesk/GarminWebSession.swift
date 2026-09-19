@@ -164,7 +164,7 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
                 }
             }
         } onCancel: { [weak self] in
-            Task { @MainActor in self?.cancelNavigation(requestID: requestID) }
+            Task { @MainActor [weak self] in self?.cancelNavigation(requestID: requestID) }
         }
         try Task.checkCancellation()
         guard isOnConnectPage else { throw GarminWebError.signInRequired }
@@ -204,7 +204,7 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
                 try Task.checkCancellation()
                 return try await webView.callAsyncJavaScript(Self.readScript, arguments: ["path": path, "fetchID": fetchID], in: nil, contentWorld: .defaultClient)
             } onCancel: { [weak self] in
-                Task { @MainActor in self?.abortFetch(id: fetchID) }
+                Task { @MainActor [weak self] in self?.abortFetch(id: fetchID) }
             }
         } catch {
             if Task.isCancelled || generation != requestGeneration { throw GarminWebError.cancelled }
