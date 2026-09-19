@@ -1,0 +1,140 @@
+name: Review build 15 synthetic images
+
+on:
+  push:
+    branches: [codex/visual-review-build15-six-images]
+    paths: [.github/workflows/review-build15-images.yml]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  image:
+    name: Image ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - label: native14-app-state-ru
+            artifact_id: '10573650099'
+            image: app/state-fresh-ru-light.png
+          - label: native14-app-sport-de
+            artifact_id: '10573650099'
+            image: app/minimum-sport-context-de-light.png
+          - label: native14-app-hrv-ru
+            artifact_id: '10573650099'
+            image: app/minimum-hrv-context-ru-light.png
+          - label: arm64-widget-load-ru
+            artifact_id: '10573249638'
+            image: widgets/stress-ru-old-load-network-small-light.png
+          - label: arm64-widget-hrv-pl
+            artifact_id: '10573249638'
+            image: widgets/stress-pl-old-hrv-disconnected-small-light.png
+          - label: arm64-widget-dense-ru
+            artifact_id: '10573249638'
+            image: widgets/stress-ru-dense-old-load-large-light.png
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      ARTIFACT_ID: ${{ matrix.artifact_id }}
+      IMAGE_PATH: ${{ matrix.image }}
+    steps:
+      - name: Verify artifact provenance and print one synthetic PNG
+        run: |
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import struct
+          import subprocess
+          import zipfile
+
+          repository = "sifushka322/garmin-widget-macos"
+          source_run = 35408728239
+          source_commit = "f58ce174a38189d37039e6b9d825314c2481eee8"
+          sources = {
+              10573650099: (
+                  "native-audit-macos-14-arm64",
+                  "23a56b33dd5d95dcd740748890e448672d05dd3e776b0d3b1c0c55c5fdf58f89",
+                  {
+                      "app/state-fresh-ru-light.png",
+                      "app/minimum-sport-context-de-light.png",
+                      "app/minimum-hrv-context-ru-light.png",
+                  },
+              ),
+              10573249638: (
+                  "visual-review-arm64",
+                  "787c83818bc431bfcc88cedf7c46750f76b71f2a9487456f934f350117fa2bd7",
+                  {
+                      "widgets/stress-ru-old-load-network-small-light.png",
+                      "widgets/stress-pl-old-hrv-disconnected-small-light.png",
+                      "widgets/stress-ru-dense-old-load-large-light.png",
+                  },
+              ),
+          }
+          assert os.environ["GH_REPO"] == repository
+          artifact_id = int(os.environ["ARTIFACT_ID"])
+          expected_name, expected_digest, allowed_images = sources[artifact_id]
+          image_path = os.environ["IMAGE_PATH"]
+          assert image_path in allowed_images
+
+          def api(path):
+              return json.loads(subprocess.check_output(["gh", "api", "repos/" + repository + "/" + path]))
+
+          metadata = api("actions/artifacts/" + str(artifact_id))
+          source = metadata["workflow_run"]
+          assert metadata["id"] == artifact_id
+          assert metadata["name"] == expected_name
+          assert metadata["expired"] is False
+          assert metadata["digest"] == "sha256:" + expected_digest
+          assert source["id"] == source_run
+          assert source["head_sha"] == source_commit
+          assert source["head_branch"] == "main"
+          assert source["repository_id"] == 1372165682
+          assert source["head_repository_id"] == 1372165682
+          run = api("actions/runs/" + str(source_run))
+          assert run["id"] == source_run and run["head_sha"] == source_commit
+          assert run["head_branch"] == "main"
+          assert run["repository"]["full_name"] == repository
+          assert run["head_repository"]["full_name"] == repository
+
+          archive_path = Path("source-artifact.zip")
+          with archive_path.open("wb") as output:
+              subprocess.run(["gh", "api", "repos/" + repository + "/actions/artifacts/" + str(artifact_id) + "/zip"],
+                             stdout=output, check=True)
+          assert archive_path.stat().st_size == metadata["size_in_bytes"]
+          assert hashlib.sha256(archive_path.read_bytes()).hexdigest() == expected_digest
+
+          with zipfile.ZipFile(archive_path) as archive:
+              # Read only a named synthetic fixture; never extract the archive.
+              accepted_paths = {image_path, "build/audit/" + image_path}
+              matches = [entry for entry in archive.infolist() if entry.filename in accepted_paths]
+              assert len(matches) == 1, "Expected exactly one selected synthetic PNG"
+              entry = matches[0]
+              assert not entry.is_dir() and 0 < entry.file_size <= 5_000_000
+              png = archive.read(entry)
+          assert png.startswith(b"\x89PNG\r\n\x1a\n") and png[12:16] == b"IHDR"
+          width, height = struct.unpack(">II", png[16:24])
+          assert 0 < width <= 10000 and 0 < height <= 10000
+          print("IMAGE_META " + json.dumps({
+              "path": image_path,
+              "artifact_id": artifact_id,
+              "artifact_name": expected_name,
+              "source_run": source_run,
+              "source_commit": source_commit,
+              "width": width,
+              "height": height,
+              "png_sha256": hashlib.sha256(png).hexdigest(),
+          }, sort_keys=True), flush=True)
+          print("IMAGE_START " + image_path, flush=True)
+          encoded = base64.b64encode(png).decode("ascii")
+          for offset in range(0, len(encoded), 1000):
+              print(encoded[offset:offset + 1000], flush=True)
+          print("IMAGE_END", flush=True)
+          PY
