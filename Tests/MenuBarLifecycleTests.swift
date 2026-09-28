@@ -162,8 +162,12 @@ struct MenuBarLifecycleTests {
         window.close()
         try invoke("showMainWindow", in: state.menu)
         try await settleVisibility(visibility, window: window, phase: "immediate close and reopen")
-        try expect(window.isVisible && visibility.activity.allowsDisplayUpdates,
-                   "A delayed close notification cannot pause a reopened visible window")
+        // Hosted runners may leave the reopened window fully occluded. That
+        // legitimately pauses display updates; match the actual presentation.
+        let reopenedAllowsUpdates = window.isVisible && !window.isMiniaturized
+            && window.occlusionState.contains(.visible) && !NSApp.isHidden
+        try expect(window.isVisible && visibility.activity.allowsDisplayUpdates == reopenedAllowsUpdates,
+                   "A delayed close notification must respect the reopened window's current visibility")
 
         window.miniaturize(nil)
         try await settleVisibility(visibility, window: window, presentation: .minimized, phase: "minimize")
