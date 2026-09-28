@@ -205,6 +205,17 @@ struct SharedModelTests {
         data.sourceDate = "2026-09-12"
         view = .init(snapshot: data, language: .en, now: now, timeZone: zone)
         try expect(view.period("sleepDuration") != nil, "An older night needs one short period label")
+        try expect(view.period("steps") != nil, "Historical progress keeps its date even in an old whole snapshot")
+        var retained = snapshot([:])
+        retained.sourceDate = "2026-09-16"
+        retained.retainedMetrics["trainingReadiness"] = .init(reading: .init(value: 80), sourceDate: "2026-09-12",
+                                                             retrievedAt: now, changedAt: now)
+        let historical = WidgetPresentation(snapshot: retained, language: .en, now: now, timeZone: zone)
+        try expect(historical.period("trainingReadiness") != nil,
+                   "A historical readiness assessment is explicitly dated")
+        retained.metrics["trainingReadiness"] = .init(value: 60)
+        try expect(WidgetPresentation(snapshot: retained, language: .en, now: now, timeZone: zone).period("trainingReadiness") == nil,
+                   "The displayed current reading takes precedence over a duplicate retained date")
         try expect(view.noticeKey(metricIDs: ["steps"], connected: false, staleInterval: 3600, hasWarnings: true) == "widget.notice.connection",
                    "Connection recovery takes priority instead of stacking multiple notices")
         try expect(view.noticeKey(metricIDs: ["steps"], connected: true, staleInterval: 3600, hasWarnings: true) == "widget.notice.unavailable",

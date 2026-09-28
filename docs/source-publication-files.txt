@@ -66,6 +66,8 @@ Sources/Shared/MetricExplanation.swift
 Sources/Shared/MetricExplanationCatalog.swift
 Sources/Shared/MetricFormatter.swift
 Sources/Shared/MetricFreshness.swift
+Sources/Shared/MetricIndicator.swift
+Sources/Shared/MetricIndicatorView.swift
 Sources/Shared/Models.swift
 Sources/Shared/SummaryWidgetView.swift
 Sources/Shared/SyncPolicy.swift
@@ -89,6 +91,7 @@ Tests/GarminWebBoundaryTests.swift
 Tests/LocalizationTests.swift
 Tests/MenuBarLifecycleTests.swift
 Tests/MetricExplanationTests.swift
+Tests/MetricIndicatorTests.swift
 Tests/ReleaseDraftTests.py
 Tests/ReleasePromotionTests.py
 Tests/RenderApp.swift
@@ -136,15 +139,18 @@ docs/releases/0.3.0.md
 docs/releases/0.4.0.md
 docs/releases/0.5.0.md
 docs/releases/0.6.0.md
+docs/releases/0.7.0.md
 docs/releases/approvals/v0.5.0.json
 docs/releases/approvals/v0.6.0.json
 docs/releases/public-notes/v0.5.0.md
 docs/releases/validation/0.5.0-publication.md
 docs/releases/validation/0.6.0-final-audit.md
+docs/releases/validation/0.7.0-candidate.md
 docs/source-publication-audit-2026-09-16.md
 docs/source-publication-files.txt
 docs/validation.md
 docs/web-session-data-contract.md
+docs/widget-context-audit-2026-09-28.md
 docs/widget-product-decisions.md
 docs/widget-runtime-validation-plan.md
 docs/widget-simplification-audit.md
@@ -163,3 +169,8 @@ scripts/sign-release.sh
 scripts/test-offline.sh
 scripts/test-widget-sandbox.sh
 scripts/verify-release.sh
+website/.gitignore
+website/dist/app.js
+website/dist/assets/app-icon.png
+website/dist/index.html
+website/dist/style.css

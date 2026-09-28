@@ -157,7 +157,10 @@ struct MetricExplanation: Equatable {
             return explanation(status, text("sleepStage.detail"))
         case "steps":
             var status = text("steps.status")
-            if snapshot.retainedMetrics[id] == nil, snapshot.retainedMetrics["stepGoal"] == nil,
+            // A cached whole snapshot can still store yesterday's readings
+            // in metrics. Only today's actual count and goal describe progress.
+            if snapshot.sourceDate == SyncPolicy.sourceDay(for: now, timeZone: .autoupdatingCurrent),
+               snapshot.metrics[id] != nil,
                let goal = snapshot.metrics["stepGoal"]?.value, goal.isFinite, goal > 0 {
                 status = value >= goal ? text("steps.reached") : text("steps.progress")
                 return explanation(status, text("steps.goalDetail"), supporting: format("steps.goal", digits(goal)))

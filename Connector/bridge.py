@@ -300,7 +300,7 @@ def normalize_readiness(data: Any, metrics: dict) -> None:
         measured_at, selected = None, entries[0]
     else:
         return  # Multiple undated snapshots have no reliable ordering.
-    put(metrics, "trainingReadiness", selected.get("score"), maximum=100, measured_at=measured_at)
+    put(metrics, "trainingReadiness", selected.get("score"), positive=True, maximum=100, measured_at=measured_at)
     recovery = 0 if selected.get("recoveryTimeChangePhrase") == "REACHED_ZERO" else selected.get("recoveryTime")
     put(metrics, "recoveryTime", recovery, measured_at=measured_at)
 

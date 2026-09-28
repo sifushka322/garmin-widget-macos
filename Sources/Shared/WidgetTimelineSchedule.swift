@@ -51,12 +51,7 @@ enum WidgetTimelineSchedule {
             // Keep the compact focus mode identical to SummaryWidgetView.
             secondaryCount = WidgetMetricPolicy.summarySecondaryLimit(data: data, family: family, at: now)
         } else {
-            // GarminWidgetView uses these exact family/density limits.
-            switch family {
-            case .systemSmall: secondaryCount = 0
-            case .systemMedium: secondaryCount = profile.density == .compact ? 3 : 2
-            default: secondaryCount = profile.density == .compact ? 8 : 6
-            }
+            secondaryCount = WidgetMetricPolicy.metricSecondaryLimit(data: data, profile: profile, family: family, at: now)
         }
         return [selection.primary] + Array(selection.secondary.prefix(secondaryCount))
     }

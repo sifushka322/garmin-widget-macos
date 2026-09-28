@@ -19,6 +19,8 @@ enum WidgetPreviewData {
         snapshot.sourceDate = day(date)
         snapshot.devices = []
         snapshot.metrics = snapshot.metrics.filter { MetricDefinition.isSupported($0.key) }
+        snapshot.metricContext = .init(hrvStatus: "BALANCED", hrvWeeklyAverage: 58,
+            hrvBaselineLow: 49, hrvBaselineHigh: 72, trainingLoadStatus: "OPTIMAL", trainingLoadRatio: 1.2)
         snapshot.trainingTimeline = .init(fetchedAt: date,
             past: [
                 .init(id: "preview-run", title: "", sportKey: "running", startedAt: shifted(-2),

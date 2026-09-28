@@ -45,15 +45,26 @@ enum WidgetMetricPolicy {
     /// record date or notice over an optional second measurement. The timeline uses this same
     /// limit, so a hidden Body Battery never creates unnecessary minute entries.
     static func summarySecondaryLimit(data: WidgetData, family: WidgetFamily, at now: Date) -> Int {
-        guard family == .systemSmall else { return family == .systemMedium ? 2 : 6 }
         let selection = summarySelection(preferences: data.preferences, snapshot: data.snapshot)
-        let formatter = MetricFormatter(snapshot: data.snapshot, language: data.preferences.language, now: now)
-        guard inlineStatus(for: selection.primary, formatter: formatter) != nil else { return 1 }
+        let normalLimit = family == .systemSmall ? 1 : (family == .systemMedium ? 2 : 4)
+        let ids = [selection.primary] + Array(selection.secondary.prefix(normalLimit))
+        guard needsContextSpace(ids: ids, data: data, at: now) else { return normalLimit }
+        return family == .systemSmall ? 0 : (family == .systemMedium ? 2 : 4)
+    }
+
+    static func metricSecondaryLimit(data: WidgetData, profile: WidgetProfile, family: WidgetFamily, at now: Date) -> Int {
+        if family == .systemSmall { return 0 }
+        if family == .systemMedium { return 2 }
+        // Four supporting measurements leave room for readable scales, labels
+        // and source dates at either density. The timeline shares this limit.
+        return 4
+    }
+
+    private static func needsContextSpace(ids: [String], data: WidgetData, at now: Date) -> Bool {
         let presentation = WidgetPresentation(snapshot: data.snapshot, language: data.preferences.language, now: now)
-        let notice = presentation.noticeKey(metricIDs: [selection.primary] + Array(selection.secondary.prefix(1)),
-                       connected: data.isConnected, staleInterval: data.preferences.staleInterval,
-                       hasWarnings: !data.snapshot.warnings.isEmpty)
-        return notice == nil && presentation.period(selection.primary) == nil ? 1 : 0
+        return ids.contains { presentation.period($0) != nil }
+            || presentation.noticeKey(metricIDs: ids, connected: data.isConnected,
+                staleInterval: data.preferences.staleInterval, hasWarnings: !data.snapshot.warnings.isEmpty) != nil
     }
 
     static let overview = ["bodyBattery", "steps", "stress", "sleepDuration", "restingHeartRate", "sleepScore", "intensityMinutes", "activeCalories", "distance"]

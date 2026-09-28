@@ -74,6 +74,12 @@ struct GarminPayloadNormalizerTests {
         try expect(normalize("not_a_group", ["totalSteps": 10]).isEmpty, "Unknown group should be empty")
         try expect(normalize("spo2", ["averageSpO2": 101]).isEmpty, "SpO2 above 100 is invalid")
         try expect(normalize("readiness", [["score": -1, "recoveryTime": -1]]).isEmpty, "Readiness sentinels must be absent")
+        let zeroReadiness = normalize("readiness", [["score": 0, "recoveryTime": 0]])
+        try expect(zeroReadiness["trainingReadiness"] == nil, "Zero is outside the readiness scale and must stay absent")
+        try value(zeroReadiness, "recoveryTime", 0)
+        for score in [1.0, 100] {
+            try value(normalize("readiness", [["score": score]]), "trainingReadiness", score)
+        }
     }
 
     static func testSampleOrderingAndTimestamps() throws {

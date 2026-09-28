@@ -81,6 +81,22 @@ struct WidgetTimelineScheduleTests {
         check(WidgetTimelineSchedule.visibleMetricIDs(data: focused, slot: .overview, family: .systemSmall, at: now).contains("bodyBattery"),
               "A small summary restores its optional measurement when its notice clears")
 
+        var crowded = summary
+        crowded.preferences.summaryMetrics = ["steps", "stress", "sleepScore", "trainingReadiness", "trainingLoad", "bodyBattery"]
+        crowded.snapshot.metrics["trainingReadiness"] = .init(value: 80)
+        crowded.snapshot.metrics["trainingLoad"] = .init(value: 525)
+        crowded.snapshot.warnings = ["network.stats"]
+        check(WidgetTimelineSchedule.visibleMetricIDs(data: crowded, slot: .overview, family: .systemLarge, at: now).count == 5,
+              "Large Summary reserves space for its notice with four supporting measurements")
+        check(WidgetTimelineSchedule.dates(data: crowded, slot: .overview, family: .systemLarge, from: now) == [now],
+              "A Body Battery hidden by the large notice layout cannot create display ticks")
+        crowded.snapshot.warnings = []
+        check(WidgetTimelineSchedule.dates(data: crowded, slot: .overview, family: .systemLarge, from: now) == [now],
+              "The sixth metric stays hidden when the notice clears, so card geometry and scheduling remain stable")
+        crowded.preferences.summaryMetrics = ["steps", "stress", "sleepScore", "trainingReadiness", "bodyBattery", "trainingLoad"]
+        check(WidgetTimelineSchedule.dates(data: crowded, slot: .overview, family: .systemLarge, from: now).count > 1,
+              "Moving Body Battery into the visible fifth position restores its display schedule")
+
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = .current
         let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
         let lateAnchor = MetricReading(value: 60, measuredAt: midnight.addingTimeInterval(-90))

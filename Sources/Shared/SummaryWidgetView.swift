@@ -27,17 +27,17 @@ struct SummaryWidgetView: View {
     private func text(_ key: String) -> String { Localizer.text(key, language: language) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: family == .systemSmall ? 6 : 12) {
+        VStack(alignment: .leading, spacing: family == .systemSmall ? 6 : 10) {
             if family == .systemSmall {
-                primary(size: 42)
+                primary(size: 38)
                 if let id = secondary.first { compactRow(id) }
             } else if family == .systemMedium {
                 GeometryReader { geometry in
                     let width = max(0, (geometry.size.width - 16) / 2)
                     HStack(alignment: .top, spacing: 16) {
                         primary(size: 38).frame(width: width, alignment: .leading)
-                        VStack(alignment: .leading, spacing: 9) {
-                            ForEach(secondary, id: \.self) { id in metric(id, size: 23) }
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(secondary, id: \.self) { id in metric(id, size: 18) }
                         }.frame(width: width, alignment: .leading)
                     }
                 }
@@ -46,8 +46,8 @@ struct SummaryWidgetView: View {
                 if !secondary.isEmpty {
                     Rectangle().fill(theme.ink.opacity(0.16)).frame(height: 1)
                     LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)],
-                              alignment: .leading, spacing: 14) {
-                        ForEach(secondary, id: \.self) { id in metric(id, size: 25) }
+                              alignment: .leading, spacing: 10) {
+                        ForEach(secondary, id: \.self) { id in metric(id, size: 23) }
                     }
                 }
             }
@@ -64,11 +64,11 @@ struct SummaryWidgetView: View {
 
     private func primary(size: CGFloat) -> some View {
         let id = selection.primary
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 4) {
             Label(text(MetricDefinition.find(id).widgetTitleKey), systemImage: MetricDefinition.find(id).symbol)
                 .font(.system(size: 11, weight: .medium)).foregroundStyle(theme.secondaryInk)
                 .lineLimit(1).minimumScaleFactor(0.8)
-            value(id, size: size, showsStatus: true)
+            value(id, size: size, prominent: true)
         }
         .help(formatter.help(id))
         .accessibilityElement(children: .ignore)
@@ -76,11 +76,11 @@ struct SummaryWidgetView: View {
     }
 
     private func metric(_ id: String, size: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 1) {
             Text(text(MetricDefinition.find(id).widgetTitleKey))
-                .font(.system(size: 10, weight: .medium)).foregroundStyle(theme.secondaryInk)
-                .lineLimit(1).minimumScaleFactor(0.75)
-            value(id, size: size, showsStatus: family == .systemLarge && secondary.count <= 4)
+                .font(.system(size: family == .systemMedium ? 9 : 10, weight: .medium)).foregroundStyle(theme.secondaryInk)
+                .lineLimit(1).minimumScaleFactor(1)
+            value(id, size: size)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .help(formatter.help(id))
@@ -88,12 +88,12 @@ struct SummaryWidgetView: View {
         .accessibilityLabel(accessibility(id))
     }
 
-    private func value(_ id: String, size: CGFloat, showsStatus: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
+    private func value(_ id: String, size: CGFloat, prominent: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: prominent ? 2 : 1) {
             MetricValueLabel(value: formatter.display(id), size: size).foregroundStyle(theme.ink)
-            if showsStatus, let status = WidgetMetricPolicy.inlineStatus(for: id, formatter: formatter) {
-                Text(status).font(.system(size: 10, weight: .medium)).foregroundStyle(theme.secondaryInk)
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            if let indicator = formatter.indicator(id) {
+                MetricIndicatorView(indicator: indicator, theme: theme, compact: !prominent,
+                                    showsReference: prominent && family != .systemSmall)
             }
             if let period = presentation.period(id) {
                 Text(period).font(.system(size: 9)).foregroundStyle(theme.secondaryInk)
@@ -103,16 +103,20 @@ struct SummaryWidgetView: View {
     }
 
     private func compactRow(_ id: String) -> some View {
-        HStack(spacing: 4) {
-            VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
                 Text(text(MetricDefinition.find(id).widgetTitleKey))
                     .font(.system(size: 9, weight: .medium)).foregroundStyle(theme.secondaryInk)
-                if let period = presentation.period(id) {
-                    Text(period).font(.system(size: 9)).foregroundStyle(theme.secondaryInk)
-                        .lineLimit(1).minimumScaleFactor(1)
-                }
-            }.frame(maxWidth: .infinity, alignment: .leading)
-            MetricValueLabel(value: formatter.display(id), size: 20).foregroundStyle(theme.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                MetricValueLabel(value: formatter.display(id), size: 18).foregroundStyle(theme.ink)
+            }
+            if let indicator = formatter.indicator(id) {
+                MetricIndicatorView(indicator: indicator, theme: theme, compact: true, showsReference: false)
+            }
+            if let period = presentation.period(id) {
+                Text(period).font(.system(size: 9)).foregroundStyle(theme.secondaryInk)
+                    .lineLimit(1).minimumScaleFactor(1)
+            }
         }
         .lineLimit(1).minimumScaleFactor(0.75)
         .help(formatter.help(id))

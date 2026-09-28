@@ -71,7 +71,58 @@ struct RenderWidgets {
                                name: "custom-summary-\(language.rawValue)-\(customization)-\(sizeName)", output: output)
                 }
             }
-            for state in ["missing-primary", "partial", "only-recovery", "retained-sleep", "disconnected", "waiting", "legacy-demo", "body-battery-estimated", "body-battery-expired"] {
+            // Interpretations must remain visible at every size, including the
+            // Summary's single supporting row in a small widget. Sleep quality
+            // belongs to the same recorded night as the displayed duration.
+            for state in ["sleep-quality", "sleep-poor", "sleep-score-missing", "sleep-score-other-night",
+                          "sleep-duration-other-night", "sleep-retained-same-night", "high-stress",
+                          "low-battery", "steps-over-goal", "load-low-ratio", "load-high-ratio"] {
+                var data = sample(language: language, now: now)
+                var dedicated: WidgetSlot = .sleep
+                data.preferences.summaryMetrics = ["sleepDuration", "sleepScore", "stress", "bodyBattery", "steps"]
+                switch state {
+                case "sleep-poor": data.snapshot.metrics["sleepScore"] = .init(value: 42)
+                case "sleep-score-missing": data.snapshot.metrics.removeValue(forKey: "sleepScore")
+                case "sleep-score-other-night", "sleep-duration-other-night", "sleep-retained-same-night":
+                    let retainedIDs = state == "sleep-retained-same-night" ? ["sleepDuration", "sleepScore"]
+                        : [state == "sleep-score-other-night" ? "sleepScore" : "sleepDuration"]
+                    for id in retainedIDs {
+                        guard let reading = data.snapshot.metrics.removeValue(forKey: id) else {
+                            fatalError("Sleep provenance fixture must have a reading")
+                        }
+                        data.snapshot.retainedMetrics[id] = .init(reading: reading, sourceDate: "2026-09-14",
+                            retrievedAt: now.addingTimeInterval(-172800), changedAt: now.addingTimeInterval(-172800))
+                    }
+                case "high-stress":
+                    data.preferences.summaryMetrics = ["stress", "sleepDuration", "bodyBattery", "trainingLoad"]
+                    data.snapshot.metrics["stress"] = .init(value: 88)
+                    data.snapshot.metrics.removeValue(forKey: "bodyBattery")
+                    data.snapshot.metrics.removeValue(forKey: "steps")
+                    dedicated = .day
+                case "low-battery":
+                    data.preferences.summaryMetrics = ["bodyBattery", "stress", "sleepDuration", "steps"]
+                    data.snapshot.metrics["bodyBattery"] = .init(value: 12)
+                    dedicated = .day
+                case "steps-over-goal":
+                    data.preferences.summaryMetrics = ["steps", "sleepDuration", "stress", "trainingLoad"]
+                    data.snapshot.metrics["steps"] = .init(value: 13725)
+                    data.snapshot.metrics.removeValue(forKey: "bodyBattery")
+                    dedicated = .day
+                case "load-low-ratio", "load-high-ratio":
+                    data.preferences.summaryMetrics = ["trainingLoad", "stress", "sleepDuration", "hrv"]
+                    data.snapshot.metricContext?.trainingLoadStatus = state == "load-low-ratio" ? "LOW" : "VERY_HIGH"
+                    data.snapshot.metricContext?.trainingLoadRatio = state == "load-low-ratio" ? 0.6 : 1.8
+                    dedicated = .sport
+                default: break
+                }
+                for (sizeName, family, size) in families {
+                    for slot in [WidgetSlot.overview, dedicated] {
+                        try render(data, slot: slot, family: family, size: size, now: now,
+                                   name: "indicator-\(language.rawValue)-\(state)-\(slot.rawValue)-\(sizeName)", output: output)
+                    }
+                }
+            }
+            for state in ["missing-primary", "partial", "only-recovery", "retained-sleep", "retained-all", "disconnected", "waiting", "legacy-demo", "body-battery-estimated", "body-battery-expired"] {
                 var data = sample(language: language, now: now)
                 switch state {
                 case "missing-primary": data.snapshot.metrics.removeValue(forKey: "bodyBattery"); data.snapshot.metrics.removeValue(forKey: "trainingReadiness")
@@ -81,6 +132,12 @@ struct RenderWidgets {
                     data.snapshot.retainedMetrics = ["sleepDuration", "hrv", "sleepScore"].reduce(into: [:]) { result, id in
                         let value: Double = id == "sleepDuration" ? 480 : (id == "hrv" ? 62 : 86)
                         result[id] = .init(reading: .init(value: value), sourceDate: "2026-09-14", retrievedAt: now.addingTimeInterval(-86400), changedAt: now.addingTimeInterval(-86400))
+                    }
+                    data.snapshot.metrics = [:]
+                case "retained-all":
+                    data.snapshot.retainedMetrics = data.snapshot.metrics.mapValues { reading in
+                        .init(reading: reading, sourceDate: "2026-09-14",
+                              retrievedAt: now.addingTimeInterval(-172800), changedAt: now.addingTimeInterval(-172800))
                     }
                     data.snapshot.metrics = [:]
                 case "disconnected": data.isConnected = false
@@ -97,6 +154,23 @@ struct RenderWidgets {
                     for (sizeName, family, size) in families {
                         try render(data, slot: .overview, family: family, size: size, now: now,
                                    name: "retained-summary-\(language.rawValue)-\(sizeName)", output: output)
+                    }
+                }
+                if state == "retained-all" {
+                    for slot in [WidgetSlot.overview, .day, .sport, .sleep] {
+                        for (sizeName, family, size) in families {
+                            try render(data, slot: slot, family: family, size: size, now: now,
+                                       name: "retained-all-\(language.rawValue)-\(slot.rawValue)-\(sizeName)", output: output)
+                        }
+                    }
+                    continue
+                }
+                if state == "disconnected" || state == "partial" {
+                    for slot in [WidgetSlot.overview, .day, .sport, .sleep] {
+                        for (sizeName, family, size) in families {
+                            try render(data, slot: slot, family: family, size: size, now: now,
+                                       name: "notice-\(language.rawValue)-\(state)-\(slot.rawValue)-\(sizeName)", output: output)
+                        }
                     }
                 }
                 for slot in [WidgetSlot.overview, .day, .sport, .sleep] {
@@ -163,12 +237,16 @@ struct RenderWidgets {
         var preferences = AppPreferences(); preferences.language = language
         var snapshot = GarminSnapshot.empty
         snapshot.fetchedAt = now; snapshot.sourceDate = "2026-09-16"
-        snapshot.metrics = ["bodyBattery": .init(value: 76), "steps": .init(value: 6842), "stress": .init(value: 24),
+        snapshot.metrics = ["bodyBattery": .init(value: 76), "steps": .init(value: 6842), "stepGoal": .init(value: 10000), "stress": .init(value: 24),
             "restingHeartRate": .init(value: 54), "sleepDuration": .init(value: 462), "sleepScore": .init(value: 86),
             "deepSleep": .init(value: 85), "remSleep": .init(value: 95), "lightSleep": .init(value: 270),
             "hrv": .init(value: 62), "respiration": .init(value: 15.3), "trainingReadiness": .init(value: 78),
             "recoveryTime": .init(value: 720), "trainingLoad": .init(value: 525), "vo2Max": .init(value: 49),
             "hydration": .init(value: 1250), "intensityMinutes": .init(value: 35), "calories": .init(value: 1860)]
+        // Match the live adapter: an acute/chronic category and ratio, with no
+        // invented acute-load range from Garmin's chronic-load boundaries.
+        snapshot.metricContext = .init(trainingStatus: "PRODUCTIVE", hrvStatus: "BALANCED", hrvWeeklyAverage: 58,
+            hrvBaselineLow: 49, hrvBaselineHigh: 72, trainingLoadStatus: "OPTIMAL", trainingLoadRatio: 1.2)
         snapshot.trainingTimeline = .init(fetchedAt: now,
             past: [.init(id: "fixture-completed", title: "", sportKey: "running", startedAt: now.addingTimeInterval(-86400), durationMinutes: 45, distanceKM: 8)],
             upcoming: [.init(occurrenceID: "fixture-planned", localDate: "2026-09-17", title: "", sportKey: "strength_training", durationMinutes: 60)],

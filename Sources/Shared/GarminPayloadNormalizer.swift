@@ -169,7 +169,7 @@ enum GarminPayloadNormalizer {
         case "readiness":
             guard let selected = selectedReadinessEntry(payload) else { return [:] }
             let measuredAt = timestamp(selected["timestamp"], knownUTC: true)
-            put("trainingReadiness", selected["score"], measuredAt: measuredAt, maximum: 100)
+            put("trainingReadiness", selected["score"], measuredAt: measuredAt, positive: true, maximum: 100)
             let recovery: Any? = selected["recoveryTimeChangePhrase"] as? String == "REACHED_ZERO"
                 ? 0 : selected["recoveryTime"]
             put("recoveryTime", recovery, measuredAt: measuredAt)

@@ -115,6 +115,42 @@ struct MetricExplanationTests {
         let oldGroup = try AppJSON.decoder.decode(GarminMetricGroupCache.self,
             from: Data(#"{"sourceDay":"2026-09-15","retrievedAt":"2026-09-15T12:00:00Z","metrics":{}}"#.utf8))
         check(oldGroup.metricContext == nil, "old group cache decodes without context")
+        let today = SyncPolicy.sourceDay(for: now, timeZone: .autoupdatingCurrent)
+        let yesterday = SyncPolicy.sourceDay(for: now.addingTimeInterval(-86400), timeZone: .autoupdatingCurrent)
+        var currentSteps = GarminSnapshot(fetchedAt: now, sourceDate: today, devices: [],
+                                          metrics: ["steps": .init(value: 15000), "stepGoal": .init(value: 10000)])
+        // Duplicate retained entries must not shadow real current readings.
+        currentSteps.retainedMetrics["steps"] = .init(reading: .init(value: 1), sourceDate: yesterday, retrievedAt: now, changedAt: now)
+        currentSteps.retainedMetrics["stepGoal"] = .init(reading: .init(value: 8000), sourceDate: yesterday, retrievedAt: now, changedAt: now)
+        for language in AppLanguage.supported {
+            func text(_ key: String) -> String { Localizer.text(key, language: language) }
+            let currentFormatter = MetricFormatter(snapshot: currentSteps, language: language, now: now)
+            let target = String(format: text("explanation.steps.goal"), locale: language.locale,
+                                currentFormatter.display("stepGoal"))
+            let current = MetricExplanation.make(metricID: "steps", snapshot: currentSteps, language: language, now: now)
+            check(current?.status == text("explanation.steps.reached") && current?.supportingText == target,
+                  "current goal survives duplicate retained entries in \(language)")
+            var oldWholeSnapshot = currentSteps
+            oldWholeSnapshot.sourceDate = yesterday
+            let old = MetricExplanation.make(metricID: "steps", snapshot: oldWholeSnapshot, language: language, now: now)
+            check(old?.status == text("explanation.steps.status") && old?.supportingText == nil,
+                  "old whole snapshot cannot claim today's goal reached in \(language)")
+            let oldFormatter = MetricFormatter(snapshot: oldWholeSnapshot, language: language, now: now)
+            check(!oldFormatter.help("steps").contains(target) && !oldFormatter.accessibility("steps").contains(target),
+                  "help and VoiceOver cannot reintroduce yesterday's target in \(language)")
+            let nextDaySteps = MetricExplanation.make(metricID: "steps", snapshot: currentSteps, language: language,
+                                                     now: now.addingTimeInterval(86400))
+            check(nextDaySteps?.supportingText == nil && nextDaySteps?.status == text("explanation.steps.status"),
+                  "day rollover removes daily target from explanation in \(language)")
+        }
+        var retainedStepsOnly = currentSteps
+        retainedStepsOnly.metrics.removeValue(forKey: "steps")
+        check(MetricExplanation.make(metricID: "steps", snapshot: retainedStepsOnly, language: .en, now: now)?.supportingText == nil,
+              "retained count is not compared against a current goal")
+        var retainedGoalOnly = currentSteps
+        retainedGoalOnly.metrics.removeValue(forKey: "stepGoal")
+        check(MetricExplanation.make(metricID: "steps", snapshot: retainedGoalOnly, language: .en, now: now)?.supportingText == nil,
+              "current count is not compared against a retained goal")
         print("PASS: \(checks) metric explanation checks")
     }
 }

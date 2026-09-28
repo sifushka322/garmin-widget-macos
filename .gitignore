@@ -55,3 +55,10 @@ WebKit/
 exports/
 private/
 local/
+
+# Website dependencies, caches, and local hosting configuration.
+node_modules/
+.next/
+.cache/
+.sites-runtime/
+.openai/

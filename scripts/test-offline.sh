@@ -21,7 +21,7 @@ shared=(Sources/Shared/*.swift Sources/GarminDesk/Localization.swift)
 model_sources=()
 for source in "${shared[@]}"; do
     case "$source" in
-        Sources/Shared/GarminWidgetView.swift|Sources/Shared/SummaryWidgetView.swift|Sources/Shared/TrainingCalendarWidgetView.swift|Sources/Shared/GarminDeskBrandMark.swift|Sources/Shared/GarminDeskBrandGeometry.swift) continue ;;
+        Sources/Shared/GarminWidgetView.swift|Sources/Shared/SummaryWidgetView.swift|Sources/Shared/MetricIndicatorView.swift|Sources/Shared/TrainingCalendarWidgetView.swift|Sources/Shared/GarminDeskBrandMark.swift|Sources/Shared/GarminDeskBrandGeometry.swift) continue ;;
     esac
     model_sources+=("$source")
 done
@@ -42,7 +42,7 @@ xcrun swiftc "${options[@]}" -D GARMIN_LIFECYCLE_TEST -module-name MenuBarLifecy
     Sources/GarminDesk/GarminDeskApp.swift Tests/MenuBarLifecycleTests.swift \
     "${frameworks[@]}" -o build/audit/MenuBarLifecycleTests
 build/audit/MenuBarLifecycleTests
-for suite in SharedModelTests WidgetConfigurationTests WidgetMetricPolicyTests TrainingCalendarTests TrainingPresentationTests LocalizationTests SyncPolicyTests GarminPayloadNormalizerTests TrainingModelsTests MetricExplanationTests BodyBatteryProjectionTests WidgetTimelineScheduleTests; do
+for suite in SharedModelTests WidgetConfigurationTests WidgetMetricPolicyTests TrainingCalendarTests TrainingPresentationTests LocalizationTests SyncPolicyTests GarminPayloadNormalizerTests TrainingModelsTests MetricExplanationTests MetricIndicatorTests BodyBatteryProjectionTests WidgetTimelineScheduleTests; do
     suite_sources=("${model_sources[@]}")
     if [[ "$suite" == WidgetConfigurationTests ]]; then suite_sources=("${shared[@]}"); fi
     printf 'Compiling and running %s\n' "$suite"

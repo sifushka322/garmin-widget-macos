@@ -46,6 +46,20 @@ import Foundation
         snapshot.metrics["trainingReadiness"] = .init(value: .nan)
         snapshot.metrics["recoveryTime"] = .init(value: -1)
         try expect(WidgetMetricPolicy.selection(for: sport, snapshot: snapshot).primary == "activeCalories", "Invalid advanced data cannot displace a valid fallback")
+        for score in [0.0, 0.5, 101] {
+            snapshot.metrics["trainingReadiness"] = .init(value: score)
+            let formatter = MetricFormatter(snapshot: snapshot, language: .en)
+            try expect(formatter.value("trainingReadiness") == nil && formatter.display("trainingReadiness") == "—",
+                       "Out-of-range readiness in a saved snapshot remains missing")
+            try expect(WidgetMetricPolicy.selection(for: sport, snapshot: snapshot).primary == "activeCalories",
+                       "Invalid readiness cannot take the primary slot from a usable reading")
+        }
+        snapshot.metrics["recoveryTime"] = .init(value: 0)
+        try expect(MetricFormatter(snapshot: snapshot, language: .en).value("recoveryTime") == 0,
+                   "A completed recovery countdown remains a real zero")
+        try expect(WidgetMetricPolicy.selection(for: sport, snapshot: snapshot).primary == "recoveryTime",
+                   "Zero recovery can take the primary slot when readiness is unavailable")
+        snapshot.metrics["recoveryTime"] = .init(value: -1)
         let date = Date(timeIntervalSince1970: 1_789_473_600)
         snapshot.retainedMetrics["trainingLoad"] = .init(reading: .init(value: 300), sourceDate: "2026-09-14", retrievedAt: date, changedAt: date)
         try expect(WidgetMetricPolicy.selection(for: sport, snapshot: snapshot).primary == "trainingLoad", "Retained readings stay usable with their existing period context")

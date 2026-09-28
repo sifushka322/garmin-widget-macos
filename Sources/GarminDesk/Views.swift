@@ -187,12 +187,15 @@ final class MetricWindowVisibilityView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         removeObservers()
-        guard let window else { publishVisibility(forcedHidden: true); return }
+        guard let window else { publishVisibility(); return }
         for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
-                     NSWindow.didDeminiaturizeNotification, NSWindow.willCloseNotification] {
-            observe(name, center: .default, object: window, forcedHidden: name == NSWindow.willCloseNotification)
+                     NSWindow.didDeminiaturizeNotification, NSWindow.willCloseNotification,
+                     NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification] {
+            // A retained window can reopen without a new occlusion transition.
+            // makeKeyAndOrderFront still announces the restored key/main window.
+            observe(name, center: .default, object: window)
         }
-        observe(NSApplication.didHideNotification, center: .default, forcedHidden: true)
+        observe(NSApplication.didHideNotification, center: .default)
         observe(NSApplication.didUnhideNotification, center: .default)
         for name in [Notification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange, .NSCalendarDayChanged] {
             observe(name, center: .default, clockChanged: true)
@@ -202,18 +205,19 @@ final class MetricWindowVisibilityView: NSView {
     }
 
     private func observe(_ name: Notification.Name, center: NotificationCenter, object: Any? = nil,
-                         forcedHidden: Bool = false, clockChanged: Bool = false) {
+                         clockChanged: Bool = false) {
         let observer = center.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
-            // Also avoid publishing during an AppKit/SwiftUI view-tree update.
-            DispatchQueue.main.async { self?.publishVisibility(forcedHidden: forcedHidden, clockChanged: clockChanged) }
+            self?.publishVisibility(clockChanged: clockChanged)
         }
         observers.append((center, observer))
     }
 
-    private func publishVisibility(forcedHidden: Bool = false, clockChanged: Bool = false) {
+    private func publishVisibility(clockChanged: Bool = false) {
+        // Defer beyond AppKit/SwiftUI's view mutation, then read the current
+        // state. A queued close/hide event must not pause an already reopened window.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let visible = !forcedHidden && self.window.map {
+            let visible = self.window.map {
                 $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) && !NSApp.isHidden
             } == true
             self.activity.update(isVisible: visible, clockChanged: clockChanged)
@@ -317,8 +321,8 @@ private struct MainMetricView: View {
 
     private func content(at now: Date) -> some View {
         let formatter = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language, now: now)
-        let explanation = MetricExplanation.make(metricID: metricID, snapshot: store.snapshot,
-                                                   language: store.preferences.language, now: now)
+        let explanation = formatter.interpretation(metricID)
+        let indicator = formatter.indicator(metricID)
         return HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 8) {
@@ -334,9 +338,18 @@ private struct MainMetricView: View {
                 MetricValueLabel(value: formatter.display(metricID), size: compact ? 50 : 60)
                     .foregroundStyle(theme.ink)
                     .contentTransition(.numericText())
-                if let status = WidgetMetricPolicy.inlineStatus(for: metricID, formatter: formatter) {
-                    Text(status).font(.system(size: 13, weight: .semibold))
+                if let scale = indicator?.scale {
+                    MetricScaleView(scale: scale, theme: theme)
+                }
+                if let explanation {
+                    Text(indicator?.status ?? explanation.status).font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(theme.ink).fixedSize(horizontal: false, vertical: true)
+                    if let supporting = ["trainingLoad", "hrv"].contains(metricID)
+                        ? explanation.supportingText : (indicator?.reference ?? explanation.supportingText),
+                       supporting != indicator?.status {
+                        Text(supporting).font(.system(size: 11)).foregroundStyle(theme.secondaryInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 if let context = metricCardContext(metricID, formatter: formatter) {
                     Text(context).font(.system(size: 11, weight: .medium)).foregroundStyle(theme.secondaryInk)
@@ -345,16 +358,8 @@ private struct MainMetricView: View {
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
             ZStack {
-                if let progress = formatter.progress(metricID) {
-                    Circle().strokeBorder(theme.ink.opacity(0.13), lineWidth: 7)
-                    Circle().trim(from: 0, to: progress)
-                        .stroke(theme.highlight, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                        .rotationEffect(.degrees(-90)).padding(3.5)
-                    Image(systemName: definition.symbol).font(.system(size: 26, weight: .light)).foregroundStyle(theme.highlight)
-                } else {
-                    Circle().fill(theme.ink.opacity(0.07))
-                    Image(systemName: definition.symbol).font(.system(size: 36, weight: .light)).foregroundStyle(theme.highlight)
-                }
+                Circle().fill(theme.ink.opacity(0.07))
+                Image(systemName: definition.symbol).font(.system(size: 36, weight: .light)).foregroundStyle(theme.highlight)
             }
             .frame(width: compact ? 76 : 88, height: compact ? 76 : 88)
             .accessibilityHidden(true)
@@ -388,11 +393,13 @@ private struct SmallMetricView: View {
 
     private func content(at now: Date) -> some View {
         let formatter = MetricFormatter(snapshot: store.snapshot, language: store.preferences.language, now: now)
-        let explanation = MetricExplanation.make(metricID: metricID, snapshot: store.snapshot,
-                                                   language: store.preferences.language, now: now)
+        let explanation = formatter.interpretation(metricID)
+        let indicator = formatter.indicator(metricID)
         let context = metricCardContext(metricID, formatter: formatter)
-        let status = WidgetMetricPolicy.inlineStatus(for: metricID, formatter: formatter)
-        return VStack(alignment: .leading, spacing: 6) {
+        let status = indicator?.status ?? WidgetMetricPolicy.inlineStatus(for: metricID, formatter: formatter)
+        // Fixed slots keep every card aligned, including metrics that have no
+        // meaningful scale. Full personal ranges remain in the info popover.
+        return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center, spacing: 8) {
                 Image(systemName: definition.symbol).font(.system(size: 13, weight: .medium))
                     .foregroundStyle(accent).frame(width: 28, height: 28)
@@ -411,6 +418,11 @@ private struct SmallMetricView: View {
             MetricValueLabel(value: formatter.display(metricID), size: compact ? 28 : 32)
                 .foregroundStyle(.primary)
                 .frame(height: compact ? 36 : 40, alignment: .leading)
+            if let scale = indicator?.scale {
+                MetricScaleView(scale: scale, theme: .metric(metricID, appearance: colorScheme == .dark ? .dark : .light))
+            } else {
+                Color.clear.frame(height: 8).accessibilityHidden(true)
+            }
             Text(status ?? " ")
                 .font(.system(size: 12, weight: .medium)).foregroundStyle(accent)
                 .lineLimit(2).minimumScaleFactor(0.85)
@@ -418,7 +430,7 @@ private struct SmallMetricView: View {
                 .accessibilityHidden(status == nil)
             Spacer(minLength: 0)
             Text(context ?? " ").font(.system(size: 10)).foregroundStyle(.secondary)
-                .lineLimit(1).minimumScaleFactor(0.75)
+                .lineLimit(1).minimumScaleFactor(1)
                 .frame(height: 14, alignment: .leading)
                 .accessibilityHidden(context == nil)
         }

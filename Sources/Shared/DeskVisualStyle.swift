@@ -1,12 +1,14 @@
 import SwiftUI
 
-/// Semantic colors identify the kind of measurement; they never imply a health grade.
+/// Background colors identify the kind of measurement. Assessment colors belong
+/// to MetricScaleView and always have an accompanying text interpretation.
 struct DeskMetricTheme {
     let top: Color
     let bottom: Color
     let highlight: Color
     let ink: Color
     let monochrome: Bool
+    var lightBackground = false
 
     static func color(_ hex: UInt32) -> Color {
         Color(red: Double((hex >> 16) & 255) / 255, green: Double((hex >> 8) & 255) / 255,
@@ -56,7 +58,7 @@ struct DeskMetricTheme {
         case .colorful: return semantic
         case .light:
             return .init(top: color(0xFFFFFF), bottom: color(0xECF1F5), highlight: semantic.top,
-                         ink: color(0x172D3A), monochrome: false)
+                         ink: color(0x172D3A), monochrome: false, lightBackground: true)
         case .dark:
             return .init(top: color(0x242D38), bottom: color(0x101720), highlight: semantic.highlight,
                          ink: color(0xF3F6FB), monochrome: false)

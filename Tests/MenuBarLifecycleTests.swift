@@ -157,6 +157,14 @@ struct MenuBarLifecycleTests {
         try expect(window.isVisible && delegate.lifecycleTestState.navigation.section == .general, "Settings must reopen the window on General")
         try expect(NSApp.activationPolicy() == .accessory, "Settings must not add a Dock icon")
 
+        // Reopen before the deferred willClose observer can run. That stale
+        // notification must not suspend a window that is already visible again.
+        window.close()
+        try invoke("showMainWindow", in: state.menu)
+        try await settleVisibility(visibility, window: window, phase: "immediate close and reopen")
+        try expect(window.isVisible && visibility.activity.allowsDisplayUpdates,
+                   "A delayed close notification cannot pause a reopened visible window")
+
         window.miniaturize(nil)
         try await settleVisibility(visibility, window: window, presentation: .minimized, phase: "minimize")
         try expect(!visibility.activity.allowsDisplayUpdates, "Minimizing suspends all metric display schedules")

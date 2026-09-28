@@ -16,13 +16,14 @@ struct WidgetPresentation {
         return nil
     }
 
-    /// A recent completed night needs no date on the desktop. Older records keep
-    /// one short period label; the full provenance remains in accessibility/help.
+    /// A recent completed night needs no date on the desktop. Older records,
+    /// including historical progress values, keep a short period label.
     func period(_ id: String) -> String? {
         let scope = MetricDefinition.find(id).timeScope
-        guard scope == .nightlyRecord || scope == .dailyRecord,
+        let retained = snapshot.metrics[id] == nil ? snapshot.retainedMetrics[id] : nil
+        guard scope != .measurement || retained != nil,
               MetricFormatter(snapshot: snapshot, language: language).value(id) != nil else { return nil }
-        let day = snapshot.retainedMetrics[id]?.sourceDate ?? snapshot.sourceDate
+        let day = retained?.sourceDate ?? snapshot.sourceDate
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = timeZone
         let today = SyncPolicy.sourceDay(for: now, timeZone: timeZone)
         if day == today { return nil }

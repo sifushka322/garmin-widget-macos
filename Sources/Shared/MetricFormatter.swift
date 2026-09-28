@@ -7,24 +7,47 @@ struct MetricFormatter {
 
     func text(_ key: String) -> String { Localizer.text(key, language: language) }
     func interpretation(_ id: String) -> MetricExplanation? {
-        MetricExplanation.make(metricID: id, snapshot: snapshot, language: language, now: now)
+        // Current values win over a duplicate historical entry everywhere,
+        // including the personal context consumed by the explanation model.
+        var visibleSnapshot = snapshot
+        visibleSnapshot.retainedMetrics = snapshot.retainedMetrics.filter { snapshot.metrics[$0.key] == nil }
+        return MetricExplanation.make(metricID: id, snapshot: visibleSnapshot, language: language, now: now)
+    }
+
+    func indicator(_ id: String) -> MetricIndicator? {
+        MetricIndicator.make(metricID: id, snapshot: snapshot, language: language, now: now)
     }
 
     func help(_ id: String) -> String {
+        let assessment = indicator(id)
         let explanation = interpretation(id)
-        return [explanation?.supportingText, explanation?.detail, context(id)].compactMap { $0 }.joined(separator: "\n")
+        return [assessment?.status, indicatorReference(assessment, explanation: explanation),
+                explanation?.supportingText, explanation?.detail, context(id)]
+            .compactMap { $0 }.joined(separator: "\n")
     }
 
     func accessibility(_ id: String) -> String {
+        let assessment = indicator(id)
         let explanation = interpretation(id)
         let value = String(format: text("explanation.labeledDetail"), locale: language.locale,
                            text(MetricDefinition.find(id).titleKey), display(id))
-        return ([value] + [explanation?.status, explanation?.supportingText, context(id)]
-            .compactMap { $0 }).joined(separator: ". ")
+        return ([value] + [assessment?.status ?? explanation?.status,
+                          indicatorReference(assessment, explanation: explanation),
+                          explanation?.supportingText, context(id)].compactMap { $0 }).joined(separator: ". ")
     }
+
+    private func indicatorReference(_ assessment: MetricIndicator?, explanation: MetricExplanation?) -> String? {
+        guard let reference = assessment?.reference, reference != assessment?.status,
+              reference != explanation?.supportingText?.replacingOccurrences(of: "\n", with: " · ") else { return nil }
+        return reference
+    }
+
     func value(_ id: String) -> Double? {
         if id == "bodyBattery", let estimate = snapshot.bodyBatteryEstimate(at: now) { return estimate }
         guard MetricDefinition.isSupported(id), let value = snapshot.visibleReading(id)?.value, value.isFinite, value >= 0 else { return nil }
+        // Zero is a valid recovery countdown, but not a readiness score. Also
+        // validate saved readings so older caches cannot promote invalid scores.
+        if id == "trainingReadiness", !(1...100).contains(value) { return nil }
         return value
     }
 
@@ -82,7 +105,7 @@ struct MetricFormatter {
             return measuredText
         }
         let scope = MetricDefinition.find(id).timeScope
-        let retained = snapshot.retainedMetrics[id]
+        let retained = snapshot.metrics[id] == nil ? snapshot.retainedMetrics[id] : nil
         let day = retained?.sourceDate ?? snapshot.sourceDate
         guard let date = TrainingPresentation(language: language).dayText(day) else { return nil }
         switch scope {
@@ -104,9 +127,9 @@ struct MetricFormatter {
 
     func progress(_ id: String) -> Double? {
         // Historical readings cannot imply progress toward today's goal.
-        guard snapshot.retainedMetrics[id] == nil else { return nil }
+        guard snapshot.metrics[id] != nil else { return nil }
         guard let value = value(id) else { return nil }
-        if id == "steps", snapshot.retainedMetrics["stepGoal"] == nil, let goal = self.value("stepGoal"), goal > 0 { return min(1, max(0, value / goal)) }
+        if id == "steps", snapshot.metrics["stepGoal"] != nil, let goal = self.value("stepGoal"), goal > 0 { return min(1, max(0, value / goal)) }
         if ["bodyBattery", "stress", "sleepScore", "trainingReadiness", "spo2"].contains(id) { return min(1, max(0, value / 100)) }
         return nil
     }

@@ -78,6 +78,16 @@ class NormalizationTests(unittest.TestCase):
         self.assertEqual(metrics["recoveryTime"]["value"], 0)
         self.assertEqual(metrics["recoveryTime"]["measuredAt"], "2026-09-15T09:00:00Z")
 
+    def test_zero_readiness_is_absent_while_zero_recovery_is_valid(self):
+        metrics = {}
+        bridge.normalize_readiness([{"score": 0, "recoveryTime": 0}], metrics)
+        self.assertEqual(metrics, {"recoveryTime": {"value": 0}})
+        for score in [1, 100]:
+            with self.subTest(score=score):
+                metrics = {}
+                bridge.normalize_readiness([{"score": score}], metrics)
+                self.assertEqual(metrics["trainingReadiness"]["value"], score)
+
     def test_training_load_selects_primary_watch(self):
         metrics = {}
         bridge.normalize_training({"mostRecentTrainingStatus": {"latestTrainingStatusData": {
