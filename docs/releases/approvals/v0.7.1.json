@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "version": "0.7.1",
+  "build": "17",
+  "commit": "675dad2642a1f32412451df98dd1bfdfdf78e17e",
+  "build_run_id": 36599353098,
+  "upgrade_result": "not_run",
+  "owner_override": true,
+  "override_reason": "The owner requested publication of the code and release after the local build, installation and synthetic checks were reported; real-account password recovery and exhaustive normal system-widget upgrades remain unverified and are disclosed in the public release notes.",
+  "report": "docs/releases/validation/0.7.1-publication.md",
+  "report_sha256": "7a88ca9d227f2c4c067cb4adab909e64247260d0361e4286b0ee6a27ca94a008",
+  "release_notes_path": "docs/releases/0.7.1.md",
+  "release_notes_sha256": "0f5ba94bf2ca9097f56dd00248f61445f9387a0888dc57c5013836be2d0c6b4d",
+  "asset_sha256": {
+    "GarminDesk-0.7.1-arm64-SHA256.txt": "4d95a4f427bd7604f10266acd969fa3c2903bc2e68cd023f97f16e6aad178946",
+    "GarminDesk-0.7.1-arm64.dmg": "1d29e799304ba303ae49949512c57eaf9ea2b40d7b019c8d5d490b86b607ef38",
+    "GarminDesk-0.7.1-arm64.zip": "7250ea22986c4abffa8b6ebfb59dc711dd98180faf2ea92e92f95b5fef947ecf",
+    "GarminDesk-0.7.1-x86_64-SHA256.txt": "00fc96a5626eb2d271ee201b7b1f45ab081dc41cc88ca6a0482328756cc6257c",
+    "GarminDesk-0.7.1-x86_64.dmg": "c15ecc555165e83bb67268ecb3be88037e8051c572bab41cca24e8eb70b52eef",
+    "GarminDesk-0.7.1-x86_64.zip": "42778e65191ca874acc2d3b8031269cd3d2e538a5ddd81ac4e1e80aa8b91bdcf"
+  }
+}

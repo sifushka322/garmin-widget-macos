@@ -2,15 +2,15 @@
 
 GarminDesk is distributed through [GitHub Releases](https://github.com/sifushka322/garmin-widget-macos/releases) as a ready-to-use app. Users do not need Python, Homebrew, Xcode, or additional libraries.
 
-## Version 0.6.0
+## Version 0.7.1
 
 Apple Silicon (`arm64`) packages are listed below. Equivalent Intel packages use the `x86_64` suffix:
 
-- `GarminDesk-0.6.0-arm64.dmg` — the app, an Applications shortcut, and installation instructions.
-- `GarminDesk-0.6.0-arm64.zip` — an alternative archive of the same app.
-- `GarminDesk-0.6.0-arm64-SHA256.txt` — archive checksums.
+- `GarminDesk-0.7.1-arm64.dmg` — the app, an Applications shortcut, and installation instructions.
+- `GarminDesk-0.7.1-arm64.zip` — an alternative archive of the same app.
+- `GarminDesk-0.7.1-arm64-SHA256.txt` — archive checksums.
 
-Packages target macOS 14+. The exact build, package checks, CI results and on-device observations are recorded in the [final validation report](releases/validation/0.6.0-final-audit.md).
+Packages target macOS 14+. The exact build, package checks, CI results and on-device observations are recorded in the [final validation report](releases/validation/0.7.1-publication.md).
 
 ## Installation without a paid signing certificate
 
@@ -27,7 +27,7 @@ The package uses ad-hoc signing without an Apple Account, paid Developer ID cert
 
 The standard bundle contains a native Swift executable, `GarminDeskWidgets.appex`, the selected icon, and localized resources. The Garmin connection uses system WebKit. User caches, website sessions, passwords, and cookies are not copied into the bundle.
 
-The host stores data locally in Application Support. The sandboxed extension reads only the dedicated `Widgets/widget-data.json` snapshot through a narrowly scoped read-only permission. The snapshot contains no passwords or cookies. The selected local configuration does not require an App Group.
+The host stores readings and preferences locally in Application Support. Optional automatic sign-in keeps the login and password in the device-local macOS Keychain; disconnect deletes the saved login and website session. The sandboxed extension reads only the dedicated `Widgets/widget-data.json` snapshot through a narrowly scoped read-only permission. The snapshot contains no passwords or cookies. The selected local configuration does not require an App Group.
 
 The standard build uses five StaticConfiguration kinds: Summary, Day, Sport, Sleep, and Training calendar. Existing four kind identifiers are preserved; Day is added. There are no user profiles or assignments. The former optional App Intents profile prototype is retired, and requesting its old build flags fails explicitly instead of changing the widget model based on the installed toolchain. Custom installations of that unreleased prototype require removing/re-adding widgets.
 
@@ -38,14 +38,14 @@ App preferences store language, app appearance, widget appearance, Summary’s o
 A Mac with a compatible Swift compiler and macOS SDK is required. The script compiles native code directly using `xcrun swiftc`, without Swift Package Manager.
 
 ```bash
-APP_VERSION=0.7.0 APP_BUILD=16 CONFIGURATION=release bash scripts/build-app.sh
+APP_VERSION=0.7.1 APP_BUILD=17 CONFIGURATION=release bash scripts/build-app.sh
 bash scripts/verify-release.sh build/GarminDesk.app
 bash scripts/package-release.sh
 ```
 
 `build-app.sh` builds the app and extension, generates the icon, applies ad-hoc signatures, and verifies the bundle. `package-release.sh` packages the built app into ZIP/DMG files with SHA-256 checksums; it does not install the app or publish a release.
 
-The current source and published release are **0.6.0 build 15**.
+The current source and published release are **0.7.1 build 17**.
 
 | Variable | Purpose |
 | --- | --- |
@@ -62,7 +62,7 @@ The workflow in `.github/workflows/build.yml` reads the version from `Resources/
 
 ## Before publication
 
-Release evidence and the owner's publication authorization are recorded in the [validation report](releases/validation/0.6.0-final-audit.md). The following is the standard validation process.
+Release evidence and the owner's publication authorization are recorded in the [validation report](releases/validation/0.7.1-publication.md). The following is the standard validation process.
 
 Verify the exact app and archives being released: versions, nested signatures, architecture, system dependencies, checksums, and absence of private runtime files. Then download the packages from the draft and complete the [upgrade validation from the previous release](widget-upgrade-validation.md) on a Mac with a graphical session, including existing widgets and the gallery. A separate test machine can be used; the owner's Mac does not need to be changed. Only after validation succeeds should the same draft be published and marked `latest`; a rebuild requires another validation run. Details: [publication checklist](publication-checklist.md), [source file list](source-publication-files.txt).
 

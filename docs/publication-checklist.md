@@ -2,6 +2,12 @@
 
 The owner has authorized publishing the repository and ready-to-use app on GitHub. This checklist verifies the content and exact release; it does not introduce another approval requirement.
 
+## 0.7.1 publication record
+
+Normal upgrade validation: NOT RUN
+
+Publication was requested explicitly after the local build, installation and synthetic checks were reported. Live password recovery and exhaustive upgrades of existing system widgets remain unverified. The [publication record](releases/validation/0.7.1-publication.md) records this exception, the tested candidate, CI run and exact package hashes. The release approval binds that report and the public notes to the same six CI packages.
+
 ## 0.6.0 publication record
 
 The [final validation report](releases/validation/0.6.0-final-audit.md) records the exact build, CI run, package hashes, on-device observations and the owner's informed publication instruction. The report and public notes are hash-bound to the release approval; the publication guard verifies the same six packages from the successful candidate run.

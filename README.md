@@ -4,27 +4,27 @@
 
 Your Garmin Connect data in a native Mac app and desktop widgets. Five widget types for your day, sport, sleep, and training calendar, including a customizable Summary.
 
-[Download](https://github.com/sifushka322/garmin-widget-macos/releases/tag/v0.6.0) · [Installation](docs/distribution.md) · [Version 0.6.0](docs/releases/0.6.0.md)
+[Download](https://github.com/sifushka322/garmin-widget-macos/releases/tag/v0.7.1) · [Installation](docs/distribution.md) · [Version 0.7.1](docs/releases/0.7.1.md)
 
-**Version 0.6.0** brings a quiet menu-bar app, consistent metric cards and clearer explanations. See the [release notes](docs/releases/0.6.0.md) and [validation report](docs/releases/validation/0.6.0-final-audit.md).
+**Version 0.7.1** brings simpler widgets, consistent sleep typography and optional automatic sign-in using macOS Keychain. See the [release notes](docs/releases/0.7.1.md) and [validation report](docs/releases/validation/0.7.1-publication.md).
 
 GarminDesk shows the latest available readings, not a live stream from your watch. Instantaneous heart rate is excluded because Garmin Connect delays make a reliable live reading impossible. Sleep, overnight HRV, sleep respiration, and other completed records retain their dates and are not marked stale solely because synchronization is delayed.
 
 ## Installation
 
-1. Download **GarminDesk-0.6.0-arm64.dmg** for Apple Silicon or **GarminDesk-0.6.0-x86_64.dmg** for an Intel Mac.
+1. Download **GarminDesk-0.7.1-arm64.dmg** for Apple Silicon or **GarminDesk-0.7.1-x86_64.dmg** for an Intel Mac.
 2. Open the DMG, drag **GarminDesk.app** into **Applications**, and launch it from there.
-3. Sign in to Garmin Connect under **Garmin account**.
+3. Sign in to Garmin Connect under **Garmin account**. Optionally save your login in **Automatic sign-in** to reconnect when the session expires.
 4. Under **Widgets**, choose an appearance and preview the five widget types. Customize Summary through **Choose measurements**.
 5. Right-click the desktop → **Edit Widgets → GarminDesk**, then add a widget.
 
-A ZIP containing the same app is also available. **No Python, Homebrew, additional libraries, or terminal setup is required.** Separate Apple Silicon and Intel packages target macOS 14+. See the [release notes](docs/releases/0.6.0.md) for the version's actual validation coverage.
+A ZIP containing the same app is also available. **No Python, Homebrew, additional libraries, or terminal setup is required.** Separate Apple Silicon and Intel packages target macOS 14+. See the [release notes](docs/releases/0.7.1.md) for the version's actual validation coverage.
 
 The app is distributed without a paid Developer ID certificate or Apple notarization. If macOS reports an unidentified developer, first try opening your trusted download, then use **System Settings → Privacy & Security → Open Anyway**. [Apple's instructions](https://support.apple.com/102445).
 
 ## Features
 
-**Version 0.6.0** adds independent data refresh, dated record recovery and optional Body Battery estimates to the five widget types.
+Independent data refresh, dated record recovery and optional Body Battery estimates are available across the five widget types.
 
 - **Five widget types:** Summary, Day, Sport, Sleep, and Training calendar. Each supports small, medium, and large sizes.
 - **One large Summary** combines the main daily, sport, and sleep measurements in a single layout. Choose its measurements directly; the calendar stays in Training. Add another widget for detail, such as sleep stages.
@@ -36,17 +36,13 @@ The app is distributed without a paid Developer ID certificate or Apple notariza
 
 GarminDesk runs from a monochrome watch icon in the menu bar, without a Dock icon. The menu provides refresh, settings and Quit. Clicking a widget opens its view in GarminDesk. Closing the window keeps synchronization running; **⌘Q** quits. New readings require internet access and a watch synced with Garmin Connect. macOS controls widget refresh timing.
 
-[Release notes](docs/releases/0.6.0.md) · [Widget simplification audit](docs/widget-simplification-audit.md)
+[Release notes](docs/releases/0.7.1.md) · [Widget simplification audit](docs/widget-simplification-audit.md)
 
 ## Your data stays with you
 
 There is no developer-operated server. GarminDesk connects directly to Garmin using system WebKit; website session data and cached readings stay on your Mac. Optional automatic sign-in stores your login and password in the device-local macOS Keychain. Enable it in Account → Automatic sign-in; expired sessions can then reconnect through the normal Garmin sign-in form. Verification codes and security challenges still require your input. Disconnect removes the saved login as well as the website session. The widget extension reads a separate snapshot without passwords or cookies. Credentials and personal readings are not included in the source or release packages.
 
 GarminDesk is an unofficial project and is not affiliated with Garmin. Metric availability depends on your device and account; Garmin Connect changes may require an integration update. Do not attach passwords, cookies, tokens, or personal exports to public issues.
-
-## Development candidate
-
-Version **0.7.1, build 17** simplifies widget layouts, keeps sleep values readable and adds optional automatic sign-in using macOS Keychain. See the [candidate release notes](docs/releases/0.7.1.md). The stable download above remains 0.6.0 until the candidate is published.
 
 ## Build from source
 
