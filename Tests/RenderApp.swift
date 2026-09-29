@@ -6,6 +6,9 @@ import SwiftUI
     var onConnectPageReady: (() -> Void)?
     var onSignInClosed: (() -> Void)?
     var onDiagnostic: ((BridgeDiagnostic) -> Void)?
+    var savedLogin: String?
+    func saveLogin(username: String, password: String) throws { savedLogin = username }
+    func forgetLogin() throws { savedLogin = nil }
     func openSignIn(title: String) { fatalError("Rendering must never open sign-in") }
     func closeSignIn() {}
     func prepare(forceReload: Bool) async throws { fatalError("Rendering must never request data") }
@@ -35,6 +38,23 @@ import SwiftUI
         let store = AppStore(supportDirectory: directory, webSession: PreviewTransport(), defaults: defaults,
                              automaticScheduling: false, writesWidgetData: false, initialWidgetSharingAvailable: true)
         let navigation = MainWindowNavigation()
+        if CommandLine.arguments.contains("--connection-only") {
+            store.hasSession = true
+            navigation.section = .connection
+            for language in [AppLanguage.ru, .en, .de] {
+                store.preferences.language = language
+                for dark in [false, true] {
+                    for saved in [false, true] {
+                        if saved { _ = store.saveAutomaticLogin(username: "fixture@example.test", password: "synthetic") }
+                        else { store.forgetAutomaticLogin() }
+                        try render(store, navigation: navigation, dark: dark, size: CGSize(width: 780, height: 760),
+                            name: "connection-\(language.rawValue)-\(dark ? "dark" : "light")-\(saved ? "saved" : "empty")", output: output,
+                            scrollOffset: .greatestFiniteMagnitude)
+                    }
+                }
+            }
+            return
+        }
         navigation.summaryMeasurementsExpanded = summaryOptions
         let languages: [AppLanguage] = summaryOptions ? [.en, .ru, .de, .ja] : AppLanguage.supported
         for language in languages {

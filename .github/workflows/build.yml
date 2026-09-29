@@ -64,6 +64,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: node Tests/WebReadScriptTests.mjs
+      - run: node Tests/WebLoginScriptTests.mjs
       - run: python -m pip install -r Connector/requirements.txt
       - run: python -m unittest discover -s Connector -p 'test_*.py' -v
 

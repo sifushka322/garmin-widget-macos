@@ -23,6 +23,7 @@ Resources/Info.plist
 Resources/Widgets-Info.plist
 Resources/Widgets.entitlements
 Sources/GarminDesk/AppStore.swift
+Sources/GarminDesk/GarminCredentials.swift
 Sources/GarminDesk/GarminDeskApp.swift
 Sources/GarminDesk/GarminWebSession.swift
 Sources/GarminDesk/GarminWebTransport.swift
@@ -103,6 +104,7 @@ Tests/SyncPolicyTests.swift
 Tests/TrainingCalendarTests.swift
 Tests/TrainingModelsTests.swift
 Tests/TrainingPresentationTests.swift
+Tests/WebLoginScriptTests.mjs
 Tests/WebReadScriptTests.mjs
 Tests/WidgetConfigurationTests.swift
 Tests/WidgetMetricPolicyTests.swift
@@ -140,6 +142,7 @@ docs/releases/0.4.0.md
 docs/releases/0.5.0.md
 docs/releases/0.6.0.md
 docs/releases/0.7.0.md
+docs/releases/0.7.1.md
 docs/releases/approvals/v0.5.0.json
 docs/releases/approvals/v0.6.0.json
 docs/releases/public-notes/v0.5.0.md
@@ -153,6 +156,7 @@ docs/web-session-data-contract.md
 docs/widget-context-audit-2026-09-28.md
 docs/widget-product-decisions.md
 docs/widget-runtime-validation-plan.md
+docs/widget-simplification-and-auto-login-2026-09-29.md
 docs/widget-simplification-audit.md
 docs/widget-upgrade-validation.md
 scripts/build-app.sh

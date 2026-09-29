@@ -24,6 +24,17 @@ private final class MockWeb: GarminWebTransport {
     var onConnectPageReady: (() -> Void)?
     var onSignInClosed: (() -> Void)?
     var onDiagnostic: ((BridgeDiagnostic) -> Void)?
+    var savedLogin: String?
+    var sessionGeneration: UInt64 = 0
+    var keychainFails = false
+    func saveLogin(username: String, password: String) throws {
+        if keychainFails { throw GarminKeychain.Failure(status: -1) }
+        savedLogin = username
+    }
+    func forgetLogin() throws {
+        if keychainFails { throw GarminKeychain.Failure(status: -1) }
+        savedLogin = nil
+    }
     var prepareError: GarminWebError?
     var errors: [String: GarminWebError] = [:]
     var payloads: [String: Any] = ["profile": ["displayName": "fixture-user"], "devices": [["productDisplayName": "Fixture watch"]],
@@ -37,15 +48,18 @@ private final class MockWeb: GarminWebTransport {
     var calls: [String] = []
     var paths: [String] = []
     var onGet: ((String) -> Void)?
+    var onPrepare: (() -> Void)?
+    var renewedStages = Set<String>()
     var holdStage: String?
     var pending: CheckedContinuation<Void, Never>?
     func beginBatch() { batches += 1 }
     func openSignIn(title: String) { opens += 1 }
     func closeSignIn() {} // Programmatic orderOut does not emit the user's window-close callback.
-    func prepare(forceReload: Bool) async throws { prepares += 1; if let prepareError { throw prepareError } }
+    func prepare(forceReload: Bool) async throws { prepares += 1; onPrepare?(); if let prepareError { throw prepareError } }
     func get(path: String, stage: String) async throws -> Any {
         calls.append(stage); paths.append(path)
         onGet?(stage)
+        if renewedStages.remove(stage) != nil { throw GarminWebSessionInvalidated.renewed }
         if holdStage == stage {
             holdStage = nil
             await withCheckedContinuation { pending = $0 }
@@ -562,6 +576,9 @@ struct AppStoreSyncTests {
 
     static func main() async {
         do {
+            try testAutomaticLoginSettings()
+            try await testAutomaticLoginAccountIsolation()
+            try await testRepeatedSessionRenewalBacksOff()
             try testHistoricalCalendarAndProvenance()
             try await testHistoricalMigrationRecovery()
             try await testHistoricalEmptyAndExpiry()
@@ -603,6 +620,114 @@ struct AppStoreSyncTests {
             try await testTrainingFirstPageRateLimitStops()
             print("PASS: \(checks) host lifecycle and cache checks")
         } catch { fputs("FAIL: \(error)\n", stderr); exit(1) }
+    }
+
+    static func testAutomaticLoginSettings() throws {
+        let rig = try Rig(); defer { rig.clean() }
+        try expect(rig.store.saveAutomaticLogin(username: "fixture@example.test", password: "synthetic-only"), "Credentials can be saved without disturbing a connected session")
+        try expect(rig.store.savedLogin == "fixture@example.test" && rig.web.opens == 0, "A connected account is not needlessly signed in again")
+        let preferences = try String(contentsOf: rig.directory.appendingPathComponent("preferences.json"))
+        try expect(!preferences.contains("fixture@example.test") && !preferences.contains("synthetic-only"), "Login and password never enter preferences")
+        rig.web.keychainFails = true
+        try expect(!rig.store.saveAutomaticLogin(username: "another@example.test", password: "synthetic"), "Failed storage is not reported as saved")
+        try expect(rig.store.lastErrorKey == "error.keychain" && rig.store.savedLogin == "fixture@example.test", "The known saved login survives a failed replacement")
+        rig.web.keychainFails = false
+        rig.store.forgetAutomaticLogin()
+        try expect(rig.web.savedLogin == nil && rig.store.savedLogin == nil && rig.store.hasSession, "Forgetting a password keeps the current web session")
+        let expired = try Rig(state: .expired); defer { expired.clean() }
+        try expect(expired.store.saveAutomaticLogin(username: "fixture@example.test", password: "synthetic"), "Credentials can repair an expired connection")
+        try expect(expired.web.opens == 1, "An expired session opens the normal Garmin window after saving")
+        expired.store.disconnect()
+        try expect(expired.web.savedLogin == nil && expired.store.savedLogin == nil, "Explicit disconnect forgets credentials before async cleanup")
+    }
+
+    static func testAutomaticLoginAccountIsolation() async throws {
+        // A cookie restoration can switch the account before the first API read,
+        // even while the old account's profile still has 24-hour freshness.
+        do {
+            let rig = try Rig(); defer { rig.clean() }
+            rig.store.sync(trigger: .automatic); try await settled(rig.store)
+            rig.web.calls = []; rig.web.paths = []
+            rig.web.onPrepare = {
+                rig.web.onPrepare = nil
+                rig.web.sessionGeneration += 1
+                rig.web.payloads["profile"] = ["displayName": "restored-account"]
+                rig.web.payloads["stats"] = ["totalSteps": 222]
+            }
+            rig.clock.advance(900)
+            rig.store.sync(trigger: .automatic); try await settled(rig.store)
+            try expect(rig.web.calls.prefix(2).elementsEqual(["profile", "stats"]), "Restoration invalidates a fresh profile before account-bound requests")
+            try expect(rig.web.paths[1].contains("restored%2Daccount"), "Metric paths use the newly verified account")
+            try expect(rig.store.snapshot.metrics["steps"]?.value == 222 && rig.store.snapshot.visibleReading("sleepDuration") == nil,
+                       "A changed account cannot retain old readings from groups that were not due")
+        }
+        for throwRenewal in [true, false] {
+            for renewAfterProfile in [false, true] {
+                let rig = try Rig(); defer { rig.clean() }
+                rig.store.sync(trigger: .automatic); try await settled(rig.store)
+                rig.web.calls = []; rig.web.paths = []
+                let renewalStage = renewAfterProfile ? "sleep" : "stats"
+                if throwRenewal { rig.web.renewedStages.insert(renewalStage) }
+                var renewed = false
+                rig.web.onGet = { stage in
+                    if stage == renewalStage, !renewed {
+                        renewed = true
+                        rig.web.sessionGeneration += 1
+                        rig.web.payloads["profile"] = ["displayName": "replacement-account"]
+                        rig.web.payloads["stats"] = ["totalSteps": 999]
+                        rig.web.payloads["sleep"] = ["dailySleepDTO": ["sleepTimeSeconds": 999 * 60]]
+                        rig.web.holdStage = "profile"
+                    } else if stage == "profile", renewed {
+                        rig.web.payloads["stats"] = ["totalSteps": 222]
+                        rig.web.payloads["sleep"] = NSNull()
+                    }
+                }
+                rig.clock.advance(900)
+                if renewAfterProfile { rig.web.onConnectPageReady?() }
+                else { rig.store.sync(trigger: .automatic) }
+                try await held(rig.web)
+                try expect(rig.store.snapshot.metrics["steps"]?.value == 123 && rig.store.snapshot.metrics["sleepDuration"]?.value == 300,
+                           "A renewal response is discarded until the new profile is known, even after an earlier profile check")
+                try expect(rig.web.calls.last == "profile", "Session replacement restarts at profile verification")
+                rig.web.release(); try await settled(rig.store)
+                try expect(rig.store.snapshot.metrics["steps"]?.value == 222 && rig.store.snapshot.visibleReading("sleepDuration") == nil,
+                           "Account replacement clears current and fallback measurements before the replacement batch")
+                let renewedProfile = rig.web.calls.lastIndex(of: "profile")!
+                try expect(rig.web.paths[renewedProfile + 1].contains("replacement%2Daccount"), "Retry rebuilds account-dependent paths after renewal")
+                let cache = try AppJSON.decoder.decode(GarminWebCache.self, from: Data(contentsOf: rig.directory.appendingPathComponent("metric-groups.json")))
+                try expect(cache.accountDisplayName == "replacement-account" && cache.groups["stats"]?.metrics["steps"]?.value == 222,
+                           "Only verified replacement-account values enter the persisted cache")
+            }
+        }
+        do {
+            let rig = try Rig(); defer { rig.clean() }
+            rig.store.sync(trigger: .automatic); try await settled(rig.store)
+            rig.web.calls = []
+            rig.web.onGet = { stage in
+                if stage == "stats" {
+                    rig.web.sessionGeneration += 1
+                    rig.web.payloads["stats"] = ["totalSteps": 999]
+                    rig.web.payloads["profile"] = NSNull()
+                }
+            }
+            rig.clock.advance(900)
+            rig.store.sync(trigger: .automatic); try await settled(rig.store)
+            try expect(rig.web.calls == ["stats", "profile"] && rig.store.snapshot.metrics["steps"]?.value == 123,
+                       "Failed replacement-profile validation cannot publish the unverified renewal response")
+        }
+    }
+
+    static func testRepeatedSessionRenewalBacksOff() async throws {
+        let rig = try Rig(); defer { rig.clean() }
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        rig.web.calls = []
+        rig.web.onGet = { stage in if stage == "stats" { rig.web.sessionGeneration += 1 } }
+        rig.clock.advance(900)
+        rig.store.sync(trigger: .automatic); try await settled(rig.store)
+        try expect(rig.web.calls == ["stats", "profile", "stats"], "Repeated renewal permits only one immediate profile-verifying restart")
+        try expect(try rig.checkpoint().gate?.reason == .transient && rig.store.lastErrorKey == "error.network",
+                   "A repeatedly replaced session enters the ordinary transient backoff")
+        try expect(rig.store.nextSyncAt == rig.clock.moment.wallTime.addingTimeInterval(60), "The next verification honors backoff instead of looping")
     }
 
 

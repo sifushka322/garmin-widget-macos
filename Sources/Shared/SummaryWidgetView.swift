@@ -27,7 +27,7 @@ struct SummaryWidgetView: View {
     private func text(_ key: String) -> String { Localizer.text(key, language: language) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: family == .systemSmall ? 6 : 10) {
+        VStack(alignment: .leading, spacing: family == .systemSmall ? 6 : 16) {
             if family == .systemSmall {
                 primary(size: 38)
                 if let id = secondary.first { compactRow(id) }
@@ -37,17 +37,17 @@ struct SummaryWidgetView: View {
                     HStack(alignment: .top, spacing: 16) {
                         primary(size: 38).frame(width: width, alignment: .leading)
                         VStack(alignment: .leading, spacing: 4) {
-                            ForEach(secondary, id: \.self) { id in metric(id, size: 18) }
+                            ForEach(secondary, id: \.self) { id in metric(id, size: 20) }
                         }.frame(width: width, alignment: .leading)
                     }
                 }
             } else {
-                primary(size: 48)
+                primary(size: 44)
                 if !secondary.isEmpty {
                     Rectangle().fill(theme.ink.opacity(0.16)).frame(height: 1)
                     LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)],
-                              alignment: .leading, spacing: 10) {
-                        ForEach(secondary, id: \.self) { id in metric(id, size: 23) }
+                              alignment: .leading, spacing: 16) {
+                        ForEach(secondary, id: \.self) { id in metric(id, size: 24) }
                     }
                 }
             }
@@ -68,7 +68,7 @@ struct SummaryWidgetView: View {
             Label(text(MetricDefinition.find(id).widgetTitleKey), systemImage: MetricDefinition.find(id).symbol)
                 .font(.system(size: 11, weight: .medium)).foregroundStyle(theme.secondaryInk)
                 .lineLimit(1).minimumScaleFactor(0.8)
-            value(id, size: size, prominent: true)
+            value(id, size: size, prominent: true).fixedSize(horizontal: false, vertical: true)
         }
         .help(formatter.help(id))
         .accessibilityElement(children: .ignore)
@@ -90,12 +90,13 @@ struct SummaryWidgetView: View {
 
     private func value(_ id: String, size: CGFloat, prominent: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: prominent ? 2 : 1) {
-            MetricValueLabel(value: formatter.display(id), size: size).foregroundStyle(theme.ink)
-            if let indicator = formatter.indicator(id) {
-                MetricIndicatorView(indicator: indicator, theme: theme, compact: !prominent,
-                                    showsReference: prominent && family != .systemSmall)
+            MetricValueLabel(value: formatter.widgetDisplay(id), size: size).foregroundStyle(theme.ink)
+            if prominent, let indicator = formatter.indicator(id) {
+                MetricIndicatorView(indicator: indicator, theme: theme, showsReference: false)
+            } else {
+                WidgetMetricCaption(id: id, formatter: formatter, theme: theme, primaryID: selection.primary)
             }
-            if let period = presentation.period(id) {
+            if let period = presentation.period(id), prominent || period != presentation.period(selection.primary) {
                 Text(period).font(.system(size: 9)).foregroundStyle(theme.secondaryInk)
                     .lineLimit(1).minimumScaleFactor(1)
             }
@@ -108,12 +109,10 @@ struct SummaryWidgetView: View {
                 Text(text(MetricDefinition.find(id).widgetTitleKey))
                     .font(.system(size: 9, weight: .medium)).foregroundStyle(theme.secondaryInk)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                MetricValueLabel(value: formatter.display(id), size: 18).foregroundStyle(theme.ink)
+                MetricValueLabel(value: formatter.widgetDisplay(id), size: 18).foregroundStyle(theme.ink)
             }
-            if let indicator = formatter.indicator(id) {
-                MetricIndicatorView(indicator: indicator, theme: theme, compact: true, showsReference: false)
-            }
-            if let period = presentation.period(id) {
+            WidgetMetricCaption(id: id, formatter: formatter, theme: theme, primaryID: selection.primary)
+            if let period = presentation.period(id), period != presentation.period(selection.primary) {
                 Text(period).font(.system(size: 9)).foregroundStyle(theme.secondaryInk)
                     .lineLimit(1).minimumScaleFactor(1)
             }

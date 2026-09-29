@@ -10,6 +10,7 @@ enum GarminWebError: Error {
     case network
     case invalidResponse
     case cancelled
+    case keychain
 
     var code: String {
         switch self {
@@ -20,6 +21,7 @@ enum GarminWebError: Error {
         case .network: return "network"
         case .invalidResponse: return "protocol"
         case .cancelled: return "cancelled"
+        case .keychain: return "keychain"
         }
     }
 }
@@ -80,11 +82,19 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
     private var processGeneration = 0
     private var activeFetchID: String?
     private var attemptedRenewal = false
+    private(set) var sessionGeneration: UInt64 = 0
+    private let credentialStore: any GarminCredentialStore
+    private var autoLogin = GarminAutoLoginPolicy()
+    private var credentialSubmissionAt: TimeInterval?
+    private var frameSignInRequired = false
+    private var credentialsEnabled = true
+    private var reloadSignInOnOpen = false
     private enum SessionFailure: Error { case unauthorized, documentNotReady }
     private let connectHost = "connect.garmin.com"
     private let startURL = URL(string: "https://connect.garmin.com/app/home")!
 
-    override init() {
+    init(credentialStore: any GarminCredentialStore = GarminKeychain()) {
+        self.credentialStore = credentialStore
         let configuration = WKWebViewConfiguration()
         // WebKit's persistent default store belongs to this application. It is
         // separate from Safari/Chrome and is cleared only on explicit disconnect.
@@ -95,6 +105,28 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = false
+        let controller = configuration.userContentController
+        controller.add(GarminLoginFrameHandler(owner: self), contentWorld: .defaultClient, name: "garminLoginForm")
+        controller.addUserScript(WKUserScript(source: Self.loginFormObserverScript, injectionTime: .atDocumentEnd,
+                                             forMainFrameOnly: false, in: .defaultClient))
+    }
+
+    var savedLogin: String? { credentialsEnabled ? (try? credentialStore.load())?.username : nil }
+
+    func saveLogin(username: String, password: String) throws {
+        let username = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !username.isEmpty, username.count <= 320, !password.isEmpty, password.count <= 4096 else {
+            throw GarminWebError.invalidResponse
+        }
+        try credentialStore.save(.init(username: username, password: password))
+        credentialsEnabled = true
+        autoLogin.reset()
+        reloadSignInOnOpen = true
+    }
+
+    func forgetLogin() throws {
+        credentialsEnabled = false
+        try credentialStore.delete()
     }
 
     var isOnConnectPage: Bool {
@@ -119,8 +151,13 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         isShowingSignIn = true
-        if !hasLiveDocument && !webView.isLoading { currentNavigation = webView.load(URLRequest(url: startURL)) }
+        if !webView.isLoading && (!hasLiveDocument || reloadSignInOnOpen) {
+            reloadSignInOnOpen = false
+            autoLogin.reset(); credentialSubmissionAt = nil; frameSignInRequired = false
+            currentNavigation = webView.load(URLRequest(url: startURL))
+        }
         else if isOnConnectPage { onConnectPageReady?() }
+        else if let currentNavigation, hasLiveDocument { checkDocumentReadiness(for: currentNavigation) }
     }
 
     func closeSignIn() {
@@ -135,14 +172,17 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
     }
 
     /// Loading the normal site lets Garmin resume or renew its own session.
-    /// It never submits a password and never loops when sign-in is required.
+    /// If cookies expire, a saved Keychain login can submit the normal SSO form
+    /// once. MFA, challenges and rejected credentials still require the user.
     func prepare(forceReload: Bool = false) async throws {
         try Task.checkCancellation()
         guard !isDisconnecting else { throw GarminWebError.cancelled }
         if isOnConnectPage && !forceReload { return }
+        sessionGeneration &+= 1
         cancelNavigation()
         retireCurrentNavigation()
         let requestID = UUID()
+        reloadSignInOnOpen = false
         try await withTaskCancellationHandler {
             try Task.checkCancellation()
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -170,7 +210,10 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
         guard isOnConnectPage else { throw GarminWebError.signInRequired }
     }
 
-    func beginBatch() { requestCount = 0; attemptedRenewal = false }
+    func beginBatch() {
+        requestCount = 0; attemptedRenewal = false
+        autoLogin.reset(); credentialSubmissionAt = nil; frameSignInRequired = false
+    }
 
     /// Relative read-only API routes are checked both in Swift and in the page.
     /// WebKit attaches its own HttpOnly cookies; native code never reads them.
@@ -180,13 +223,17 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
             guard !attemptedRenewal else { throw GarminWebError.signInRequired }
             attemptedRenewal = true
             try await prepare(forceReload: true)
+            // Saved credentials can belong to a different account. A profile
+            // read is safe to repeat; all other paths need host verification
+            // before being rebuilt with the restored account's display name.
+            guard path == GarminWebAPI.profilePath else { throw GarminWebSessionInvalidated.renewed }
             do { return try await performGet(path: path, stage: stage) }
             catch is SessionFailure { throw GarminWebError.signInRequired }
         }
     }
 
     private func performGet(path: String, stage: String) async throws -> Any {
-        guard isOnConnectPage else { throw GarminWebError.signInRequired }
+        guard isOnConnectPage else { throw SessionFailure.documentNotReady }
         guard Self.isAllowedAPIPath(path) else { throw GarminWebError.invalidResponse }
         try Task.checkCancellation()
         let generation = requestGeneration
@@ -229,7 +276,7 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
         if status == 429 || apiStatus == 429 { throw GarminWebError.rateLimited(retryAfter) }
         if challenge { throw GarminWebError.challenge }
         if status == 401 || apiStatus == 401 { throw SessionFailure.unauthorized }
-        if response["signInRedirect"] as? Bool == true { throw GarminWebError.signInRequired }
+        if response["signInRedirect"] as? Bool == true { throw SessionFailure.unauthorized }
         if status == 403 || apiStatus == 403 { throw GarminWebError.forbidden }
         return try Self.successfulPayload(from: response, status: status)
     }
@@ -266,6 +313,10 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
         defer { isDisconnecting = false }
         cancel()
         closeSignIn()
+        credentialsEnabled = false
+        // AppStore also reports deletion errors before disconnecting. Retry here
+        // so no transport caller can forget to remove the saved login.
+        try? credentialStore.delete()
         hasLiveDocument = false
         currentNavigation = nil
         webView.stopLoading()
@@ -332,9 +383,21 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
                       self.currentNavigation === navigation, self.navigationRequestID == requestID else { return }
                 let flags = result as? [String: Bool] ?? [:]
                 let now = ProcessInfo.processInfo.systemUptime
-                if flags["visibleSignIn"] == true { visibleSince = visibleSince ?? now } else { visibleSince = nil }
+                let visibleSignIn = flags["visibleSignIn"] == true || self.frameSignInRequired
+                if visibleSignIn { visibleSince = visibleSince ?? now } else { visibleSince = nil }
+                // Give a submitted form time to redirect or reveal an MFA step.
+                let connectReady = flags["connectReady"] == true && GarminNavigationDecision.isConnect(self.webView.url)
+                if let submitted = self.credentialSubmissionAt, now - submitted < 10, !connectReady {
+                    visibleSince = nil
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    continue
+                }
+                if self.frameSignInRequired, !connectReady, let visibleSince, now - visibleSince >= 3 {
+                    self.finishNavigation(.failure(GarminWebError.signInRequired), requestID: requestID, navigation: navigation)
+                    return
+                }
                 switch GarminNavigationDecision.evaluate(url: self.webView.url, connectReady: flags["connectReady"] == true,
-                                                         visibleSignIn: flags["visibleSignIn"] == true,
+                                                         visibleSignIn: visibleSignIn,
                                                          signInVisibleFor: visibleSince.map { now - $0 } ?? 0) {
                 case .ready:
                     self.hasReadyConnectDocument = true
@@ -365,6 +428,7 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
         currentNavigation = navigation
         hasLiveDocument = false
         hasReadyConnectDocument = false
+        frameSignInRequired = false
     }
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard let navigation, navigation === currentNavigation, !isDisconnecting else { return }
@@ -416,6 +480,20 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
         if navigationAction.targetFrame?.isMainFrame == false { decisionHandler(.allow); return }
         decisionHandler(GarminNavigationDecision.isAllowedSite(url) ? .allow : .cancel)
     }
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if let response = navigationResponse.response as? HTTPURLResponse,
+           GarminAutoLoginPolicy.allows(response.url), [403, 429].contains(response.statusCode) {
+            // Do not submit a password from a rate-limit or access-denied page.
+            let failure: GarminWebError = response.statusCode == 429
+                ? .rateLimited(Self.retryAfter(response.value(forHTTPHeaderField: "Retry-After"))) : .forbidden
+            _ = autoLogin.begin()
+            finishNavigation(.failure(failure), stopLoading: true)
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
 
     static func isAllowedAPIPath(_ path: String) -> Bool {
         // Check traversal before URL resolves dot segments and hides the original input.
@@ -438,6 +516,97 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
         guard let date = formatter.date(from: header) else { return nil }
         return min(max(0, date.timeIntervalSince(now)), 604800)
     }
+
+    fileprivate func loginFormAppeared(_ message: WKScriptMessage) {
+        guard message.webView === webView, !isDisconnecting,
+              navigationWaiter != nil || isShowingSignIn,
+              GarminNavigationDecision.isAllowedSite(webView.url),
+              GarminAutoLoginPolicy.allows(message.frameInfo.request.url),
+              message.frameInfo.securityOrigin.protocol == "https",
+              message.frameInfo.securityOrigin.host == "sso.garmin.com",
+              [0, 443].contains(message.frameInfo.securityOrigin.port),
+              let state = message.body as? String, ["form", "verification"].contains(state) else { return }
+        frameSignInRequired = true
+        guard state == "form", credentialsEnabled, !autoLogin.attempted else { return }
+        let credentials: GarminCredentials
+        do {
+            guard let saved = try credentialStore.load() else { return }
+            credentials = saved
+        } catch {
+            // A locked Keychain is temporary, not an expired Garmin account.
+            // Keep the normal sync backoff so unlocking the Mac can recover it.
+            finishNavigation(.failure(GarminWebError.keychain))
+            return
+        }
+        guard autoLogin.begin() else { return }
+        sessionGeneration &+= 1
+        let generation = requestGeneration
+        let navigation = currentNavigation
+        credentialSubmissionAt = ProcessInfo.processInfo.systemUptime
+        Task { [weak self] in
+            guard let self, generation == self.requestGeneration, navigation === self.currentNavigation,
+                  !self.isDisconnecting, self.credentialsEnabled else { return }
+            // Values are arguments, never interpolated into JavaScript or logged.
+            _ = try? await self.webView.callAsyncJavaScript(Self.loginSubmitScript,
+                arguments: ["username": credentials.username, "password": credentials.password],
+                in: message.frameInfo, contentWorld: .defaultClient)
+        }
+    }
+
+    private static let loginFormScript = #"""
+    globalThis.garminDeskLoginForm = () => {
+        if (location.origin !== 'https://sso.garmin.com') return {state: 'untrusted'};
+        const visible = element => {
+            const style = getComputedStyle(element);
+            return !element.disabled && style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
+        };
+        const verification = Array.from(document.querySelectorAll('input[autocomplete="one-time-code"], input[name="verificationCode"], input[name="mfa-code"], .g-recaptcha, .h-captcha, .cf-turnstile, iframe[src*="recaptcha"], iframe[src*="hcaptcha"]')).some(visible);
+        if (verification) return {state: 'verification'};
+        const passwords = Array.from(document.querySelectorAll('input[type="password"]')).filter(visible);
+        if (passwords.length !== 1 || passwords[0].autocomplete === 'new-password') return {state: 'waiting'};
+        const password = passwords[0], form = password.form;
+        if (!form || new URL(form.action || location.href, location.href).origin !== 'https://sso.garmin.com') return {state: 'untrusted'};
+        const username = Array.from(form.querySelectorAll('input[autocomplete="username"], input[type="email"], input[name="username"], input[name="email"], input#username')).find(visible);
+        const submit = Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"], button:not([type])')).find(visible);
+        if (submit?.hasAttribute('formaction') && new URL(submit.formAction, location.href).origin !== 'https://sso.garmin.com') return {state: 'untrusted'};
+        return username && submit ? {state: 'form', form, username, password, submit} : {state: 'waiting'};
+    };
+    """#
+
+    private static let loginFormObserverScript = loginFormScript + #"""
+    (() => {
+        if (location.origin !== 'https://sso.garmin.com') return;
+        let previous;
+        const inspect = () => {
+            const {state} = globalThis.garminDeskLoginForm();
+            if (state !== previous && (state === 'form' || state === 'verification')) {
+                window.webkit.messageHandlers.garminLoginForm.postMessage(state);
+            }
+            previous = state;
+        };
+        inspect();
+        const observer = new MutationObserver(inspect);
+        observer.observe(document.documentElement, {childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'style', 'class', 'type']});
+        setTimeout(() => observer.disconnect(), 45000);
+        window.addEventListener('pagehide', () => observer.disconnect(), {once: true});
+    })();
+    """#
+
+    private static let loginSubmitScript = #"""
+    if (location.origin !== 'https://sso.garmin.com' || globalThis.garminDeskLoginSubmitted) return false;
+    const fields = globalThis.garminDeskLoginForm?.();
+    if (fields?.state !== 'form') return false;
+    globalThis.garminDeskLoginSubmitted = true;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    for (const [element, value] of [[fields.username, username], [fields.password, password]]) {
+        setter.call(element, value);
+        element.dispatchEvent(new Event('input', {bubbles: true}));
+        element.dispatchEvent(new Event('change', {bubbles: true}));
+    }
+    // Honor the site's validation and submit handler, including its normal MFA.
+    fields.submit.click();
+    return true;
+    """#
 
     private static let navigationReadinessScript = #"""
     const visible = element => {
@@ -510,4 +679,14 @@ final class GarminWebSession: NSObject, ObservableObject, WKNavigationDelegate, 
         }
     }
     """#
+}
+
+/// WKUserContentController retains handlers; the proxy must not retain its owner.
+@MainActor
+private final class GarminLoginFrameHandler: NSObject, WKScriptMessageHandler {
+    weak var owner: GarminWebSession?
+    init(owner: GarminWebSession) { self.owner = owner }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        owner?.loginFormAppeared(message)
+    }
 }

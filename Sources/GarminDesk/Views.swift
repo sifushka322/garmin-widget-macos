@@ -962,6 +962,9 @@ private struct SummaryMeasurements: View {
 private struct ConnectionPane: View {
     @ObservedObject var store: AppStore
     @State private var confirmDisconnect = false
+    @State private var login = ""
+    @State private var password = ""
+    @State private var editingLogin = false
 
     var body: some View {
         ScrollView {
@@ -1007,6 +1010,27 @@ private struct ConnectionPane: View {
                         Button(store.text("connection.disconnect"), role: .destructive) { confirmDisconnect = true }
                     }
                 }.modifier(Surface())
+                VStack(alignment: .leading, spacing: 12) {
+                    Label(store.text("connection.autoLogin"), systemImage: "key.fill").font(.headline)
+                    Text(store.text("connection.autoLoginHint")).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let saved = store.savedLogin, !editingLogin {
+                        Label(saved, systemImage: "checkmark.shield").privacySensitive()
+                        HStack {
+                            Button(store.text("connection.changeLogin")) { login = saved; editingLogin = true }
+                            Button(store.text("connection.forgetLogin")) { store.forgetAutomaticLogin() }
+                        }.disabled(store.isSyncing)
+                    } else {
+                        TextField(store.text("connection.email"), text: $login).textContentType(.username)
+                        SecureField(store.text("connection.password"), text: $password).textContentType(.password)
+                        Button(store.text("connection.saveLogin")) {
+                            if store.saveAutomaticLogin(username: login, password: password) {
+                                password = ""; editingLogin = false
+                            }
+                        }
+                        .disabled(store.isSyncing || login.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                    }
+                }.textFieldStyle(.roundedBorder).modifier(Surface())
                 VStack(alignment: .leading, spacing: 10) {
                     Label(store.text("connection.localTitle"), systemImage: "lock.shield").font(.headline)
                     Text(store.text("connection.webPrivacy")).font(.callout).foregroundStyle(.secondary)
@@ -1019,6 +1043,7 @@ private struct ConnectionPane: View {
             Button(store.text("connection.disconnect"), role: .destructive) { store.disconnect() }
             Button(store.text("action.cancel"), role: .cancel) {}
         } message: { Text(store.text("connection.disconnectMessage")) }
+        .onDisappear { password = "" }
     }
 }
 

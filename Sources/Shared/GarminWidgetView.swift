@@ -78,7 +78,7 @@ struct GarminWidgetView: View {
     }
 
     private func content(_ profile: WidgetProfile) -> some View {
-        VStack(alignment: .leading, spacing: family == .systemSmall ? 8 : 12) {
+        VStack(alignment: .leading, spacing: family == .systemSmall ? 8 : 16) {
             if profile.contentMode.includesTraining {
                 trainingContent(profile)
             } else {
@@ -113,10 +113,10 @@ struct GarminWidgetView: View {
                     .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
                 }
             } else {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 18) {
                     primary(metricSelection.primary, compact: false)
                     Rectangle().fill(theme.ink.opacity(0.16)).frame(height: 1)
-                    LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)], alignment: .leading, spacing: 10) {
+                    LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading), GridItem(.flexible(), alignment: .topLeading)], alignment: .leading, spacing: 16) {
                         ForEach(Array(secondary(profile).prefix(profile.density == .compact ? 8 : 6)), id: \.self) { metric in
                             metricRow(metric)
                         }
@@ -145,10 +145,10 @@ struct GarminWidgetView: View {
                 Text(text(MetricDefinition.find(id).widgetTitleKey)).foregroundStyle(theme.secondaryInk)
             }
             .font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
-            MetricValueLabel(value: formatter.display(id), size: compact ? 42 : (family == .systemLarge ? 48 : 38))
-                .foregroundStyle(theme.ink).layoutPriority(1)
+            MetricValueLabel(value: formatter.widgetDisplay(id), size: family == .systemLarge ? 44 : 38)
+                .foregroundStyle(theme.ink).fixedSize(horizontal: false, vertical: true).layoutPriority(1)
             if let indicator = formatter.indicator(id) {
-                MetricIndicatorView(indicator: indicator, theme: theme)
+                MetricIndicatorView(indicator: indicator, theme: theme, showsReference: false)
             }
             if let period = presentation.period(id) {
                 Text(period).font(.system(size: 10, weight: .medium)).foregroundStyle(theme.secondaryInk)
@@ -163,12 +163,10 @@ struct GarminWidgetView: View {
         VStack(alignment: .leading, spacing: 1) {
             Label(text(MetricDefinition.find(id).widgetTitleKey), systemImage: MetricDefinition.find(id).symbol)
                 .font(.system(size: family == .systemMedium ? 9 : 10)).foregroundStyle(theme.secondaryInk).lineLimit(1).minimumScaleFactor(1)
-            MetricValueLabel(value: formatter.display(id), size: family == .systemLarge ? 23 : 18)
+            MetricValueLabel(value: formatter.widgetDisplay(id), size: family == .systemLarge ? 24 : 20)
                 .foregroundStyle(theme.ink)
-            if let indicator = formatter.indicator(id) {
-                MetricIndicatorView(indicator: indicator, theme: theme, compact: true, showsReference: false)
-            }
-            if let period = presentation.period(id) {
+            WidgetMetricCaption(id: id, formatter: formatter, theme: theme, primaryID: metricSelection.primary)
+            if let period = presentation.period(id), period != presentation.period(metricSelection.primary) {
                 Text(period).font(.system(size: 9)).foregroundStyle(theme.secondaryInk)
                     .lineLimit(1).minimumScaleFactor(1)
             }
@@ -185,12 +183,10 @@ struct GarminWidgetView: View {
                 Text(text(MetricDefinition.find(id).widgetTitleKey))
                     .font(.system(size: 10)).foregroundStyle(theme.secondaryInk)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                MetricValueLabel(value: formatter.display(id), size: 18).foregroundStyle(theme.ink)
+                MetricValueLabel(value: formatter.widgetDisplay(id), size: 20).foregroundStyle(theme.ink)
             }
-            if let indicator = formatter.indicator(id) {
-                MetricIndicatorView(indicator: indicator, theme: theme, compact: true, showsReference: false)
-            }
-            if let period = presentation.period(id) {
+            WidgetMetricCaption(id: id, formatter: formatter, theme: theme, primaryID: metricSelection.primary)
+            if let period = presentation.period(id), period != presentation.period(metricSelection.primary) {
                 Text(period).font(.system(size: 9)).foregroundStyle(theme.secondaryInk)
                     .lineLimit(1).minimumScaleFactor(1)
             }

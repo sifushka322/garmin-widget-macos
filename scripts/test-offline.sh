@@ -29,6 +29,7 @@ frameworks=(-framework SwiftUI -framework AppKit -framework WidgetKit -framework
 # Compile the synchronization host first so host-type errors fail before the full model matrix.
 host=(Sources/GarminDesk/AppStore.swift Sources/GarminDesk/PythonBridge.swift
     Sources/GarminDesk/GarminWebSession.swift Sources/GarminDesk/GarminWebTransport.swift
+    Sources/GarminDesk/GarminCredentials.swift
     Sources/GarminDesk/PrivateSnapshotStore.swift)
 for suite in GarminWebBoundaryTests AppStoreSyncTests; do
     printf 'Compiling and running %s\n' "$suite"

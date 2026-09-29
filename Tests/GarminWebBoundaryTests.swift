@@ -9,6 +9,15 @@ struct GarminWebBoundaryTests {
         if !value { fatalError(message) }
     }
     static func main() {
+        var login = GarminAutoLoginPolicy()
+        check(login.begin(), "A saved login may submit once during session restoration")
+        check(!login.begin() && !login.begin(), "Repeated callbacks cannot retry a rejected password")
+        login.reset()
+        check(login.begin(), "A new permitted connection attempt resets the submission guard")
+        check(GarminAutoLoginPolicy.allows(URL(string: "https://sso.garmin.com/portal/sso/embed")), "The exact Garmin SSO origin can receive credentials")
+        for address in ["http://sso.garmin.com/login", "https://sso.garmin.com.evil.example/login", "https://connect.garmin.com/login", "https://sso.garmin.com:8443/login", "https://name@sso.garmin.com/login", "about:blank"] {
+            check(!GarminAutoLoginPolicy.allows(URL(string: address)), "Other sites and ambiguous origins never receive saved credentials")
+        }
         for value in ["2026-02-30", "2025-02-29", "2026-13-01", "2026-09-00", "26-09-15", "2026-09-15?x=1"] {
             check(!GarminWebAPI.validDay(value), "Invalid calendar dates must never become network paths")
         }

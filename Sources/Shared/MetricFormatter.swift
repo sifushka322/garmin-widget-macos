@@ -91,6 +91,15 @@ struct MetricFormatter {
         }
     }
 
+    /// Hours and zero-padded minutes keep sleep values readable in a widget's
+    /// narrow columns. Help and VoiceOver retain the fully localized units.
+    func widgetDisplay(_ id: String) -> String {
+        guard ["sleepDuration", "deepSleep", "remSleep", "lightSleep", "awakeSleep"].contains(id),
+              let value = value(id), value < Double(Int.max) else { return display(id) }
+        let minutes = Int(value.rounded())
+        return String(format: "%d:%02d", minutes / 60, minutes % 60)
+    }
+
     /// Explain the period of a completed record, without treating a finished
     /// night's sleep or a past weigh-in as a failing live sensor.
     func context(_ id: String) -> String? {

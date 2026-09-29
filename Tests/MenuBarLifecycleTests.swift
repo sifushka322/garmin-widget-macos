@@ -24,6 +24,9 @@ private final class LifecycleDefaults: UserDefaults {
     var onConnectPageReady: (() -> Void)?
     var onSignInClosed: (() -> Void)?
     var onDiagnostic: ((BridgeDiagnostic) -> Void)?
+    var savedLogin: String?
+    func saveLogin(username: String, password: String) throws { savedLogin = username }
+    func forgetLogin() throws { savedLogin = nil }
     var requests = 0
     var signInOpens = 0
     private var canProceed = false

@@ -25,6 +25,7 @@ final class AppStore: ObservableObject {
     @Published var connectionDiagnostic: BridgeDiagnostic?
     @Published var launchAtLogin = false
     @Published private(set) var needsWebSignIn = false
+    @Published private(set) var savedLogin: String?
     @Published private(set) var nextSyncAt: Date?
     let supportDirectory: URL
     private let webSession: any GarminWebTransport
@@ -36,6 +37,7 @@ final class AppStore: ObservableObject {
     private let writesWidgetData: Bool
     private let widgetPublisher: ((WidgetData) throws -> Void)?
     private var webDisplayName: String?
+    private var verifiedWebSessionGeneration: UInt64?
     private var webCache = GarminWebCache()
     private var webPolicy = SyncPolicy()
     private var webConnected = false
@@ -56,6 +58,7 @@ final class AppStore: ObservableObject {
          widgetPublisher: ((WidgetData) throws -> Void)? = nil) {
         self.supportDirectory = supportDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("GarminDesk", isDirectory: true)
         self.webSession = webSession ?? GarminWebSession()
+        self.savedLogin = self.webSession.savedLogin
         self.defaults = defaults
         self.clock = clock
         self.sourceTimeZone = sourceTimeZone
@@ -171,6 +174,23 @@ final class AppStore: ObservableObject {
         lastErrorKey = nil
         webSession.openSignIn(title: text("connection.webTitle"))
     }
+    @discardableResult
+    func saveAutomaticLogin(username: String, password: String) -> Bool {
+        guard !isSyncing, webDisconnectTask == nil else { return false }
+        do {
+            try webSession.saveLogin(username: username, password: password)
+            savedLogin = webSession.savedLogin
+            lastErrorKey = nil
+            if !hasSession || needsWebSignIn { connectGarmin() }
+            return true
+        } catch { lastErrorKey = "error.keychain"; return false }
+    }
+
+    func forgetAutomaticLogin() {
+        guard !isSyncing, webDisconnectTask == nil else { return }
+        do { try webSession.forgetLogin(); savedLogin = nil; lastErrorKey = nil }
+        catch { lastErrorKey = "error.keychain" }
+    }
     func sync(trigger: SyncPolicy.Trigger = .manual) {
         guard webConnected, !needsWebSignIn else { return }
         runWebSync(trigger: trigger)
@@ -187,7 +207,11 @@ final class AppStore: ObservableObject {
         cancelLogin(resumeAutomatic: false)
         // Clear memory before fallible I/O so the timer cannot resurrect a session.
         hasSession = false; lastErrorKey = nil
+        do { try webSession.forgetLogin() }
+        catch { lastErrorKey = "error.keychain" }
+        savedLogin = nil
         webConnected = false; webDisplayName = nil; needsWebSignIn = false
+        verifiedWebSessionGeneration = nil
         defaults.set(false, forKey: "GarminDeskWebConnected")
         webPolicy.disconnect(); webCache = .init(); persistWebState()
         webDisconnectTask = Task { [weak self] in
@@ -229,7 +253,8 @@ final class AppStore: ObservableObject {
         return policy.begin(groups: groups, sourceDay: day, trigger: trigger, at: moment)
     }
 
-    private func runWebSync(trigger: SyncPolicy.Trigger, completingSignIn: Bool = false) {
+    private func runWebSync(trigger: SyncPolicy.Trigger, completingSignIn: Bool = false,
+                            remainingSessionRestarts: Int = 1) {
         guard !isSyncing, webDisconnectTask == nil else { return }
         let verifying = completingSignIn || pendingSignInVerification
         guard verifying || (webConnected && !needsWebSignIn) else { return }
@@ -277,12 +302,13 @@ final class AppStore: ObservableObject {
             var warnings: [String] = []
             var batchFailure: SyncPolicy.Failure?
             var cancelled = false
+            var restartSessionVerification = false
             var attemptedGroup: SyncPolicy.Group?
             let day = active.sourceDay
             self.webSession.beginBatch()
             defer {
                 if self.webRunID == runID {
-                    if cancelled { self.webPolicy.cancel(requestID: active.id) }
+                    if cancelled || restartSessionVerification { self.webPolicy.cancel(requestID: active.id) }
                     else {
                         self.webPolicy.finish(requestID: active.id, successfulGroups: successful,
                                               failure: batchFailure, transientFailedGroups: transientFailed,
@@ -296,7 +322,11 @@ final class AppStore: ObservableObject {
                     self.isSyncing = false; self.webSyncTask = nil
                     // Recompute from current preferences: a metric selected during
                     // this batch gets a single follow-up, without re-fetching fresh groups.
-                    if cancelled { self.scheduleAfterCancellation() }
+                    if restartSessionVerification {
+                        self.runWebSync(trigger: .automatic, completingSignIn: true,
+                                        remainingSessionRestarts: remainingSessionRestarts - 1)
+                    }
+                    else if cancelled { self.scheduleAfterCancellation() }
                     else { self.scheduleRefresh() }
                 }
             }
@@ -304,7 +334,8 @@ final class AppStore: ObservableObject {
                 try await self.webSession.prepare(forceReload: false)
                 try Task.checkCancellation()
                 guard self.webRunID == runID else { return }
-                if self.webDisplayName == nil || verifying || active.groups.contains(.profile) {
+                if self.webDisplayName == nil || verifying || active.groups.contains(.profile) ||
+                    self.verifiedWebSessionGeneration != self.webSession.sessionGeneration {
                     let payload = try await self.webSession.get(path: GarminWebAPI.profilePath, stage: "profile")
                     try Task.checkCancellation()
                     guard self.webRunID == runID else { return }
@@ -318,6 +349,7 @@ final class AppStore: ObservableObject {
                     }
                     self.webCache.accountDisplayName = name
                     self.webDisplayName = name
+                    self.verifiedWebSessionGeneration = self.webSession.sessionGeneration
                     if verifying || accountChanged || self.webPolicy.checkpoint.sessionState != .available {
                         self.webPolicy.sessionBecameAvailable(clearCadence: verifying || accountChanged)
                     }
@@ -366,7 +398,7 @@ final class AppStore: ObservableObject {
                             if self.webCache.hasOwnedReading(for: recoveredGroup, snapshot: self.snapshot) { continue }
                             guard let path = GarminWebAPI.path(group: recoveredGroup, sourceDay: previousDay, displayName: name) else { continue }
                             do {
-                                let payload = try await self.webSession.get(path: path, stage: "historical." + recoveredGroup.rawValue)
+                                let payload = try await self.getVerifiedWebPayload(path: path, stage: "historical." + recoveredGroup.rawValue, runID: runID)
                                 try Task.checkCancellation()
                                 guard self.webRunID == runID else { return }
                                 guard GarminPayloadNormalizer.isRecognizedPayload(group: recoveredGroup.rawValue, payload: payload),
@@ -414,7 +446,7 @@ final class AppStore: ObservableObject {
                                 break
                             }
                             do {
-                                let payload = try await self.webSession.get(path: request.path, stage: group.rawValue + "." + request.month)
+                                let payload = try await self.getVerifiedWebPayload(path: request.path, stage: group.rawValue + "." + request.month, runID: runID)
                                 try Task.checkCancellation()
                                 guard self.webRunID == runID else { return }
                                 guard TrainingNormalizer.isRecognizedPlannedPayload(payload: payload) else { throw GarminWebError.invalidResponse }
@@ -450,7 +482,7 @@ final class AppStore: ObservableObject {
                     }
                     guard let path = GarminWebAPI.path(group: group, sourceDay: day, displayName: name) else { throw GarminWebError.invalidResponse }
                     do {
-                        let payload = try await self.webSession.get(path: path, stage: group.rawValue)
+                        let payload = try await self.getVerifiedWebPayload(path: path, stage: group.rawValue, runID: runID)
                         try Task.checkCancellation()
                         guard self.webRunID == runID else { return }
                         if group == .devices {
@@ -517,6 +549,18 @@ final class AppStore: ObservableObject {
                     }
                 }
                 if !warnings.isEmpty { self.lastErrorKey = "error.partial" }
+            } catch is GarminWebSessionInvalidated {
+                guard self.webRunID == runID else { return }
+                self.pendingSignInVerification = true
+                if remainingSessionRestarts > 0 {
+                    restartSessionVerification = true
+                } else {
+                    // A server repeatedly replacing the session must not cause
+                    // an immediate sign-in/restart loop.
+                    batchFailure = .transient
+                    self.lastErrorKey = "error.network"
+                    warnings.append("session_changed.connection")
+                }
             } catch is CancellationError {
                 cancelled = true
             } catch {
@@ -537,11 +581,26 @@ final class AppStore: ObservableObject {
                 case .forbidden: batchFailure = .accessDenied
                 case .challenge: batchFailure = .securityChallenge
                 case .cancelled: cancelled = true
-                case .network, .invalidResponse: batchFailure = .transient
+                case .network, .invalidResponse, .keychain: batchFailure = .transient
                 }
                 if !cancelled { warnings.append(failure.code + "." + (self.connectionDiagnostic?.stage ?? "connection")) }
             }
         }
+    }
+
+    private func getVerifiedWebPayload(path: String, stage: String, runID: UUID) async throws -> Any {
+        guard verifiedWebSessionGeneration == webSession.sessionGeneration else {
+            throw GarminWebSessionInvalidated.renewed
+        }
+        let payload = try await webSession.get(path: path, stage: stage)
+        try Task.checkCancellation()
+        guard webRunID == runID else { throw CancellationError() }
+        // Also reject transports that completed a read while silently renewing
+        // their session; no response may cross the account-verification boundary.
+        guard verifiedWebSessionGeneration == webSession.sessionGeneration else {
+            throw GarminWebSessionInvalidated.renewed
+        }
+        return payload
     }
 
     private func setTrainingIssue(_ issue: String?, group: SyncPolicy.Group) {

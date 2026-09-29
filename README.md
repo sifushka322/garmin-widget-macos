@@ -40,20 +40,20 @@ GarminDesk runs from a monochrome watch icon in the menu bar, without a Dock ico
 
 ## Your data stays with you
 
-There is no developer-operated server. GarminDesk connects directly to Garmin using system WebKit; website session data and cached readings stay on your Mac. The widget extension reads a separate snapshot without passwords or cookies. Credentials and personal readings are not included in the source or release packages.
+There is no developer-operated server. GarminDesk connects directly to Garmin using system WebKit; website session data and cached readings stay on your Mac. Optional automatic sign-in stores your login and password in the device-local macOS Keychain. Enable it in Account → Automatic sign-in; expired sessions can then reconnect through the normal Garmin sign-in form. Verification codes and security challenges still require your input. Disconnect removes the saved login as well as the website session. The widget extension reads a separate snapshot without passwords or cookies. Credentials and personal readings are not included in the source or release packages.
 
 GarminDesk is an unofficial project and is not affiliated with Garmin. Metric availability depends on your device and account; Garmin Connect changes may require an integration update. Do not attach passwords, cookies, tokens, or personal exports to public issues.
 
 ## Development candidate
 
-Version **0.7.0, build 16** adds visible metric scales, matching-night sleep quality and aligned dashboard cards. See the [candidate release notes](docs/releases/0.7.0.md). The stable download above remains 0.6.0 until the candidate is published.
+Version **0.7.1, build 17** simplifies widget layouts, keeps sleep values readable and adds optional automatic sign-in using macOS Keychain. See the [candidate release notes](docs/releases/0.7.1.md). The stable download above remains 0.6.0 until the candidate is published.
 
 ## Build from source
 
 A Mac with compatible Swift tools and a macOS SDK is required. The standard app uses system frameworks; Swift Package Manager and Python are not required.
 
 ```bash
-APP_VERSION=0.7.0 APP_BUILD=16 CONFIGURATION=release bash scripts/build-app.sh
+APP_VERSION=0.7.1 APP_BUILD=17 CONFIGURATION=release bash scripts/build-app.sh
 bash scripts/package-release.sh
 ```
 

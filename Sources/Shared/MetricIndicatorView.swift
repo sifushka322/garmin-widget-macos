@@ -29,6 +29,25 @@ struct MetricIndicatorView: View {
     }
 }
 
+/// One short assessment; supporting widget values do not repeat the hero gauge
+/// or the generic explanations already available through help and VoiceOver.
+struct WidgetMetricCaption: View {
+    let id: String
+    let formatter: MetricFormatter
+    let theme: DeskMetricTheme
+    var primaryID: String? = nil
+
+    var body: some View {
+        if let indicator = formatter.indicator(id), indicator.scale != nil,
+           primaryID.flatMap({ formatter.indicator($0)?.status }) != indicator.status {
+            Text(indicator.status)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(theme.secondaryInk)
+                .lineLimit(1)
+        }
+    }
+}
+
 struct MetricScaleView: View {
     let scale: MetricScale
     let theme: DeskMetricTheme

@@ -149,7 +149,7 @@ Navigation routes and JSON endpoints are different contracts. Common `/modern/` 
 | --- | --- |
 | 200 JSON with expected shape | Validate, normalize and replace only the corresponding successful group. A recognized empty result is distinct from schema mismatch. |
 | 200 HTML / redirected login page | Treat as an expired/unauthenticated web session, not empty data or JSON corruption. Do not save raw HTML. |
-| 401 | Pause data requests and surface normal website sign-in. Do not fall back to credential SSO or another host. |
+| 401 / sign-in redirect | Renew the normal website session once, then replay the read once. If explicitly configured, use the saved Keychain login on the normal `sso.garmin.com` form once. Failed credentials, MFA or a challenge require user action; never switch API hosts or use a private token exchange. |
 | 403 | Access/challenge state, not necessarily a wrong password or unsupported device. Pause requests and let the normal visible website explain/resolve it. |
 | 429 | Stop the batch, preserve cached measurements, honor bounded `Retry-After` and back off. Do not switch endpoints, profiles, accounts or origins. |
 | 404 / 204 | Endpoint-specific absence only after authentication and routing are known valid. A 404 on a new route is not proof that the user lacks that metric. |
