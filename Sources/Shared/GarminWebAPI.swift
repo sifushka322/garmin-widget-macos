@@ -88,8 +88,13 @@ struct GarminMetricGroupCache: Codable {
     var sourceDay: String
     var retrievedAt: Date
     var metrics: [String: MetricReading]
+    // Request-day freshness and a completed record's own day are independent.
+    // Optional for caches written before explicit record dates were retained.
+    var recordDay: String? = nil
     var metricContext: GarminMetricContext? = nil
     var bodyBatteryProjection: BodyBatteryProjection?
+
+    var readingSourceDay: String { recordDay ?? sourceDay }
 }
 
 struct GarminPastActivitiesCache: Codable {
@@ -152,7 +157,7 @@ struct GarminWebCache: Codable {
 
     mutating func remember(group: GarminMetricGroupCache) {
         remember(group.metrics.mapValues {
-            .init(reading: $0, sourceDate: group.sourceDay, retrievedAt: group.retrievedAt, changedAt: group.retrievedAt)
+            .init(reading: $0, sourceDate: group.readingSourceDay, retrievedAt: group.retrievedAt, changedAt: group.retrievedAt)
         })
     }
 
@@ -168,12 +173,29 @@ struct GarminWebCache: Codable {
         remember(readings)
     }
 
-    func hasOwnedReading(for group: SyncPolicy.Group, snapshot: GarminSnapshot) -> Bool {
-        let keys = Set((lastKnownMetrics ?? [:]).keys)
-            .union(snapshot.isDemo ? [] : Array(snapshot.metrics.keys))
-            .union(snapshot.isDemo ? [] : Array(snapshot.retainedMetrics.keys))
-            .union(groups.values.flatMap { $0.metrics.keys })
+    func hasOwnedReading(for group: SyncPolicy.Group, onOrAfter minimumDay: String, snapshot: GarminSnapshot) -> Bool {
+        guard accountDisplayName?.isEmpty == false else { return false }
+        let keys = Set((lastKnownMetrics ?? [:]).filter { $0.value.sourceDate >= minimumDay }.keys)
+            .union(snapshot.isDemo || snapshot.sourceDate < minimumDay ? [] : Array(snapshot.metrics.keys))
+            .union(snapshot.isDemo ? [] : Array(snapshot.retainedMetrics.filter { $0.value.sourceDate >= minimumDay }.keys))
+            .union(groups.values.filter { $0.readingSourceDay >= minimumDay }.flatMap { $0.metrics.keys })
         return keys.contains { GarminWebAPI.requiredGroups(metricIDs: [$0]).contains(group) }
+    }
+
+    mutating func queueHistoricalRecovery(for groups: Set<SyncPolicy.Group>, sourceDay: String,
+                                          at now: SyncPolicy.Moment, snapshot: GarminSnapshot) {
+        guard let previousDay = GarminHistoricalRecovery.previousDay(for: sourceDay),
+              accountDisplayName?.isEmpty == false else { return }
+        let candidates = groups.intersection(GarminHistoricalRecovery.eligibleGroups).filter { group in
+            guard let cached = self.groups[group.rawValue], cached.sourceDay == sourceDay else { return false }
+            return !hasOwnedReading(for: group, onOrAfter: previousDay, snapshot: snapshot)
+        }
+        guard !candidates.isEmpty else { return }
+        if historicalRecovery == nil || sourceDay > historicalRecovery!.sourceDay {
+            historicalRecovery = .init(sourceDay: sourceDay, startedAt: now)
+        }
+        guard historicalRecovery?.sourceDay == sourceDay else { return }
+        historicalRecovery?.enqueue(candidates, at: now)
     }
 
     func trainingTimeline(sourceDay: String) -> TrainingTimelineSnapshot? {
@@ -224,6 +246,7 @@ struct GarminWebCache: Codable {
             guard let group = groups[key], group.sourceDay == sourceDay else { continue }
             newest = max(newest, group.retrievedAt)
             retrievals[key] = group.retrievedAt
+            guard group.readingSourceDay == sourceDay else { continue }
             metrics.merge(group.metrics) { _, current in current }
             if let context = group.metricContext {
                 // Context travels with the same group and day as its reading.
@@ -301,9 +324,9 @@ struct GarminWebCache: Codable {
         // Recover last readings even if the standalone snapshot was lost.
         for group in groups.values {
             for (id, reading) in group.metrics where metrics[id] == nil {
-                if previous[id] == nil || group.sourceDay > previous[id]!.sourceDate ||
-                    (group.sourceDay == previous[id]!.sourceDate && group.retrievedAt > previous[id]!.retrievedAt) {
-                    previous[id] = .init(reading: reading, sourceDate: group.sourceDay,
+                if previous[id] == nil || group.readingSourceDay > previous[id]!.sourceDate ||
+                    (group.readingSourceDay == previous[id]!.sourceDate && group.retrievedAt > previous[id]!.retrievedAt) {
+                    previous[id] = .init(reading: reading, sourceDate: group.readingSourceDay,
                                          retrievedAt: group.retrievedAt, changedAt: group.retrievedAt)
                 }
             }

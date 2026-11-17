@@ -110,6 +110,12 @@ final class AppStore: ObservableObject {
             }
         }
         webPolicy = SyncPolicy(configuration: webPolicy.configuration, checkpoint: restoredCheckpoint)
+        if historicalRecoveryEnabled, webConnected {
+            let moment = syncMoment()
+            let day = SyncPolicy.sourceDay(for: moment.wallTime, timeZone: sourceTimeZone())
+            let checkedToday = Set(restoredCheckpoint.successfulGroups.filter { $0.value.sourceDay == day }.keys)
+            webCache.queueHistoricalRecovery(for: checkedToday, sourceDay: day, at: moment, snapshot: snapshot)
+        }
         needsWebSignIn = Self.requiresSessionAction(webPolicy.checkpoint.sessionState)
         hasSession = webConnected && !needsWebSignIn
         self.webSession.onConnectPageReady = { [weak self] in self?.runWebSync(trigger: .manual, completingSignIn: true) }
@@ -395,7 +401,7 @@ final class AppStore: ObservableObject {
                                 self.lastErrorKey = "error.storage"
                                 continue
                             }
-                            if self.webCache.hasOwnedReading(for: recoveredGroup, snapshot: self.snapshot) { continue }
+                            if self.webCache.hasOwnedReading(for: recoveredGroup, onOrAfter: previousDay, snapshot: self.snapshot) { continue }
                             guard let path = GarminWebAPI.path(group: recoveredGroup, sourceDay: previousDay, displayName: name) else { continue }
                             do {
                                 let payload = try await self.getVerifiedWebPayload(path: path, stage: "historical." + recoveredGroup.rawValue, runID: runID)
@@ -512,23 +518,21 @@ final class AppStore: ObservableObject {
                                 projection = previous.bodyBatteryProjection
                             }
                             var cached = GarminMetricGroupCache(sourceDay: day, retrievedAt: retrievedAt, metrics: values)
+                            if GarminHistoricalRecovery.eligibleGroups.contains(group) {
+                                guard let recordDay = GarminPayloadNormalizer.historicalSourceDay(group: group.rawValue, payload: payload, requestedDay: day) else {
+                                    throw GarminWebError.invalidResponse
+                                }
+                                cached.recordDay = recordDay == day ? nil : recordDay
+                            }
                             cached.bodyBatteryProjection = projection
                             cached.metricContext = GarminPayloadNormalizer.metricContext(group: group.rawValue, payload: payload)
                             // Preserve the previous owned value before replacing
                             // this endpoint with a successful empty response.
                             if let old = self.webCache.groups[group.rawValue] { self.webCache.remember(group: old) }
                             self.webCache.groups[group.rawValue] = cached
-                            if self.historicalRecoveryEnabled, values.isEmpty,
-                               GarminHistoricalRecovery.eligibleGroups.contains(group),
-                               !self.webCache.hasOwnedReading(for: group, snapshot: self.snapshot) {
-                                if self.webCache.historicalRecovery == nil || day > self.webCache.historicalRecovery!.sourceDay {
-                                    self.webCache.historicalRecovery = .init(sourceDay: day, startedAt: self.syncMoment())
-                                }
-                                // Expiry does not reset the generation on the same
-                                // day. Attempts remain consumed until date/account change.
-                                if self.webCache.historicalRecovery?.sourceDay == day {
-                                    self.webCache.historicalRecovery?.queued.insert(group)
-                                }
+                            if self.historicalRecoveryEnabled {
+                                self.webCache.queueHistoricalRecovery(for: [group], sourceDay: day,
+                                                                     at: self.syncMoment(), snapshot: self.snapshot)
                             }
                         }
                         successful.insert(group)

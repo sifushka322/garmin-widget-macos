@@ -4,9 +4,11 @@
 
 Your Garmin Connect data in a native Mac app and desktop widgets. Five widget types for your day, sport, sleep, and training calendar, including a customizable Summary.
 
-[Download](https://github.com/sifushka322/garmin-widget-macos/releases/tag/v0.7.1) · [Installation](docs/distribution.md) · [Version 0.7.1](docs/releases/0.7.1.md)
+[Download stable release](https://github.com/sifushka322/garmin-widget-macos/releases/latest) · [Installation](docs/distribution.md) · [0.7.2 candidate notes](docs/releases/0.7.2.md)
 
 **Version 0.7.1** brings simpler widgets, consistent sleep typography and optional automatic sign-in using macOS Keychain. See the [release notes](docs/releases/0.7.1.md) and [validation report](docs/releases/validation/0.7.1-publication.md).
+
+The current source is **0.7.2 build 18**, a compatibility update in preparation. It improves Garmin session and historical-data recovery and connection diagnostics. The download link continues to serve the latest published release; candidate source changes do not imply that new packages have been published.
 
 GarminDesk shows the latest available readings, not a live stream from your watch. Instantaneous heart rate is excluded because Garmin Connect delays make a reliable live reading impossible. Sleep, overnight HRV, sleep respiration, and other completed records retain their dates and are not marked stale solely because synchronization is delayed.
 
@@ -49,7 +51,7 @@ GarminDesk is an unofficial project and is not affiliated with Garmin. Metric av
 A Mac with compatible Swift tools and a macOS SDK is required. The standard app uses system frameworks; Swift Package Manager and Python are not required.
 
 ```bash
-APP_VERSION=0.7.1 APP_BUILD=17 CONFIGURATION=release bash scripts/build-app.sh
+APP_VERSION=0.7.2 APP_BUILD=18 CONFIGURATION=release bash scripts/build-app.sh
 bash scripts/package-release.sh
 ```
 

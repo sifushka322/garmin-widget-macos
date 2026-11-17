@@ -10,6 +10,31 @@ enum GarminDeskLauncher {
     @MainActor static func main() {
         signal(SIGPIPE, SIG_IGN)
         let app = NSApplication.shared
+        if CommandLine.arguments.dropFirst().elementsEqual(["--verify-automatic-sign-in"]) {
+            app.setActivationPolicy(.accessory)
+            Task { @MainActor in
+                let session = GarminWebSession(websiteDataStore: .nonPersistent())
+                var lastDiagnostic: BridgeDiagnostic?
+                session.onDiagnostic = { lastDiagnostic = $0 }
+                session.beginBatch()
+                do {
+                    try await session.prepare()
+                    let profile = try await session.get(path: GarminWebAPI.profilePath, stage: "profile")
+                    guard session.automaticLoginClicked,
+                          let name = (profile as? [String: Any])?["displayName"] as? String,
+                          !name.isEmpty else { throw GarminWebError.invalidResponse }
+                    print("PASS: automatic sign-in verified with a fresh website session and an authenticated profile.")
+                    exit(EXIT_SUCCESS)
+                } catch {
+                    let reason = (error as? GarminWebError)?.code ?? "unavailable"
+                    let httpStatus = lastDiagnostic?.httpStatus.map(String.init) ?? "unknown"
+                    fputs("Automatic sign-in verification failed (\(reason), form: \(session.automaticLoginOutcome), filled: \(session.automaticLoginFilledFields), checks: \(session.automaticLoginValidationWaits), HTTP: \(httpStatus)).\n", stderr)
+                    exit(EXIT_FAILURE)
+                }
+            }
+            app.run()
+            return
+        }
         let delegate = AppDelegate()
         app.delegate = delegate
         // Keep settings and Garmin's sign-in windows usable without adding a

@@ -126,8 +126,13 @@ private struct ErrorNotice: View {
                 Label(store.text(error), systemImage: "exclamationmark.triangle")
                     .font(.callout).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
-                if let diagnostic = store.connectionDiagnostic,
-                   ["error.auth", "error.rate_limit", "error.network", "error.access_denied", "error.security_challenge", "error.session_unsupported"].contains(error) {
+                if error == "error.partial", !store.snapshot.warnings.isEmpty {
+                    DisclosureGroup(store.text("diagnostic.title")) {
+                        Text(store.snapshot.warnings.joined(separator: "\n"))
+                            .font(.caption.monospaced()).textSelection(.enabled)
+                    }.font(.caption).foregroundStyle(.secondary)
+                } else if let diagnostic = store.connectionDiagnostic,
+                   ["error.auth", "error.rate_limit", "error.network", "error.access_denied", "error.security_challenge", "error.session_unsupported", "error.protocol"].contains(error) {
                     DisclosureGroup(store.text("diagnostic.title")) {
                         VStack(alignment: .leading, spacing: 5) {
                             if let stage = diagnostic.stage { Text(store.text("diagnostic.stage") + ": " + stage) }

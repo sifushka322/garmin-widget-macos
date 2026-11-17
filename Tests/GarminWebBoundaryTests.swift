@@ -47,6 +47,31 @@ struct GarminWebBoundaryTests {
         }
         let connect = "https://connect.garmin.com/app/home"
         let sso = "https://sso.garmin.com/portal/sso/embed?service=connect"
+        check(GarminWebSession.isSessionNavigation(URL(string: connect), isMainFrame: true), "Main Connect responses provide bootstrap status, including server blocks")
+        check(!GarminWebSession.isSessionNavigation(URL(string: connect), isMainFrame: false), "Unrelated embedded Connect documents cannot stop the session")
+        check(GarminWebSession.isSessionNavigation(URL(string: sso), isMainFrame: false), "An embedded SSO block still stops automatic login")
+        for address in ["https://www.garmin.com/help", "https://sso.garmin.com.evil.example/login", "http://connect.garmin.com/app/home"] {
+            check(!GarminWebSession.isSessionNavigation(URL(string: address), isMainFrame: true), "Unrelated documents cannot determine session status")
+        }
+        func documentFailure(_ status: Int, address: String = connect, challenge: Bool = false) -> GarminWebError? {
+            GarminWebSession.navigationFailure(status: status, url: URL(string: address), retryAfter: 1800, challenge: challenge)
+        }
+        check(documentFailure(200) == nil, "Successful pages continue normal readiness checks")
+        check(documentFailure(401)?.code == "auth", "Bootstrap 401 requests normal sign-in")
+        check(documentFailure(403)?.code == "access_denied", "Connect 403 is not disguised as network trouble or bad credentials")
+        check(documentFailure(403, address: sso)?.code == "access_denied", "SSO access denial remains distinct from rate limiting")
+        check(documentFailure(200, challenge: true)?.code == "security_challenge", "Challenge metadata stops even an HTTP-200 document")
+        check(documentFailure(403, challenge: true)?.code == "security_challenge", "A marked security challenge is distinguished from plain denial")
+        for (status, address) in [(429, connect), (429, sso), (427, sso)] {
+            if case .rateLimited(let delay) = documentFailure(status, address: address) {
+                check(delay == 1800, "Login and navigation blocks retain Retry-After")
+            } else { check(false, "Expected a server pause for HTTP \(status)") }
+        }
+        check(documentFailure(429, challenge: true)?.code == "rate_limit", "Server rate limiting takes precedence over challenge metadata")
+        check(documentFailure(427)?.code == "protocol", "Undocumented SSO-427 semantics are not invented for a Connect API/page response")
+        check(documentFailure(428, address: sso)?.code == "protocol", "Other SSO statuses are not mistaken for a login block")
+        check(documentFailure(500)?.code == "network", "Server failure remains transient")
+        check(documentFailure(404)?.code == "protocol", "A missing bootstrap route reports protocol failure before waiting 45 seconds")
         check(navigation(sso) == .wait, "A finished SSO document is an intermediate hop, not expired authentication")
         check(navigation(sso, elapsed: 40) == .wait, "A redirect-only SSO document never invents a sign-in requirement")
         check(navigation("https://sso.garmin.com/portal/signin") == .wait, "A sign-in URL alone does not prove credentials are required")

@@ -16,9 +16,14 @@ enum GarminPayloadNormalizer {
         func has(_ object: [String: Any], _ keys: Set<String>) -> Bool {
             !keys.isDisjoint(with: object.keys)
         }
-        func objectEnvelope(_ object: [String: Any], _ key: String) -> Bool {
+        func objectEnvelope(_ object: [String: Any], _ key: String, fields: Set<String>? = nil) -> Bool {
             guard let nested = object[key] else { return false }
-            return nested is NSNull || nested is [String: Any]
+            if nested is NSNull { return true }
+            guard let record = nested as? [String: Any] else { return false }
+            guard let fields, !record.isEmpty else { return true }
+            // A dated empty record is valid. A record with entirely new payload
+            // fields must be reported before it can replace a cached group.
+            return has(record, fields) || Set(record.keys).isSubset(of: ["calendarDate"])
         }
         func arrayEnvelope(_ object: [String: Any], _ key: String,
                            accepts: ([String: Any]) -> Bool) -> Bool {
@@ -46,8 +51,11 @@ enum GarminPayloadNormalizer {
                 has($0, ["bodyBatteryValuesArray", "date", "charged", "drained"])
                     && ($0["bodyBatteryValuesArray"] == nil || $0["bodyBatteryValuesArray"] is NSNull || $0["bodyBatteryValuesArray"] is [Any])
             }
-        case "sleep": return objectEnvelope(object, "dailySleepDTO")
-        case "hrv": return objectEnvelope(object, "hrvSummary")
+        case "sleep":
+            return objectEnvelope(object, "dailySleepDTO", fields: ["sleepTimeSeconds", "deepSleepSeconds",
+                "remSleepSeconds", "lightSleepSeconds", "awakeSleepSeconds", "sleepScores"])
+        case "hrv":
+            return objectEnvelope(object, "hrvSummary", fields: ["lastNightAvg", "weeklyAvg", "baseline", "status"])
         case "spo2": return has(object, ["averageSpO2", "calendarDate", "lastSevenDaysAvgSpO2"])
         case "respiration": return has(object, ["avgSleepRespirationValue", "calendarDate"])
         case "readiness":
@@ -55,7 +63,8 @@ enum GarminPayloadNormalizer {
         case "vo2_max":
             let accepts: ([String: Any]) -> Bool = { objectEnvelope($0, "generic") || objectEnvelope($0, "cycling") }
             return payload is [String: Any] ? accepts(object) : recordArray(accepts)
-        case "training": return objectEnvelope(object, "mostRecentTrainingStatus")
+        case "training":
+            return objectEnvelope(object, "mostRecentTrainingStatus", fields: ["latestTrainingStatusData"])
         case "weight":
             return arrayEnvelope(object, "dateWeightList") { has($0, ["weight", "timestampGMT", "samplePk"]) }
         case "hydration": return has(object, ["valueInML", "calendarDate"])

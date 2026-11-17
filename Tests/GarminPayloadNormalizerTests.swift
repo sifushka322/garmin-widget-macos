@@ -157,6 +157,13 @@ struct GarminPayloadNormalizerTests {
             try expect(normalize(group, payload).isEmpty, "Known absence must not invent a \(group) measurement")
         }
         try expect(!GarminPayloadNormalizer.isRecognizedPayload(group: "sleep", payload: ["dailySleepDTO": "bad"]), "Invalid sleep DTO is a schema mismatch")
+        for (group, envelope) in [("sleep", "dailySleepDTO"), ("hrv", "hrvSummary"), ("training", "mostRecentTrainingStatus")] {
+            let record = ["calendarDate": "2026-01-02"]
+            try expect(GarminPayloadNormalizer.isRecognizedPayload(group: group, payload: [envelope: record]), "A dated absence is valid")
+            try expect(!GarminPayloadNormalizer.isRecognizedPayload(group: group, payload: [
+                envelope: record.merging(["newDataFormat": "unknown"]) { _, new in new }
+            ]), "Unknown fields inside a dated envelope must not erase cached data")
+        }
         try expect(!GarminPayloadNormalizer.isRecognizedPayload(group: "weight", payload: ["dateWeightList": ["wrong": 1]]), "Invalid weight envelope is a schema mismatch")
         try expect(!GarminPayloadNormalizer.isRecognizedPayload(group: "unknown", payload: NSNull()), "Null must not legitimize an unknown group")
     }

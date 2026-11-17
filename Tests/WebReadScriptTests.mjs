@@ -61,6 +61,16 @@ for (const status of [401, 403, 429]) {
     check(value.status === status && value.retryAfter === '7200' && value.body === null,
           'Terminal status and Retry-After survive an oversized or unreadable body');
 }
+const loginBlock = response({status:427, url:'https://sso.garmin.com/portal/sso/embed',
+    extraHeaders:{'content-length':'4000001','retry-after':'3600'}});
+loginBlock.body = {getReader() { throw new Error('SSO block body must not be read'); }};
+value = await run(loginBlock);
+check(value.status === 427 && value.loginBlocked && value.retryAfter === '3600' && value.body === null,
+      'An SSO 427 preserves its actual status and server pause before optional body parsing');
+for (const url of ['https://connect.garmin.com/gc-api/data', 'https://sso.garmin.com.evil.example/login', 'http://sso.garmin.com/login']) {
+    value = await run(response({status:427, url}));
+    check(!value.loginBlocked, 'Undocumented login block semantics apply only to the trusted SSO origin');
+}
 const challenged = response({status:200, extraHeaders:{'cf-mitigated':'challenge'}});
 challenged.body = {getReader() { throw new Error('Challenge body must not be read'); }};
 value = await run(challenged);

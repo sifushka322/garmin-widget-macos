@@ -38,14 +38,14 @@ App preferences store language, app appearance, widget appearance, Summary’s o
 A Mac with a compatible Swift compiler and macOS SDK is required. The script compiles native code directly using `xcrun swiftc`, without Swift Package Manager.
 
 ```bash
-APP_VERSION=0.7.1 APP_BUILD=17 CONFIGURATION=release bash scripts/build-app.sh
+APP_VERSION=0.7.2 APP_BUILD=18 CONFIGURATION=release bash scripts/build-app.sh
 bash scripts/verify-release.sh build/GarminDesk.app
 bash scripts/package-release.sh
 ```
 
 `build-app.sh` builds the app and extension, generates the icon, applies ad-hoc signatures, and verifies the bundle. `package-release.sh` packages the built app into ZIP/DMG files with SHA-256 checksums; it does not install the app or publish a release.
 
-The current source and published release are **0.7.1 build 17**.
+The current source is **0.7.2 build 18**, in preparation; the latest published release described above is **0.7.1 build 17**. See the [0.7.2 candidate notes](releases/0.7.2.md).
 
 | Variable | Purpose |
 | --- | --- |
@@ -59,6 +59,8 @@ The current source and published release are **0.7.1 build 17**.
 The legacy connector requires Python only on the build machine. When enabled, its standalone runtime and required dependency licenses are included in the app. The standard package neither builds nor includes it.
 
 The workflow in `.github/workflows/build.yml` reads the version from `Resources/Info.plist` and checks that it matches the extension. A normal push runs checks and builds. A commit in `main` with the exact message `release: vX.Y.Z` also prepares a **draft release** after all jobs succeed; the manual workflow has a separate `publish_release` flag with the same result. Neither a public release nor `latest` is assigned automatically. Builds with the legacy connector are excluded from releases. Existing releases are not overwritten.
+
+The deployment target remains macOS 14.0. Since GitHub [retired its macOS 14 runners on 2 November 2026](https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-retirement/), hosted native and packaged-app compatibility checks now run on macOS 15 for both architectures. Builds still run on macOS 26. A successful hosted run does not establish macOS 14 runtime compatibility for a new candidate; that requires a separate test on macOS 14 and must be reported explicitly.
 
 ## Before publication
 

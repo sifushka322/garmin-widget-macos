@@ -99,7 +99,7 @@ class RuntimeCompatibilityTests(unittest.TestCase):
         release = workflow.split("  release:\n", 1)[1]
         self.assertIn("needs: [version, build]", runtime)
         self.assertIn("needs: [version, protocol, build, native-compat, runtime-compat]", release)
-        self.assertRegex(runtime, r"runner: macos-14\s+os_major: '14'\s+arch: arm64")
+        self.assertRegex(runtime, r"runner: macos-15\s+os_major: '15'\s+arch: arm64")
         self.assertRegex(runtime, r"runner: macos-15-intel\s+os_major: '15'\s+arch: x86_64")
         self.assertNotRegex(runtime, r"macos-[^\s]*(?:large|xlarge)")
         self.assertIn('gh run download "$GITHUB_RUN_ID"', runtime)
@@ -116,9 +116,10 @@ class RuntimeCompatibilityTests(unittest.TestCase):
         self.assertIn("bash scripts/test-widget-sandbox.sh", native)
         self.assertNotIn("bash scripts/test-offline.sh", runtime)
         for lane in (native, runtime):
-            self.assertRegex(lane, r"runner: macos-14\s+os_major: '14'\s+arch: arm64")
+            self.assertRegex(lane, r"runner: macos-15\s+os_major: '15'\s+arch: arm64")
             self.assertRegex(lane, r"runner: macos-15-intel\s+os_major: '15'\s+arch: x86_64")
             self.assertNotRegex(lane, r"macos-[^\s]*(?:large|xlarge)")
+            self.assertNotRegex(lane, r"runner: macos-14(?:\s|$)")
 
 
 if __name__ == "__main__":

@@ -198,10 +198,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Standard hosted runners only. macOS 14 reaches runner retirement
-          # on 2026-11-02; replace this lane before then, never silently skip it.
-          - runner: macos-14
-            os_major: '14'
+          # macOS 14 runners retired on 2026-11-02. Keep the deployment
+          # target at 14.0; hosted runtime coverage now starts at macOS 15.
+          - runner: macos-15
+            os_major: '15'
             arch: arm64
           - runner: macos-15-intel
             os_major: '15'
@@ -267,10 +267,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Standard hosted runners only. macOS 14 reaches runner retirement
-          # on 2026-11-02; replace this lane before then, never silently skip it.
-          - runner: macos-14
-            os_major: '14'
+          # macOS 14 runners retired on 2026-11-02. Keep the deployment
+          # target at 14.0; hosted runtime coverage now starts at macOS 15.
+          - runner: macos-15
+            os_major: '15'
             arch: arm64
           - runner: macos-15-intel
             os_major: '15'
