@@ -2,15 +2,16 @@
 
 GarminDesk is distributed through [GitHub Releases](https://github.com/sifushka322/garmin-widget-macos/releases) as a ready-to-use app. Users do not need Python, Homebrew, Xcode, or additional libraries.
 
-## Version 0.7.1
+## Version 0.7.2
 
-Apple Silicon (`arm64`) packages are listed below. Equivalent Intel packages use the `x86_64` suffix:
+Choose the package for your Mac:
 
-- `GarminDesk-0.7.1-arm64.dmg` — the app, an Applications shortcut, and installation instructions.
-- `GarminDesk-0.7.1-arm64.zip` — an alternative archive of the same app.
-- `GarminDesk-0.7.1-arm64-SHA256.txt` — archive checksums.
+| Mac | Disk image | ZIP alternative | SHA-256 checksums |
+| --- | --- | --- | --- |
+| Apple Silicon | [arm64 DMG](https://github.com/sifushka322/garmin-widget-macos/releases/download/v0.7.2/GarminDesk-0.7.2-arm64.dmg) | [arm64 ZIP](https://github.com/sifushka322/garmin-widget-macos/releases/download/v0.7.2/GarminDesk-0.7.2-arm64.zip) | [arm64 checksums](https://github.com/sifushka322/garmin-widget-macos/releases/download/v0.7.2/GarminDesk-0.7.2-arm64-SHA256.txt) |
+| Intel | [x86_64 DMG](https://github.com/sifushka322/garmin-widget-macos/releases/download/v0.7.2/GarminDesk-0.7.2-x86_64.dmg) | [x86_64 ZIP](https://github.com/sifushka322/garmin-widget-macos/releases/download/v0.7.2/GarminDesk-0.7.2-x86_64.zip) | [x86_64 checksums](https://github.com/sifushka322/garmin-widget-macos/releases/download/v0.7.2/GarminDesk-0.7.2-x86_64-SHA256.txt) |
 
-Packages target macOS 14+. The exact build, package checks, CI results and on-device observations are recorded in the [final validation report](releases/validation/0.7.1-publication.md).
+Both DMGs contain the app, an Applications shortcut and installation instructions. Packages target macOS 14+. Automated runtime checks cover macOS 15; macOS 14 was not tested for this release. The exact build, package checks, CI results and on-device observations are recorded in the [final validation report](releases/validation/0.7.2-publication.md).
 
 ## Installation without a paid signing certificate
 
@@ -45,7 +46,7 @@ bash scripts/package-release.sh
 
 `build-app.sh` builds the app and extension, generates the icon, applies ad-hoc signatures, and verifies the bundle. `package-release.sh` packages the built app into ZIP/DMG files with SHA-256 checksums; it does not install the app or publish a release.
 
-The current source is **0.7.2 build 18**, in preparation; the latest published release described above is **0.7.1 build 17**. See the [0.7.2 candidate notes](releases/0.7.2.md).
+The current source and release are **0.7.2 build 18**. See the [release notes](releases/0.7.2.md).
 
 | Variable | Purpose |
 | --- | --- |
@@ -60,11 +61,11 @@ The legacy connector requires Python only on the build machine. When enabled, it
 
 The workflow in `.github/workflows/build.yml` reads the version from `Resources/Info.plist` and checks that it matches the extension. A normal push runs checks and builds. A commit in `main` with the exact message `release: vX.Y.Z` also prepares a **draft release** after all jobs succeed; the manual workflow has a separate `publish_release` flag with the same result. Neither a public release nor `latest` is assigned automatically. Builds with the legacy connector are excluded from releases. Existing releases are not overwritten.
 
-The deployment target remains macOS 14.0. Since GitHub [retired its macOS 14 runners on 2 November 2026](https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-retirement/), hosted native and packaged-app compatibility checks now run on macOS 15 for both architectures. Builds still run on macOS 26. A successful hosted run does not establish macOS 14 runtime compatibility for a new candidate; that requires a separate test on macOS 14 and must be reported explicitly.
+The deployment target remains macOS 14.0. Since GitHub [retired its macOS 14 runners on 2 November 2026](https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-retirement/), hosted native and packaged-app compatibility checks now run on macOS 15 for both architectures. Builds still run on macOS 26. A successful hosted run does not establish macOS 14 runtime compatibility for a release; that requires a separate test on macOS 14 and must be reported explicitly.
 
 ## Before publication
 
-Release evidence and the owner's publication authorization are recorded in the [validation report](releases/validation/0.7.1-publication.md). The following is the standard validation process.
+Release evidence and the owner's publication authorization are recorded in the [validation report](releases/validation/0.7.2-publication.md). The [0.7.1 report](releases/validation/0.7.1-publication.md) remains available as historical evidence. The following is the standard validation process.
 
 Verify the exact app and archives being released: versions, nested signatures, architecture, system dependencies, checksums, and absence of private runtime files. Then download the packages from the draft and complete the [upgrade validation from the previous release](widget-upgrade-validation.md) on a Mac with a graphical session, including existing widgets and the gallery. A separate test machine can be used; the owner's Mac does not need to be changed. Only after validation succeeds should the same draft be published and marked `latest`; a rebuild requires another validation run. Details: [publication checklist](publication-checklist.md), [source file list](source-publication-files.txt).
 

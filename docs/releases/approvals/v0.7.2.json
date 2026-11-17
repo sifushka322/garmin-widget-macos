@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "version": "0.7.2",
+  "build": "18",
+  "commit": "300d99042d4d21bdc2a31b7f0dd06246b630dc65",
+  "build_run_id": 44194894418,
+  "upgrade_result": "not_run",
+  "owner_override": true,
+  "override_reason": "The owner requested publication as the latest stable release and, after disclosure of the remaining widget-gallery coverage, reported that everything had updated on their Mac.",
+  "report": "docs/releases/validation/0.7.2-publication.md",
+  "report_sha256": "29e60875b538b34511b558b99e8a2f25f9ed8e161a1f5f3fe6aff226fe33b637",
+  "release_notes_path": "docs/releases/0.7.2.md",
+  "release_notes_sha256": "baac9d12ca830b951730127ad7803036184cf3a80583557d5d3a98bccdad3e3b",
+  "asset_sha256": {
+    "GarminDesk-0.7.2-arm64-SHA256.txt": "8aeed5afd6d2afb5175ba0281d86987913a9d1be0847db397464fae379f6ff26",
+    "GarminDesk-0.7.2-arm64.dmg": "15a174c5ff72e2855a25a5c449463bffd24223fa017a0527a8062bbed0b1c737",
+    "GarminDesk-0.7.2-arm64.zip": "89062744b7173055333546e6be7681713801f8a4c4a8117742a493aa6a23b45d",
+    "GarminDesk-0.7.2-x86_64-SHA256.txt": "8a02e62f6bfe52e2ebfcc9037a914f39f4c52fbee90cb5aec0f3d483fb390d27",
+    "GarminDesk-0.7.2-x86_64.dmg": "876aa6b5f55ab94022d26ef7bda843efa0e45cbfa70301493cb6d001930b88e9",
+    "GarminDesk-0.7.2-x86_64.zip": "97743279ac5f42507f463500073ad1121df267618471e89d355f8a69cd482db5"
+  }
+}

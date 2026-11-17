@@ -4,23 +4,21 @@
 
 Your Garmin Connect data in a native Mac app and desktop widgets. Five widget types for your day, sport, sleep, and training calendar, including a customizable Summary.
 
-[Download stable release](https://github.com/sifushka322/garmin-widget-macos/releases/latest) · [Installation](docs/distribution.md) · [0.7.2 candidate notes](docs/releases/0.7.2.md)
+[Download](https://github.com/sifushka322/garmin-widget-macos/releases/tag/v0.7.2) · [Installation](docs/distribution.md) · [Version 0.7.2](docs/releases/0.7.2.md)
 
-**Version 0.7.1** brings simpler widgets, consistent sleep typography and optional automatic sign-in using macOS Keychain. See the [release notes](docs/releases/0.7.1.md) and [validation report](docs/releases/validation/0.7.1-publication.md).
-
-The current source is **0.7.2 build 18**, a compatibility update in preparation. It improves Garmin session and historical-data recovery and connection diagnostics. The download link continues to serve the latest published release; candidate source changes do not imply that new packages have been published.
+**Version 0.7.2, build 18** improves recovery of completed sleep and HRV after midnight, automatic Garmin sign-in and connection diagnostics. See the [release notes](docs/releases/0.7.2.md) and [validation report](docs/releases/validation/0.7.2-publication.md).
 
 GarminDesk shows the latest available readings, not a live stream from your watch. Instantaneous heart rate is excluded because Garmin Connect delays make a reliable live reading impossible. Sleep, overnight HRV, sleep respiration, and other completed records retain their dates and are not marked stale solely because synchronization is delayed.
 
 ## Installation
 
-1. Download **GarminDesk-0.7.1-arm64.dmg** for Apple Silicon or **GarminDesk-0.7.1-x86_64.dmg** for an Intel Mac.
+1. Download [GarminDesk-0.7.2-arm64.dmg](https://github.com/sifushka322/garmin-widget-macos/releases/download/v0.7.2/GarminDesk-0.7.2-arm64.dmg) for Apple Silicon or [GarminDesk-0.7.2-x86_64.dmg](https://github.com/sifushka322/garmin-widget-macos/releases/download/v0.7.2/GarminDesk-0.7.2-x86_64.dmg) for an Intel Mac.
 2. Open the DMG, drag **GarminDesk.app** into **Applications**, and launch it from there.
 3. Sign in to Garmin Connect under **Garmin account**. Optionally save your login in **Automatic sign-in** to reconnect when the session expires.
 4. Under **Widgets**, choose an appearance and preview the five widget types. Customize Summary through **Choose measurements**.
 5. Right-click the desktop → **Edit Widgets → GarminDesk**, then add a widget.
 
-A ZIP containing the same app is also available. **No Python, Homebrew, additional libraries, or terminal setup is required.** Separate Apple Silicon and Intel packages target macOS 14+. See the [release notes](docs/releases/0.7.1.md) for the version's actual validation coverage.
+A ZIP containing the same app is also available. **No Python, Homebrew, additional libraries, or terminal setup is required.** Separate Apple Silicon and Intel packages target macOS 14+. Automated runtime checks cover macOS 15; macOS 14 was not tested for this release. See the [validation report](docs/releases/validation/0.7.2-publication.md) for the exact coverage.
 
 The app is distributed without a paid Developer ID certificate or Apple notarization. If macOS reports an unidentified developer, first try opening your trusted download, then use **System Settings → Privacy & Security → Open Anyway**. [Apple's instructions](https://support.apple.com/102445).
 
@@ -38,7 +36,7 @@ Independent data refresh, dated record recovery and optional Body Battery estima
 
 GarminDesk runs from a monochrome watch icon in the menu bar, without a Dock icon. The menu provides refresh, settings and Quit. Clicking a widget opens its view in GarminDesk. Closing the window keeps synchronization running; **⌘Q** quits. New readings require internet access and a watch synced with Garmin Connect. macOS controls widget refresh timing.
 
-[Release notes](docs/releases/0.7.1.md) · [Widget simplification audit](docs/widget-simplification-audit.md)
+[Release notes](docs/releases/0.7.2.md) · [Widget simplification audit](docs/widget-simplification-audit.md)
 
 ## Your data stays with you
 
@@ -57,6 +55,6 @@ bash scripts/package-release.sh
 
 The app and archives are created in `build/`. See the [build documentation](docs/distribution.md#for-developers) for additional options and the optional legacy connector.
 
-[0.2.0 validation history](docs/validation.md) · [Source publication audit](docs/source-publication-audit-2026-09-16.md)
+[0.7.1 release history](docs/releases/0.7.1.md) · [0.2.0 validation history](docs/validation.md) · [Source publication audit](docs/source-publication-audit-2026-09-16.md)
 
 The source is available for noncommercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE.md), with [required notices](NOTICE.md). Commercial use requires separate permission.
